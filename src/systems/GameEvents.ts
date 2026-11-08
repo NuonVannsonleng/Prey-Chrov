@@ -39,8 +39,48 @@ export interface GameEventMap {
   'toast': { text: string; tone: ToastTone };
   /** A pickup was in reach but the inventory had no room for it. */
   'inventory:full': void;
-  /** Player drank water. Thirst arrives in M3 and will listen to this. */
+  /** Player drank water. */
   'player:drank': void;
+  'survival:tick': SurvivalTick;
+  'clock:tick': ClockTick;
+  /** Health dropped from hunger/thirst/food; UI flashes red. */
+  'player:hurt': void;
+  'craft:request': { recipe: string };
+  /** Crafting stations within reach changed (e.g. near a campfire). */
+  'craft:stations': string[];
+  /** UI should open the crafting panel (E at a campfire). */
+  'ui:open-crafting': void;
+  /** World entered/left structure placement mode; UI routes Esc to cancel it. */
+  'placement:mode': boolean;
+  'placement:cancel': void;
+  'objectives:changed': ObjectiveView[];
+}
+
+export interface SurvivalTick {
+  health: number;
+  hunger: number;
+  thirst: number;
+  stamina: number;
+  maxHealth: number;
+  maxHunger: number;
+  maxThirst: number;
+  maxStamina: number;
+  hungry: boolean;
+  thirsty: boolean;
+  exhausted: boolean;
+}
+
+export interface ClockTick {
+  day: number;
+  label: string;
+  phase: string;
+  darkness: number;
+}
+
+export interface ObjectiveView {
+  id: string;
+  text: string;
+  done: boolean;
 }
 
 type Handler<T> = [T] extends [void] ? () => void : (payload: T) => void;

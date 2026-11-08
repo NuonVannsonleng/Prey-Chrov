@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { CSS, FONTS, GAME_HEIGHT, GAME_WIDTH, SCENES } from '../config';
 import { Button } from '../ui/components/Button';
 import { ButtonList } from '../ui/components/ButtonList';
+import { oncePerKeyEvent } from '../utils/keys';
 
 /** Ignore the Esc press that opened the menu (same physical key event). */
 const ESC_GUARD_MS = 150;
@@ -9,6 +10,7 @@ const ESC_GUARD_MS = 150;
 export class Pause extends Phaser.Scene {
   private openedAt = 0;
   private leaving = false;
+  private readonly escHandler = oncePerKeyEvent(() => this.onEsc());
 
   constructor() {
     super(SCENES.pause);
@@ -40,8 +42,8 @@ export class Pause extends Phaser.Scene {
       .setOrigin(0.5);
 
     const kb = this.input.keyboard;
-    kb?.on('keydown-ESC', this.onEsc, this);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => kb?.off('keydown-ESC', this.onEsc, this));
+    kb?.on('keydown-ESC', this.escHandler);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => kb?.off('keydown-ESC', this.escHandler));
   }
 
   private onEsc(): void {

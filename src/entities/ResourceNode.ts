@@ -89,6 +89,13 @@ export class ResourceNode {
     return Math.abs(px - this.prop.x) < fp.w / 2 + halfW && Math.abs(py - (this.prop.y - fp.h / 2)) < fp.h / 2 + halfH;
   }
 
+  /** Restores a depleted state from a save. */
+  forceDepleted(respawnAt: number): void {
+    this.hp = 0;
+    this.respawnAt = respawnAt;
+    this.setDepleted(true);
+  }
+
   respawn(): void {
     this.hp = this.def.hp;
     this.setDepleted(false);

@@ -347,6 +347,187 @@ try {
       'return { ok, total, active: w.pickups.activeCount, pool: w.pickups.pool.length };',
   );
   check('pickup pool caps out and merges instead of losing items', spawned.ok === 450 && spawned.total === 450 && spawned.pool <= 400, JSON.stringify(spawned));
+  await evalW('for (const p of w.pickups.pool) if (p.active && p.image.x > 1700) { p.active = false; p.image.setVisible(false); }');
+
+  // ---------- M3: survival, crafting, structures, night, sleep/save, death ----------
+  const toPageXY = async (gx, gy) => {
+    const box = await page.locator('canvas').boundingBox();
+    return { x: box.x + (gx / 1280) * box.width, y: box.y + (gy / 720) * box.height };
+  };
+  const worldToScreen = (wx, wy) =>
+    evalW('const c = w.cameras.main; return { x: (arg[0] - c.worldView.x) * c.zoom, y: (arg[1] - c.worldView.y) * c.zoom };', [wx, wy]);
+  const clickWorld = async (wx, wy) => {
+    const sc = await worldToScreen(wx, wy);
+    const pp = await toPageXY(sc.x, sc.y);
+    await page.mouse.move(pp.x, pp.y);
+    await sleep(80);
+    await page.mouse.click(pp.x, pp.y);
+  };
+  const survival = () => evalW('return { ...w.survival.stats };');
+  const hasItem = (id) => evalW('return w.inventory.inventory.count(arg);', id);
+  const setHour = (h) => evalW('const c = w.clock; c.totalSeconds = (c.dayNumber - 1) * 480 + arg * 20;', h);
+  const craftRowButton = (recipeId) =>
+    evalW('const r = ui.crafting.rows.find((x) => x.recipe.id === arg); return { x: r.button.x, y: r.button.y };', recipeId);
+
+  await teleport(30 * 32 + 16, 20 * 32 + 30);
+  await evalW('w.inventory.inventory.restore([]); w.inventory.selected = 0; w.inventory.broadcast();');
+  await sleep(150);
+  const hud = await evalW('return !!ui.status && ui.status.bars.length === 4 && ui.status.bars[0].value.text !== "";');
+  check('survival bars shown', hud);
+
+  // Crafting blocked without materials, then succeeds.
+  await page.keyboard.press('KeyC');
+  await sleep(250);
+  const axeBtn = await craftRowButton('stone_axe');
+  let pt = await toPageXY(axeBtn.x, axeBtn.y);
+  await page.mouse.click(pt.x, pt.y);
+  await sleep(200);
+  const blockedToast = await evalW('return ui.toast.text.text;');
+  check('crafting without materials is blocked with feedback', /Missing materials/.test(blockedToast) && (await hasItem('stone_axe')) === 0, blockedToast);
+  await page.screenshot({ path: OUT + '/10-crafting.png' });
+  await evalW('w.inventory.add("stone", 3); w.inventory.add("wood", 2); w.inventory.add("plant_fiber", 2);');
+  await sleep(150);
+  await page.mouse.click(pt.x, pt.y);
+  await sleep(200);
+  const axeStack = await evalW('return w.inventory.inventory.snapshot().find((x) => x && x.item === "stone_axe");');
+  check('stone axe crafted with full durability', !!axeStack && axeStack.durability === 100, JSON.stringify(axeStack));
+  check('ingredients consumed', (await hasItem('stone')) === 0 && (await hasItem('wood')) === 0);
+  await page.keyboard.press('KeyC');
+  await sleep(150);
+
+  // Axe chops faster and wears.
+  const axeSlot = await evalW('return w.inventory.inventory.snapshot().findIndex((x) => x && x.item === "stone_axe");');
+  await evalW('w.inventory.inventory.move(arg, 0); w.inventory.selected = 0; w.inventory.broadcast();', axeSlot);
+  const tree2 = await nearestNode('jungle_tree');
+  await gatherAt(tree2, 800);
+  const axeAfter = await evalW('return w.inventory.inventory.get(0);');
+  const treeState2 = await nodeState(tree2.idx);
+  const axeDiag = await evalW('return { modal: w.modalOpen, ui: ui.modal, craft: ui.crafting.isOpen, panel: ui.panel.isOpen, building: w.building.active, busy: w.busy, target: w.interaction.current.kind, sel: w.inventory.selected, p: [w.player.x, w.player.y] };');
+  check('axe fells a tree in a few hits and wears', treeState2.depleted && axeAfter && axeAfter.durability < 100, JSON.stringify({ treeState2, axeAfter, axeDiag, tree2 }));
+
+  // Eating raw food: hunger up, small health penalty.
+  await evalW('w.survival.stats.hunger = 50; w.survival.stats.health = 80; w.inventory.add("bamboo_shoot", 1);');
+  const shootSlot = await evalW('return w.inventory.inventory.snapshot().findIndex((x) => x && x.item === "bamboo_shoot");');
+  await evalW('w.inventory.inventory.move(arg, 1); w.inventory.broadcast();', shootSlot);
+  await page.keyboard.press('Digit2');
+  await page.keyboard.press('KeyF');
+  await sleep(150);
+  const afterEat = await survival();
+  check('eating raw bamboo shoot: +food, -health', afterEat.hunger > 55 && afterEat.health < 80, JSON.stringify(afterEat));
+
+  // Sprinting drains stamina.
+  await teleport(30 * 32 + 16, 20 * 32 + 30);
+  await hold(['ShiftLeft', 'KeyD'], 1200);
+  const afterSprint = await survival();
+  check('sprinting drains stamina', afterSprint.stamina < 95, 'stamina=' + afterSprint.stamina.toFixed(1));
+
+  // Drinking raises thirst.
+  await evalW('w.survival.stats.thirst = 30;');
+  await teleport(22 * 32 + 16, 23 * 32 + 24);
+  await hold(['KeyS'], 600);
+  await hold(['KeyE'], 200);
+  check('drinking restores thirst', (await survival()).thirst > 60, 'thirst=' + (await survival()).thirst.toFixed(1));
+
+  // Placement: invalid on water / trees, valid on clear ground; campfire then shelter.
+  const invalid = await evalW(
+    'const r = new Phaser.Geom.Rectangle(0, 0, 1, 1); const t = w.gathering.nodes.find((n) => n.def.sprite === "tree" && !n.depleted);' +
+      'return { water: w.structures.canPlace("campfire", 22 * 32 + 16, 27 * 32 + 16, 22 * 32 + 16, 25 * 32, r), tree: w.structures.canPlace("campfire", t.prop.x, t.prop.y, t.prop.x, t.prop.y + 40, r) };',
+  );
+  check('placement rejects water and trees', invalid.water === false && invalid.tree === false, JSON.stringify(invalid));
+  await teleport(30 * 32 + 16, 20 * 32 + 30);
+  await sleep(100);
+  await evalW('w.inventory.add("campfire_kit", 1); w.inventory.add("bamboo_shelter_kit", 1);');
+  const kitSlot = await evalW('return w.inventory.inventory.snapshot().findIndex((x) => x && x.item === "campfire_kit");');
+  await evalW('w.inventory.inventory.move(arg, 2); w.inventory.broadcast();', kitSlot);
+  await page.keyboard.press('Digit3');
+  await page.keyboard.press('KeyF');
+  await sleep(150);
+  const pl = await player();
+  await clickWorld(pl.x + 46, pl.y + 2);
+  await sleep(200);
+  const fires = await evalW('return w.structures.list.filter((s) => s.def.id === "campfire").length;');
+  check('campfire placed with a valid click', fires === 1 && (await hasItem('campfire_kit')) === 0, 'fires=' + fires);
+  await page.screenshot({ path: OUT + '/11-campfire.png' });
+
+  // Cooking at the campfire via E → crafting panel → roast.
+  await evalW('w.inventory.add("bamboo_shoot", 1);');
+  await teleport(pl.x + 16, pl.y + 2);
+  await sleep(150);
+  await hold(['KeyD'], 80);
+  const cookPrompt = await evalW('return ui.prompt.text;');
+  await page.keyboard.press('KeyE');
+  await sleep(250);
+  const craftOpen = await evalW('return ui.crafting.isOpen;');
+  const roastBtn = await craftRowButton('roasted_bamboo_shoot');
+  pt = await toPageXY(roastBtn.x, roastBtn.y);
+  await page.mouse.click(pt.x, pt.y);
+  await sleep(200);
+  check('E at campfire opens cooking; roasting works', /Cook/.test(cookPrompt) && craftOpen && (await hasItem('roasted_bamboo_shoot')) === 1, cookPrompt);
+  await page.keyboard.press('Escape');
+  await sleep(150);
+
+  // Shelter: place, too early to sleep at day, then sleep at night → next morning + save.
+  const shelterSlot = await evalW('return w.inventory.inventory.snapshot().findIndex((x) => x && x.item === "bamboo_shelter_kit");');
+  await evalW('w.inventory.inventory.move(arg, 3); w.inventory.broadcast();', shelterSlot);
+  await teleport(30 * 32 + 16, 17 * 32 + 20);
+  await sleep(100);
+  await page.keyboard.press('Digit4');
+  await page.keyboard.press('KeyF');
+  await sleep(100);
+  const pl2 = await player();
+  await clickWorld(pl2.x, pl2.y - 50);
+  await sleep(200);
+  const shelters = await evalW('return w.structures.list.filter((s) => s.def.id === "bamboo_shelter").map((s) => ({ x: s.x, y: s.y }));');
+  check('bamboo shelter placed', shelters.length === 1, JSON.stringify(shelters));
+  await setHour(12);
+  await hold(['KeyW'], 200);
+  await page.keyboard.press('KeyE');
+  await sleep(200);
+  check('cannot sleep during the day', /Too early/.test(await evalW('return ui.toast.text.text;')));
+  await setHour(23);
+  await sleep(300);
+  check('night is dark (lighting overlay on)', await evalW('return w.lighting.visible;'));
+  await page.screenshot({ path: OUT + '/12-night.png' });
+  await evalW('w.inventory.add("torch", 1); const i = w.inventory.inventory.snapshot().findIndex((x) => x && x.item === "torch"); w.inventory.inventory.move(i, 4); w.inventory.broadcast();');
+  await page.keyboard.press('Digit5');
+  await sleep(1300);
+  const torch = await evalW('return w.inventory.inventory.get(4);');
+  check('held torch burns in the dark', !!torch && torch.durability < 170, JSON.stringify(torch));
+  await page.screenshot({ path: OUT + '/13-torch.png' });
+  const dayBefore = await evalW('return w.clock.dayNumber;');
+  await page.keyboard.press('KeyE');
+  await sleep(2600);
+  const afterSleep = await evalW('return { day: w.clock.dayNumber, hour: w.clock.hour, saved: localStorage.getItem("preychrov.save") !== null };');
+  check('sleeping skips to morning and saves', afterSleep.day === dayBefore + 1 && Math.abs(afterSleep.hour - 6) < 0.2 && afterSleep.saved, JSON.stringify(afterSleep));
+
+  // Continue restores the session after a reload.
+  const beforeReload = await evalW('return { day: w.clock.dayNumber, roast: w.inventory.inventory.count("roasted_bamboo_shoot"), axe: w.inventory.inventory.count("stone_axe"), structures: w.structures.list.length };');
+  await page.reload();
+  await waitScene('Menu', 15000);
+  await sleep(800);
+  const contEnabled = await page.evaluate(() => {
+    const m = window.__preyChrov.scene.getScene('Menu');
+    const b = m.children.list.filter((o) => typeof o.activate === 'function');
+    return b.some((x) => x.text?.text === 'Continue' || (x.list && x.list.some((t) => t.text === 'Continue' && x.enabled)));
+  });
+  check('menu offers Continue after saving', contEnabled);
+  await clickGame(640, 500);
+  await waitScene('World');
+  await sleep(700);
+  const afterLoad = await evalW('return { day: w.clock.dayNumber, roast: w.inventory.inventory.count("roasted_bamboo_shoot"), axe: w.inventory.inventory.count("stone_axe"), structures: w.structures.list.length };');
+  check('Continue restores day, inventory and structures', JSON.stringify(afterLoad) === JSON.stringify(beforeReload), JSON.stringify({ beforeReload, afterLoad }));
+
+  // Corrupt save never blank-screens: menu shows it as damaged.
+  // (checked in unit tests; here we verify death → GameOver instead)
+  await evalW('w.survival.stats.thirst = 0; w.survival.stats.hunger = 0; w.survival.stats.health = 0.5;');
+  const died = await waitScene('GameOver', 12000);
+  await sleep(700);
+  await page.screenshot({ path: OUT + '/14-gameover.png' });
+  check('starvation/dehydration can kill → GameOver', died);
+  await clickGame(640, 350);
+  check('GameOver → New journey restarts on day 1', (await waitScene('World')) && (await evalW('return w.clock.dayNumber;')) === 1);
+  await sleep(500);
+  await page.evaluate(() => localStorage.clear());
 
   await page.keyboard.press('F3');
   await sleep(400);

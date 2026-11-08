@@ -4,10 +4,13 @@ import { CAN_LOAD_SAVES, describeSaveStatus, inspectSave } from '../systems/Save
 import { TEX } from '../textures';
 import { Button } from '../ui/components/Button';
 import { ButtonList } from '../ui/components/ButtonList';
+import { ConfirmDialog } from '../ui/components/ConfirmDialog';
 import { mulberry32, randRange } from '../utils/random';
 
 export class Menu extends Phaser.Scene {
   private starting = false;
+  private dialog: ConfirmDialog | null = null;
+  private list: ButtonList | null = null;
 
   constructor() {
     super(SCENES.menu);
@@ -15,6 +18,7 @@ export class Menu extends Phaser.Scene {
 
   create(): void {
     this.starting = false;
+    this.dialog = null;
     this.input.enabled = true;
     const cx = GAME_WIDTH / 2;
     this.add.image(0, 0, TEX.menuBg).setOrigin(0);
@@ -39,8 +43,11 @@ export class Menu extends Phaser.Scene {
 
     const save = inspectSave();
     const canContinue = CAN_LOAD_SAVES && save.kind === 'valid';
-    const play = new Button(this, cx, 430, { label: 'Play', onActivate: () => this.startGame() });
-    const cont = new Button(this, cx, 500, { label: 'Continue', enabled: canContinue, onActivate: () => this.startGame() });
+    const play = new Button(this, cx, 430, {
+      label: canContinue ? 'New journey' : 'Play',
+      onActivate: () => (canContinue ? this.confirmNewJourney(save.kind === 'valid' ? save.day : 1) : this.startGame(false)),
+    });
+    const cont = new Button(this, cx, 500, { label: 'Continue', enabled: canContinue, onActivate: () => this.startGame(true) });
     const reason =
       save.kind === 'valid' && !CAN_LOAD_SAVES ? 'Loading saves is not available in this build yet.' : describeSaveStatus(save);
     this.add
@@ -50,10 +57,10 @@ export class Menu extends Phaser.Scene {
         color: CSS.textDim,
       })
       .setOrigin(0.5);
-    new ButtonList(this, [play, cont]);
+    this.list = new ButtonList(this, canContinue ? [cont, play] : [play, cont]);
 
     this.add
-      .text(cx, GAME_HEIGHT - 34, '↑/↓ to choose · Enter to select    ·    Milestone 1 prototype — all art is generated placeholder', {
+      .text(cx, GAME_HEIGHT - 34, '↑/↓ to choose · Enter to select    ·    Prototype build — all art is generated placeholder', {
         fontFamily: FONTS.ui,
         fontSize: '14px',
         color: CSS.textDim,
@@ -64,12 +71,28 @@ export class Menu extends Phaser.Scene {
     this.cameras.main.fadeIn(400, 4, 10, 9);
   }
 
-  private startGame(): void {
+  /** A new journey doesn't delete the save; it is only replaced the next time the player sleeps. */
+  private confirmNewJourney(day: number): void {
+    if (this.dialog) return;
+    this.list?.destroy();
+    this.dialog = new ConfirmDialog(
+      this,
+      `Start a new journey?\nYour saved journey (day ${day}) stays until you next sleep in a shelter.`,
+      'Start new',
+      (ok) => {
+        this.dialog = null;
+        if (ok) this.startGame(false);
+        else this.scene.restart();
+      },
+    );
+  }
+
+  private startGame(load: boolean): void {
     if (this.starting) return;
     this.starting = true;
     this.input.enabled = false;
     this.cameras.main.fadeOut(300, 4, 10, 9);
-    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => this.scene.start(SCENES.world));
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => this.scene.start(SCENES.world, { load }));
   }
 
   private spawnFireflies(): void {

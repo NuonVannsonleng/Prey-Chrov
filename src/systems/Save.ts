@@ -191,10 +191,9 @@ export function writeSave(data: SaveData, storage: KeyValueStorage | null = defa
 }
 
 /** Inspects the save slot without trusting its contents. Never throws. */
-export function inspectSave(storage: KeyValueStorage | null = defaultStorage()): SaveStatus {
+export function inspectSave(storage: KeyValueStorage | null = defaultStorage(), daySeconds = 480): SaveStatus {
   const r = readSave(storage);
   if ('error' in r) return r.error;
-  const daySeconds = 480;
   return { kind: 'valid', version: r.data.version, savedAt: r.data.savedAt, day: Math.floor(r.data.clockSeconds / daySeconds) + 1 };
 }
 

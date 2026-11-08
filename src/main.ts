@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { DEBUG_HOOKS, GAME_HEIGHT, GAME_WIDTH } from './config';
 import { Boot } from './scenes/Boot';
+import { GameOver } from './scenes/GameOver';
 import { Menu } from './scenes/Menu';
 import { Pause } from './scenes/Pause';
 import { Preload } from './scenes/Preload';
@@ -25,7 +26,7 @@ const game = new Phaser.Game({
   },
   input: { keyboard: true, mouse: true, touch: true },
   disableContextMenu: true,
-  scene: [Boot, Preload, Menu, World, UI, Pause],
+  scene: [Boot, Preload, Menu, World, UI, Pause, GameOver],
 });
 
 if (DEBUG_HOOKS) {

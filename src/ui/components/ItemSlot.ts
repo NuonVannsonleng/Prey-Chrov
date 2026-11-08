@@ -4,7 +4,7 @@ import { itemDef } from '../../data/gameData';
 import type { ItemStack } from '../../systems/Inventory';
 import { TEX } from '../../textures';
 
-export const RARITY_COLOR = { common: 0x4b6a5c, uncommon: 0x4fc2b4, rare: 0xe6b866 } as const;
+export const RARITY_COLOR = { common: 0x4b6a5c, uncommon: 0x4fc2b4, rare: 0xc58be0 } as const;
 
 export interface SlotState {
   selected?: boolean;
@@ -18,6 +18,7 @@ export class ItemSlot extends Phaser.GameObjects.Container {
   private readonly bg: Phaser.GameObjects.Graphics;
   private readonly icon: Phaser.GameObjects.Image;
   private readonly qty: Phaser.GameObjects.Text;
+  private readonly wear: Phaser.GameObjects.Graphics;
   private stack: Readonly<ItemStack> | null = null;
   private slotState: SlotState = {};
 
@@ -42,7 +43,8 @@ export class ItemSlot extends Phaser.GameObjects.Container {
         strokeThickness: 3,
       })
       .setOrigin(1, 1);
-    this.add([this.bg, this.icon, this.qty]);
+    this.wear = scene.add.graphics();
+    this.add([this.bg, this.icon, this.wear, this.qty]);
     if (keyLabel) {
       this.add(
         scene.add.text(-size / 2 + 5, -size / 2 + 3, keyLabel, {
@@ -91,6 +93,15 @@ export class ItemSlot extends Phaser.GameObjects.Container {
     g.lineStyle(this.slotState.selected ? 2.5 : 1.5, border, this.stack || this.slotState.selected ? 1 : 0.5);
     g.strokeRoundedRect(-s / 2, -s / 2, s, s, 6);
     this.icon.setAlpha(this.slotState.dimmed ? 0.35 : 1);
+    this.wear.clear();
+    if (this.stack?.durability !== undefined) {
+      const def = itemDef(this.stack.item);
+      const max = def.tool?.durability ?? def.light?.burnSeconds ?? this.stack.durability;
+      const frac = Math.max(0, Math.min(1, this.stack.durability / max));
+      const bw = s - 12;
+      this.wear.fillStyle(0x071210, 0.9).fillRect(-bw / 2, s / 2 - 7, bw, 4);
+      this.wear.fillStyle(frac > 0.5 ? 0x8ec26a : frac > 0.2 ? 0xe6b866 : 0xd9644a, 1).fillRect(-bw / 2, s / 2 - 7, bw * frac, 4);
+    }
     this.qty.setAlpha(this.slotState.dimmed ? 0.35 : 1);
   }
 }

@@ -9,6 +9,7 @@ export const SCENES = {
   world: 'World',
   ui: 'UI',
   pause: 'Pause',
+  gameOver: 'GameOver',
 } as const;
 
 export const FONTS = {
@@ -109,6 +110,17 @@ export const DEPTH = {
   ground: -1,
   targetRing: 0.5,
   canopy: 100000,
+  darkness: 140000,
   floatingText: 150000,
   debug: 200000,
 } as const;
+
+export const BUILD = {
+  /** Max distance from the player's feet to a placed structure's base. */
+  reach: 90,
+  validTint: 0x8ec26a,
+  invalidTint: 0xd9644a,
+} as const;
+
+/** Distance (px) within which a campfire counts as a crafting station / interaction target. */
+export const STATION_REACH = 70;

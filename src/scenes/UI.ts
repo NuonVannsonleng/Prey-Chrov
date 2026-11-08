@@ -4,20 +4,25 @@ import { itemDef } from '../data/gameData';
 import { gameEvents, onSceneEvent, type InventoryView, type PlayerTick } from '../systems/GameEvents';
 import { HOTBAR_SLOTS } from '../systems/Inventory';
 import { TEX } from '../textures';
+import { oncePerKeyEvent } from '../utils/keys';
 import { ConfirmDialog } from '../ui/components/ConfirmDialog';
 import { Toast } from '../ui/components/Toast';
+import { CraftingPanel } from '../ui/panels/CraftingPanel';
 import { Hotbar } from '../ui/panels/Hotbar';
 import { InventoryPanel } from '../ui/panels/InventoryPanel';
+import { StatusHud } from '../ui/panels/StatusHud';
 
 const HINTS = [
   ['WASD', 'Move'],
   ['Shift', 'Sprint'],
-  ['E / Click', 'Gather · drink'],
+  ['E / Click', 'Gather · drink · use'],
+  ['F', 'Eat / place held item'],
   ['1–6 / Wheel', 'Hotbar'],
   ['I', 'Inventory'],
+  ['C', 'Crafting'],
   ['Q', 'Drop one (Ctrl: stack)'],
-  ['Esc', 'Pause'],
-  ['H', 'Hide hints'],
+  ['Esc', 'Close / pause'],
+  ['H', 'Hide help'],
 ] as const;
 
 /** HUD overlay running in parallel with World. Owns UI-only input (panels, hotbar, pause request). */
@@ -28,6 +33,10 @@ export class UI extends Phaser.Scene {
   private debugText!: Phaser.GameObjects.Text;
   private hotbar!: Hotbar;
   private panel!: InventoryPanel;
+  private crafting!: CraftingPanel;
+  private status!: StatusHud;
+  private hurtFlash!: Phaser.GameObjects.Rectangle;
+  private placing = false;
   private toast!: Toast;
   private dialog: ConfirmDialog | null = null;
   private view: InventoryView | null = null;
@@ -35,6 +44,7 @@ export class UI extends Phaser.Scene {
   private debugOn = false;
   private lastDebugUpdate = 0;
   private lastTick: PlayerTick | null = null;
+  private readonly keyHandler = oncePerKeyEvent((e) => this.onKey(e));
 
   constructor() {
     super(SCENES.ui);
@@ -47,13 +57,14 @@ export class UI extends Phaser.Scene {
     this.dialog = null;
     this.view = null;
     this.modal = false;
+    this.placing = false;
     this.add.image(0, 0, TEX.vignette).setOrigin(0);
+    this.hurtFlash = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x8a1a10, 0).setOrigin(0);
 
     this.add
       .text(24, 20, 'ព្រៃជ្រៅ', { fontFamily: FONTS.title, fontSize: '22px', color: CSS.gold, padding: { top: 10, bottom: 6 } })
       .setAlpha(0.9);
-    this.add.text(24, 64, 'Test Grove', { fontFamily: FONTS.ui, fontSize: '15px', color: CSS.textDim });
-
+    this.status = new StatusHud(this);
     this.hints = this.buildHints();
     this.hotbar = new Hotbar(this);
     this.prompt = this.add
@@ -94,6 +105,7 @@ export class UI extends Phaser.Scene {
       (slot, qty) => this.requestDrop(slot, qty),
       () => this.dialog !== null,
     );
+    this.crafting = new CraftingPanel(this);
     this.toast = new Toast(this);
 
     onSceneEvent(this, 'player:tick', (t) => {
@@ -108,6 +120,23 @@ export class UI extends Phaser.Scene {
       this.view = view;
       this.hotbar.render(view);
       this.panel.render(view);
+      this.crafting.setInventory(view);
+    });
+    onSceneEvent(this, 'survival:tick', (t) => this.status.updateSurvival(t));
+    onSceneEvent(this, 'clock:tick', (c) => this.status.updateClock(c));
+    onSceneEvent(this, 'objectives:changed', (list) => this.status.updateObjectives(list));
+    onSceneEvent(this, 'craft:stations', (s) => this.crafting.setStations(s));
+    onSceneEvent(this, 'ui:open-crafting', () => {
+      if (!this.dialog && !this.panel.isOpen) this.setCrafting(true);
+    });
+    onSceneEvent(this, 'placement:mode', (on) => {
+      this.placing = on;
+      if (on) this.toast.show('Click (or F) to build on a green spot · right-click / Esc to cancel', 'info');
+    });
+    onSceneEvent(this, 'player:hurt', () => {
+      this.tweens.killTweensOf(this.hurtFlash);
+      this.hurtFlash.setAlpha(0.32);
+      this.tweens.add({ targets: this.hurtFlash, alpha: 0, duration: 650, ease: 'Sine.easeOut' });
     });
     onSceneEvent(this, 'interact:prompt', (text) => this.prompt.setText(text).setVisible(text !== ''));
     onSceneEvent(this, 'toast', ({ text, tone }) => this.toast.show(text, tone));
@@ -117,10 +146,10 @@ export class UI extends Phaser.Scene {
     });
 
     const kb = this.input.keyboard;
-    kb?.on('keydown', this.onKey, this);
+    kb?.on('keydown', this.keyHandler);
     this.input.on(Phaser.Input.Events.POINTER_WHEEL, this.onWheel, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      kb?.off('keydown', this.onKey, this);
+      kb?.off('keydown', this.keyHandler);
       this.input.off(Phaser.Input.Events.POINTER_WHEEL, this.onWheel, this);
       if (this.modal) gameEvents.emit('ui:modal', false);
     });
@@ -143,17 +172,26 @@ export class UI extends Phaser.Scene {
   private onKey(event: KeyboardEvent): void {
     if (event.code === 'Escape') {
       if (this.dialog) this.dialog.cancel();
+      else if (this.crafting.isOpen) this.setCrafting(false);
       else if (this.panel.isOpen) this.setPanel(false);
+      else if (this.placing) gameEvents.emit('placement:cancel');
       else gameEvents.emit('game:pause-request');
       return;
     }
     if (event.code === 'KeyH') {
       this.hints.setVisible(!this.hints.visible);
+      this.status.setObjectivesVisible(this.hints.visible);
       return;
     }
     if (this.dialog) return;
     if (event.code === 'KeyI') {
+      if (this.crafting.isOpen) this.setCrafting(false);
       this.setPanel(!this.panel.isOpen);
+      return;
+    }
+    if (event.code === 'KeyC') {
+      if (this.panel.isOpen) this.setPanel(false);
+      this.setCrafting(!this.crafting.isOpen);
       return;
     }
     if (event.code === 'KeyQ') {
@@ -190,6 +228,12 @@ export class UI extends Phaser.Scene {
     this.syncModal();
   }
 
+  private setCrafting(open: boolean): void {
+    if (open) this.crafting.open();
+    else this.crafting.close();
+    this.syncModal();
+  }
+
   private setPanel(open: boolean): void {
     if (open) this.panel.open();
     else this.panel.close();
@@ -197,15 +241,15 @@ export class UI extends Phaser.Scene {
   }
 
   private syncModal(): void {
-    const modal = this.panel.isOpen || this.dialog !== null;
+    const modal = this.panel.isOpen || this.crafting.isOpen || this.dialog !== null;
     if (modal === this.modal) return;
     this.modal = modal;
     gameEvents.emit('ui:modal', modal);
   }
 
   private buildHints(): Phaser.GameObjects.Container {
-    const lineH = 22;
-    const w = 250;
+    const lineH = 20;
+    const w = 262;
     const h = HINTS.length * lineH + 18;
     const c = this.add.container(20, GAME_HEIGHT - h - 20);
     const bg = this.add.graphics();
@@ -216,8 +260,8 @@ export class UI extends Phaser.Scene {
     c.add(bg);
     HINTS.forEach(([key, action], i) => {
       const y = 9 + i * lineH;
-      c.add(this.add.text(14, y, key, { fontFamily: FONTS.ui, fontSize: '14px', fontStyle: '700', color: CSS.gold }));
-      c.add(this.add.text(112, y, action, { fontFamily: FONTS.ui, fontSize: '14px', color: CSS.text }));
+      c.add(this.add.text(14, y, key, { fontFamily: FONTS.ui, fontSize: '13px', fontStyle: '700', color: CSS.gold }));
+      c.add(this.add.text(108, y, action, { fontFamily: FONTS.ui, fontSize: '13px', color: CSS.text }));
     });
     return c;
   }

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { oncePerKeyEvent } from '../../utils/keys';
 import type { Button } from './Button';
 
 /**
@@ -7,6 +8,7 @@ import type { Button } from './Button';
  */
 export class ButtonList {
   private index = -1;
+  private readonly keyHandler = oncePerKeyEvent((e) => this.onKey(e));
   private readonly kb: Phaser.Input.Keyboard.KeyboardPlugin | null;
 
   constructor(
@@ -19,13 +21,13 @@ export class ButtonList {
     }
     this.focus(this.buttons.findIndex((b) => b.enabled));
     if (!this.kb) return;
-    this.kb.on('keydown', this.onKey, this);
+    this.kb.on('keydown', this.keyHandler);
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, this.destroy, this);
   }
 
   /** Removes key listeners; call when the buttons go away before the scene does. */
   destroy(): void {
-    this.kb?.off('keydown', this.onKey, this);
+    this.kb?.off('keydown', this.keyHandler);
     this.scene.events.off(Phaser.Scenes.Events.SHUTDOWN, this.destroy, this);
   }
 

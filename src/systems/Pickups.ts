@@ -8,7 +8,7 @@ export interface PickupHooks {
   /** Free capacity for this item in the player's inventory. */
   capacityFor(item: string): number;
   /** Adds to inventory; returns the amount that did NOT fit. */
-  add(item: string, qty: number): number;
+  add(item: string, qty: number, durability?: number): number;
   onCollected(item: string, qty: number, x: number, y: number): void;
   onInventoryFull(): void;
 }
@@ -25,6 +25,7 @@ interface Pickup {
   armed: boolean;
   /** Game time when the spawn pop finishes; before that the tween owns the position. */
   settleAt: number;
+  durability: number | undefined;
   baseY: number;
   phase: number;
 }
@@ -55,6 +56,7 @@ export class Pickups {
       collectableAt: 0,
       armed: true,
       settleAt: 0,
+      durability: undefined,
       baseY: 0,
       phase: 0,
     };
@@ -89,6 +91,7 @@ export class Pickups {
     delayMs = 0,
     scatter: number = PICKUP.scatter,
     droppedByPlayer = false,
+    durability?: number,
   ): boolean {
     if (qty <= 0) return false;
     let p = this.pool.find((c) => !c.active);
@@ -97,7 +100,7 @@ export class Pickups {
       let same: Pickup | null = null;
       let best = Infinity;
       for (const c of this.pool) {
-        if (!c.active || c.claimed || c.item !== item) continue;
+        if (durability !== undefined || !c.active || c.claimed || c.item !== item || c.durability !== undefined) continue;
         const d = Math.hypot(c.image.x - x, c.baseY - y);
         if (d < best) {
           best = d;
@@ -117,6 +120,7 @@ export class Pickups {
     p.collectableAt = now + delayMs;
     p.armed = !droppedByPlayer;
     p.settleAt = now + 280;
+    p.durability = durability;
     p.baseY = ty;
     p.phase = Math.random() * Math.PI * 2;
     this.scene.tweens.killTweensOf(p.image);
@@ -168,8 +172,19 @@ export class Pickups {
     }
   }
 
+  /** Ground items for saving. */
+  serialize(): Array<{ item: string; qty: number; x: number; y: number; durability?: number }> {
+    const out: Array<{ item: string; qty: number; x: number; y: number; durability?: number }> = [];
+    for (const p of this.pool) {
+      if (!p.active || p.claimed) continue;
+      const base = { item: p.item, qty: p.qty, x: Math.round(p.image.x), y: Math.round(p.baseY) };
+      out.push(p.durability === undefined ? base : { ...base, durability: p.durability });
+    }
+    return out;
+  }
+
   private collect(p: Pickup): void {
-    const leftover = this.hooks.add(p.item, p.qty);
+    const leftover = this.hooks.add(p.item, p.qty, p.durability);
     const taken = p.qty - leftover;
     if (taken > 0) this.hooks.onCollected(p.item, taken, p.image.x, p.baseY);
     if (leftover > 0) {

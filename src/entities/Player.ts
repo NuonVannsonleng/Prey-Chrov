@@ -70,13 +70,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
    * Reads input, smooths velocity, updates facing/animation. dt and now in ms (game time).
    * With `inputEnabled` false the player glides to a stop (used while panels are open).
    */
-  step(keys: PlayerKeys, dtMs: number, now: number, inputEnabled = true): void {
+  step(keys: PlayerKeys, dtMs: number, now: number, inputEnabled = true, sprintAllowed = true): void {
     const inp = this.moveInput;
     inp.up = inputEnabled && keys.up.isDown;
     inp.down = inputEnabled && keys.down.isDown;
     inp.left = inputEnabled && keys.left.isDown;
     inp.right = inputEnabled && keys.right.isDown;
-    inp.sprint = inputEnabled && keys.sprint.isDown;
+    inp.sprint = inputEnabled && sprintAllowed && keys.sprint.isDown;
 
     targetVelocity(inp, PLAYER, this.target);
     this.current.x = this.body.velocity.x;

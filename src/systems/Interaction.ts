@@ -2,10 +2,12 @@ import Phaser from 'phaser';
 import { DEPTH, GATHER, TILE_SIZE } from '../config';
 import type { ResourceNode } from '../entities/ResourceNode';
 import { TEX, WATER_TILES } from '../textures';
+import type { Structure } from './Structures';
 
 export type InteractTarget =
   | { kind: 'node'; node: ResourceNode; x: number; y: number }
   | { kind: 'water'; x: number; y: number }
+  | { kind: 'structure'; structure: Structure; x: number; y: number }
   | { kind: 'none'; x: number; y: number };
 
 /** How strongly facing direction is preferred when choosing between nearby targets (px of distance). */
@@ -18,6 +20,7 @@ const FACING_BIAS = 14;
 export class Interaction {
   private readonly nodeTarget: { kind: 'node'; node: ResourceNode; x: number; y: number };
   private readonly waterTarget = { kind: 'water' as const, x: 0, y: 0 };
+  private structureTarget: { kind: 'structure'; structure: Structure; x: number; y: number } | null = null;
   private readonly noTarget = { kind: 'none' as const, x: 0, y: 0 };
   private readonly ring: Phaser.GameObjects.Image;
   current: InteractTarget = this.noTarget;
@@ -26,6 +29,7 @@ export class Interaction {
     scene: Phaser.Scene,
     private readonly nodes: readonly ResourceNode[],
     private readonly ground: Phaser.Tilemaps.TilemapLayer,
+    private readonly structures: readonly Structure[],
   ) {
     const first = nodes[0];
     if (!first) throw new Error('Interaction needs at least one resource node');
@@ -55,6 +59,27 @@ export class Interaction {
         this.nodeTarget.x = n.targetX;
         this.nodeTarget.y = n.prop.y;
         best = this.nodeTarget;
+      }
+    }
+
+    // Structures with an interaction (campfire: cook, shelter: sleep).
+    for (const st of this.structures) {
+      if (!st.def.interaction) continue;
+      const tx = st.x;
+      const ty = st.y - Math.min(10, st.def.footprint.h);
+      const dx = tx - cx;
+      const dy = ty - cy;
+      const d = Math.hypot(dx, dy);
+      if (d > GATHER.reach + st.def.footprint.w / 2) continue;
+      const facing = d > 0 ? (dx * fx + dy * fy) / d : 1;
+      const score = d - st.def.footprint.w / 2 - facing * FACING_BIAS;
+      if (score < bestScore) {
+        bestScore = score;
+        this.structureTarget ??= { kind: 'structure', structure: st, x: 0, y: 0 };
+        this.structureTarget.structure = st;
+        this.structureTarget.x = st.x;
+        this.structureTarget.y = st.y;
+        best = this.structureTarget;
       }
     }
 

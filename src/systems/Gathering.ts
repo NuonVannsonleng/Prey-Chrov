@@ -54,8 +54,14 @@ export class Gathering {
    * Applies one hit. On depletion, rolls loot deterministically from (seed, node id, harvest count)
    * so the same node always yields the same drops for the same harvest.
    */
-  hit(node: ResourceNode, tool: ToolKind, now: number, fromX: number): { result: HitResult; loot: ItemStack[] } {
-    const result = node.hit(tool, GATHER.handDamage);
+  hit(
+    node: ResourceNode,
+    tool: ToolKind,
+    now: number,
+    fromX: number,
+    baseDamage: number = GATHER.handDamage,
+  ): { result: HitResult; loot: ItemStack[] } {
+    const result = node.hit(tool, baseDamage);
     if (result === 'ignored' || result === 'needs-tool') return { result, loot: [] };
 
     this.feedback(node, fromX, now);

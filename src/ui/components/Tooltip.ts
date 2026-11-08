@@ -32,7 +32,13 @@ export class Tooltip extends Phaser.GameObjects.Container {
     const def = itemDef(stack.item);
     this.title.setText(def.nameKm ? `${def.name}  ·  ${def.nameKm}` : def.name);
     const rarity = def.rarity === 'common' ? '' : `${def.rarity[0]?.toUpperCase()}${def.rarity.slice(1)} · `;
-    this.bodyText.setText(`${def.description}\n\n${rarity}${stack.qty} / ${def.stackSize} in stack`);
+    const extra: string[] = [];
+    if (def.food) extra.push(`Food +${def.food.hunger} · Water +${def.food.thirst}${def.food.health ? ` · Health ${def.food.health > 0 ? '+' : ''}${def.food.health}` : ''} (F to eat)`);
+    if (def.tool && stack.durability !== undefined) extra.push(`Durability ${Math.ceil(stack.durability)} / ${def.tool.durability}`);
+    if (def.light && stack.durability !== undefined) extra.push(`Burns ${Math.ceil(stack.durability)}s more in the dark`);
+    if (def.places) extra.push('F to place');
+    const tail = extra.length ? `\n${extra.join('\n')}` : '';
+    this.bodyText.setText(`${def.description}\n\n${rarity}${stack.qty} / ${def.stackSize} in stack${tail}`);
     const h = this.bodyText.y + this.bodyText.height + 12;
     this.bg
       .clear()
