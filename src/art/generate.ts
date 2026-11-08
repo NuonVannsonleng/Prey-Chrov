@@ -19,54 +19,10 @@ import {
   type PlayerPose,
 } from '../textures';
 import { mulberry32, randInt, randRange } from '../utils/random';
+import { createCanvasTexture, ellipse, hex, px, shade, type Ctx } from './canvas';
+import { generateGatheringTextures } from './gathering';
 
 /** Draws every placeholder texture on canvases. Keys and frame layout live in textures.ts. */
-
-type Ctx = CanvasRenderingContext2D;
-
-function hex(color: number, alpha = 1): string {
-  const r = (color >> 16) & 0xff;
-  const g = (color >> 8) & 0xff;
-  const b = color & 0xff;
-  return alpha >= 1 ? `rgb(${r},${g},${b})` : `rgba(${r},${g},${b},${alpha})`;
-}
-
-function shade(color: number, amount: number): number {
-  const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
-  const r = clamp(((color >> 16) & 0xff) * (1 + amount));
-  const g = clamp(((color >> 8) & 0xff) * (1 + amount));
-  const b = clamp((color & 0xff) * (1 + amount));
-  return (r << 16) | (g << 8) | b;
-}
-
-function createCanvasTexture(
-  scene: Phaser.Scene,
-  key: string,
-  width: number,
-  height: number,
-  draw: (ctx: Ctx) => void,
-): Phaser.Textures.CanvasTexture {
-  if (scene.textures.exists(key)) scene.textures.remove(key);
-  const tex = scene.textures.createCanvas(key, width, height);
-  if (!tex) throw new Error(`Could not create canvas texture ${key}`);
-  const ctx = tex.getContext();
-  ctx.imageSmoothingEnabled = false;
-  draw(ctx);
-  tex.refresh();
-  return tex;
-}
-
-function px(ctx: Ctx, x: number, y: number, w: number, h: number, color: string): void {
-  ctx.fillStyle = color;
-  ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
-}
-
-function ellipse(ctx: Ctx, cx: number, cy: number, rx: number, ry: number, color: string): void {
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-  ctx.fill();
-}
 
 // ---------- Ground tiles ----------
 
@@ -139,7 +95,33 @@ function generateTiles(scene: Phaser.Scene): void {
     drawPath(ctx, TILE.path * TILE_SIZE, rng);
     drawPathEdge(ctx, TILE.pathEdge * TILE_SIZE, rng);
     drawLeafLitter(ctx, TILE.leafLitter * TILE_SIZE, rng);
+    drawShore(ctx, TILE.shore * TILE_SIZE, rng);
+    drawWater(ctx, TILE.waterA * TILE_SIZE, 0);
+    drawWater(ctx, TILE.waterB * TILE_SIZE, 1);
   });
+}
+
+function drawShore(ctx: Ctx, ox: number, rng: () => number): void {
+  const base = 0x3b3b2a;
+  px(ctx, ox, 0, TILE_SIZE, TILE_SIZE, hex(base));
+  speckle(ctx, ox, rng, base, 70, 0.22);
+  for (let i = 0; i < 6; i++) px(ctx, ox + randInt(rng, 1, 28), randInt(rng, 1, 29), 3, 1, hex(0x2c3f3a));
+  blades(ctx, ox, rng, 0x3e5a30, 4);
+}
+
+/** Two water frames with shifted ripples, swapped at runtime for a gentle animation. */
+function drawWater(ctx: Ctx, ox: number, phase: number): void {
+  px(ctx, ox, 0, TILE_SIZE, TILE_SIZE, hex(0x163a40));
+  const rng = mulberry32(6100);
+  for (let i = 0; i < 40; i++) {
+    const c = shade(0x163a40, randRange(rng, -0.25, 0.15));
+    px(ctx, ox + randInt(rng, 0, 29), randInt(rng, 0, 31), randInt(rng, 2, 3), 1, hex(c));
+  }
+  for (let i = 0; i < 5; i++) {
+    const x = randInt(rng, 0, 27);
+    const y = (randInt(rng, 0, 31) + phase * 3) % 32;
+    px(ctx, ox + x, y, 4, 1, hex(0x4fc2b4, 0.3 + 0.2 * ((i + phase) % 2)));
+  }
 }
 
 // ---------- Player ----------
@@ -172,6 +154,8 @@ function poseOffsets(pose: PlayerPose): { legL: number; legR: number; armL: numb
       return { legL: 1, legR: -2, armL: -1, armR: 1, bob: -1 };
     case 'breathe':
       return { legL: 0, legR: 0, armL: 0, armR: 0, bob: 1 };
+    case 'act':
+      return { legL: 0, legR: -1, armL: 1, armR: -5, bob: 0 };
     default:
       return { legL: 0, legR: 0, armL: 0, armR: 0, bob: 0 };
   }
@@ -230,9 +214,14 @@ function drawPlayerSide(ctx: Ctx, ox: number, oy: number, pose: PlayerPose): voi
   px(ctx, ox + 12, oy + 15 + b, 8, 9, P.shirt);
   px(ctx, ox + 12, oy + 22 + b, 8, 2, P.shirtShade);
   // arm swing
-  const swing = pose === 'stepA' ? 2 : pose === 'stepB' ? -2 : 0;
-  px(ctx, ox + 15 + swing, oy + 16 + b, 3, 7, P.shirtShade);
-  px(ctx, ox + 15 + swing, oy + 22 + b, 3, 2, P.skinShade);
+  if (pose === 'act') {
+    px(ctx, ox + 16, oy + 17 + b, 8, 3, P.shirtShade);
+    px(ctx, ox + 24, oy + 17 + b, 3, 3, P.skinShade);
+  } else {
+    const swing = pose === 'stepA' ? 2 : pose === 'stepB' ? -2 : 0;
+    px(ctx, ox + 15 + swing, oy + 16 + b, 3, 7, P.shirtShade);
+    px(ctx, ox + 15 + swing, oy + 22 + b, 3, 2, P.skinShade);
+  }
   drawKrama(ctx, ox + 12, oy + 14 + b, 8);
   // head (facing right)
   ellipse(ctx, ox + 16.5, oy + 10 + b, 4.8, 5, P.skin);
@@ -548,7 +537,20 @@ export function generateAllTextures(scene: Phaser.Scene): void {
   generateVignette(scene);
   generateGlow(scene);
   generateMenuBackground(scene);
+  generateGatheringTextures(scene);
 
-  const crisp = [TEX.tiles, TEX.player, TEX.trunk, TEX.canopy, TEX.rock, TEX.fern];
+  const crisp = [
+    TEX.tiles,
+    TEX.player,
+    TEX.trunk,
+    TEX.canopy,
+    TEX.rock,
+    TEX.fern,
+    TEX.bamboo,
+    TEX.bush,
+    TEX.depleted,
+    TEX.icons,
+    TEX.chip,
+  ];
   for (const key of crisp) scene.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
 }

@@ -7,19 +7,26 @@ import type { Button } from './Button';
  */
 export class ButtonList {
   private index = -1;
+  private readonly kb: Phaser.Input.Keyboard.KeyboardPlugin | null;
 
   constructor(
-    scene: Phaser.Scene,
+    private readonly scene: Phaser.Scene,
     private readonly buttons: Button[],
   ) {
-    const kb = scene.input.keyboard;
-    if (!kb) return;
-    kb.on('keydown', this.onKey, this);
+    this.kb = scene.input.keyboard;
     for (const b of buttons) {
       b.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => this.focus(this.buttons.indexOf(b)));
     }
-    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => kb.off('keydown', this.onKey, this));
     this.focus(this.buttons.findIndex((b) => b.enabled));
+    if (!this.kb) return;
+    this.kb.on('keydown', this.onKey, this);
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, this.destroy, this);
+  }
+
+  /** Removes key listeners; call when the buttons go away before the scene does. */
+  destroy(): void {
+    this.kb?.off('keydown', this.onKey, this);
+    this.scene.events.off(Phaser.Scenes.Events.SHUTDOWN, this.destroy, this);
   }
 
   private onKey(event: KeyboardEvent): void {

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type { ItemStack } from './Inventory';
 
 export interface PlayerTick {
   x: number;
@@ -7,10 +8,39 @@ export interface PlayerTick {
   sprinting: boolean;
 }
 
+export interface InventoryView {
+  slots: ReadonlyArray<Readonly<ItemStack> | null>;
+  selected: number;
+}
+
+/** UI → World requests; World owns the inventory and answers with 'inventory:changed'. */
+export type InventoryRequest =
+  | { type: 'move'; from: number; to: number }
+  | { type: 'split'; slot: number }
+  | { type: 'drop'; slot: number; qty: number }
+  | { type: 'select'; slot: number };
+
+export type ToastTone = 'info' | 'warn';
+
 /** Every cross-system event and its payload. Add new events here first. */
 export interface GameEventMap {
   'player:tick': PlayerTick;
   'debug:toggle': boolean;
+  /** UI asks World to pause (Esc with no panel open). */
+  'game:pause-request': void;
+  /** UI finished creating; World replies with current state. */
+  'ui:ready': void;
+  /** A modal panel (inventory, dialog) opened or closed; World ignores gameplay input while open. */
+  'ui:modal': boolean;
+  'inventory:changed': InventoryView;
+  'inventory:request': InventoryRequest;
+  /** Contextual interaction prompt, '' when nothing is in reach. */
+  'interact:prompt': string;
+  'toast': { text: string; tone: ToastTone };
+  /** A pickup was in reach but the inventory had no room for it. */
+  'inventory:full': void;
+  /** Player drank water. Thirst arrives in M3 and will listen to this. */
+  'player:drank': void;
 }
 
 type Handler<T> = [T] extends [void] ? () => void : (payload: T) => void;

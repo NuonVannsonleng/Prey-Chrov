@@ -49,6 +49,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private readonly next: Vec2 = { x: 0, y: 0 };
   private facing: PlayerDir = 'down';
   private animKey = '';
+  private actUntil = 0;
+  /** Unit vector the player is facing (used for interaction targeting). */
+  readonly facingVec: Vec2 = { x: 0, y: 1 };
   sprinting = false;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
@@ -63,14 +66,17 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.playAnim(`player-idle-down`);
   }
 
-  /** Reads input, smooths velocity, updates facing/animation. dt in ms. */
-  step(keys: PlayerKeys, dtMs: number): void {
+  /**
+   * Reads input, smooths velocity, updates facing/animation. dt and now in ms (game time).
+   * With `inputEnabled` false the player glides to a stop (used while panels are open).
+   */
+  step(keys: PlayerKeys, dtMs: number, now: number, inputEnabled = true): void {
     const inp = this.moveInput;
-    inp.up = keys.up.isDown;
-    inp.down = keys.down.isDown;
-    inp.left = keys.left.isDown;
-    inp.right = keys.right.isDown;
-    inp.sprint = keys.sprint.isDown;
+    inp.up = inputEnabled && keys.up.isDown;
+    inp.down = inputEnabled && keys.down.isDown;
+    inp.left = inputEnabled && keys.left.isDown;
+    inp.right = inputEnabled && keys.right.isDown;
+    inp.sprint = inputEnabled && keys.sprint.isDown;
 
     targetVelocity(inp, PLAYER, this.target);
     this.current.x = this.body.velocity.x;
@@ -81,13 +87,17 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const moving = this.target.x !== 0 || this.target.y !== 0;
     this.sprinting = moving && inp.sprint;
     if (moving) {
-      if (Math.abs(this.target.x) > Math.abs(this.target.y)) {
-        this.facing = 'side';
-        this.setFlipX(this.target.x < 0);
-      } else {
-        this.facing = this.target.y < 0 ? 'up' : 'down';
-        this.setFlipX(false);
-      }
+      const len = Math.hypot(this.target.x, this.target.y);
+      this.facingVec.x = this.target.x / len;
+      this.facingVec.y = this.target.y / len;
+      this.updateFacing(this.target.x, this.target.y);
+    }
+
+    if (now < this.actUntil) {
+      this.animKey = '';
+      this.anims.stop();
+      this.setFrame(playerFrameName(this.facing, 'act'));
+    } else if (moving) {
       this.playAnim(`player-walk-${this.facing}`);
       this.anims.timeScale = this.sprinting ? PLAYER.sprintFrameRate / PLAYER.walkFrameRate : 1;
     } else {
@@ -97,6 +107,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setDepth(this.y);
   }
 
+  /** Shows the swing/reach pose toward a world point for `durationMs`. */
+  swing(towardX: number, towardY: number, now: number, durationMs: number): void {
+    const dx = towardX - this.x;
+    const dy = towardY - (this.y - 8);
+    const len = Math.hypot(dx, dy);
+    if (len > 0.001) {
+      this.facingVec.x = dx / len;
+      this.facingVec.y = dy / len;
+      this.updateFacing(dx, dy);
+    }
+    this.actUntil = now + durationMs;
+  }
+
   halt(): void {
     this.body.setVelocity(0, 0);
     this.sprinting = false;
@@ -104,6 +127,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   get speed(): number {
     return Math.hypot(this.body.velocity.x, this.body.velocity.y);
+  }
+
+  private updateFacing(dx: number, dy: number): void {
+    if (Math.abs(dx) > Math.abs(dy)) {
+      this.facing = 'side';
+      this.setFlipX(dx < 0);
+    } else {
+      this.facing = dy < 0 ? 'up' : 'down';
+      this.setFlipX(false);
+    }
   }
 
   private playAnim(key: string): void {

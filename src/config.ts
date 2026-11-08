@@ -75,3 +75,38 @@ export const CANOPY = {
 export const DEBUG_HOOKS =
   import.meta.env.DEV ||
   (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug'));
+
+export const GATHER = {
+  /** Max distance (px) from the player's centre to a node's interaction point. */
+  reach: 38,
+  hitCooldownMs: 350,
+  handDamage: 1,
+  /** How long the act pose shows after a swing. */
+  swingMs: 180,
+  /** Retry delay if the player stands where a node wants to respawn. */
+  respawnRetryMs: 2000,
+} as const;
+
+export const PICKUP = {
+  poolSize: 250,
+  magnetRadius: 44,
+  collectRadius: 12,
+  magnetSpeed: 220,
+  /** Freshly dropped items can't be re-collected for this long. */
+  dropDelayMs: 1400,
+  fullWarnCooldownMs: 1600,
+  scatter: 14,
+} as const;
+
+export const WATER = {
+  frameMs: 700,
+  drinkCooldownMs: 600,
+} as const;
+
+export const DEPTH = {
+  ground: -1,
+  targetRing: 0.5,
+  canopy: 100000,
+  floatingText: 150000,
+  debug: 200000,
+} as const;
