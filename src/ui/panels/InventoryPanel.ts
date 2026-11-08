@@ -7,10 +7,11 @@ import { TEX } from '../../textures';
 import { ItemSlot } from '../components/ItemSlot';
 import { Tooltip } from '../components/Tooltip';
 
-const COLS = 5;
-const SLOT = 60;
+/** Backpack columns; the hotbar row above holds HOTBAR_SLOTS slots, centred. */
+const COLS = 7;
+const SLOT = 58;
 const GAP = 8;
-const HOTBAR_GAP = 14;
+const HOTBAR_GAP = 34;
 const PAD = 24;
 const DRAG_THRESHOLD = 6;
 
@@ -34,9 +35,9 @@ export class InventoryPanel {
     scene: Phaser.Scene,
     private readonly requestDrop: (slot: number, qty: number) => void,
   ) {
-    const rows = Math.ceil(INVENTORY_SLOTS / COLS);
+    const packRows = Math.ceil((INVENTORY_SLOTS - HOTBAR_SLOTS) / COLS);
     const gridW = COLS * SLOT + (COLS - 1) * GAP;
-    const gridH = rows * SLOT + (rows - 1) * GAP + HOTBAR_GAP;
+    const gridH = (packRows + 1) * SLOT + packRows * GAP + HOTBAR_GAP;
     const w = gridW + PAD * 2;
     const h = gridH + 132;
     const left = GAME_WIDTH / 2 - w / 2;
@@ -56,6 +57,11 @@ export class InventoryPanel {
     const hotbarLabel = scene.add
       .text(left + w - PAD, top + 26, 'Top row = hotbar (1–6)', { fontFamily: FONTS.ui, fontSize: '13px', color: CSS.gold })
       .setOrigin(1, 0);
+    const packLabel = scene.add.text(left + PAD, top + 72 + SLOT + 10, 'Backpack', {
+      fontFamily: FONTS.ui,
+      fontSize: '13px',
+      color: CSS.textDim,
+    });
     const help = scene.add
       .text(GAME_WIDTH / 2, top + h - 30, 'Drag to move · Shift+click to split · Drag outside to drop · I / Esc to close', {
         fontFamily: FONTS.ui,
@@ -64,15 +70,16 @@ export class InventoryPanel {
       })
       .setOrigin(0.5);
 
-    this.root = scene.add.container(0, 0, [backdrop, panel, title, hotbarLabel, help]).setDepth(500);
+    this.root = scene.add.container(0, 0, [backdrop, panel, title, hotbarLabel, packLabel, help]).setDepth(500);
     const gx = left + PAD + SLOT / 2;
     const gy = top + 72 + SLOT / 2;
+    const hotbarX = GAME_WIDTH / 2 - ((HOTBAR_SLOTS - 1) * (SLOT + GAP)) / 2;
     for (let i = 0; i < INVENTORY_SLOTS; i++) {
-      const col = i % COLS;
-      const row = Math.floor(i / COLS);
-      // First 6 slots span row 0 (5) + first of row 1; keep the grid uniform and mark hotbar slots instead.
-      const y = gy + row * (SLOT + GAP) + (row > 0 ? HOTBAR_GAP : 0);
-      const slot = new ItemSlot(scene, gx + col * (SLOT + GAP), y, SLOT, i, i < HOTBAR_SLOTS ? String(i + 1) : undefined);
+      const hotbar = i < HOTBAR_SLOTS;
+      const k = i - HOTBAR_SLOTS;
+      const x = hotbar ? hotbarX + i * (SLOT + GAP) : gx + (k % COLS) * (SLOT + GAP);
+      const y = hotbar ? gy : gy + SLOT + HOTBAR_GAP + Math.floor(k / COLS) * (SLOT + GAP);
+      const slot = new ItemSlot(scene, x, y, SLOT, i, hotbar ? String(i + 1) : undefined);
       this.slots.push(slot);
       this.root.add(slot);
     }
