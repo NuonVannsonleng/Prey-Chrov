@@ -1,0 +1,58 @@
+import Phaser from 'phaser';
+
+export interface PlayerTick {
+  x: number;
+  y: number;
+  speed: number;
+  sprinting: boolean;
+}
+
+/** Every cross-system event and its payload. Add new events here first. */
+export interface GameEventMap {
+  'player:tick': PlayerTick;
+  'debug:toggle': boolean;
+}
+
+type Handler<T> = [T] extends [void] ? () => void : (payload: T) => void;
+
+/** Small typed wrapper over a Phaser EventEmitter shared by all scenes. */
+class TypedEventBus {
+  private readonly emitter = new Phaser.Events.EventEmitter();
+
+  on<K extends keyof GameEventMap>(event: K, fn: Handler<GameEventMap[K]>, context?: unknown): void {
+    this.emitter.on(event, fn, context);
+  }
+
+  off<K extends keyof GameEventMap>(event: K, fn: Handler<GameEventMap[K]>, context?: unknown): void {
+    this.emitter.off(event, fn, context);
+  }
+
+  emit<K extends keyof GameEventMap>(
+    event: K,
+    ...payload: [GameEventMap[K]] extends [void] ? [] : [GameEventMap[K]]
+  ): void {
+    this.emitter.emit(event, ...payload);
+  }
+
+  listenerCount(event: keyof GameEventMap): number {
+    return this.emitter.listenerCount(event);
+  }
+}
+
+export const gameEvents = new TypedEventBus();
+
+/** Subscribes for the lifetime of a scene; auto-unsubscribes on shutdown/destroy. */
+export function onSceneEvent<K extends keyof GameEventMap>(
+  scene: Phaser.Scene,
+  event: K,
+  fn: Handler<GameEventMap[K]>,
+): void {
+  gameEvents.on(event, fn, scene);
+  const cleanup = () => {
+    gameEvents.off(event, fn, scene);
+    scene.events.off(Phaser.Scenes.Events.SHUTDOWN, cleanup);
+    scene.events.off(Phaser.Scenes.Events.DESTROY, cleanup);
+  };
+  scene.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanup);
+  scene.events.once(Phaser.Scenes.Events.DESTROY, cleanup);
+}
