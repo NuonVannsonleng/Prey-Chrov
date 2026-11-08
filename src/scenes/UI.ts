@@ -27,6 +27,7 @@ export class UI extends Phaser.Scene {
   create(): void {
     this.debugOn = false;
     this.lastTick = null;
+    this.lastDebugUpdate = 0;
     this.add.image(0, 0, TEX.vignette).setOrigin(0);
 
     this.add

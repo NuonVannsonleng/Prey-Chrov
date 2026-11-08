@@ -55,8 +55,6 @@ export const PLAYER = {
 export const CAMERA = {
   lerp: 0.12,
   zoom: 2,
-  deadzoneWidth: 48,
-  deadzoneHeight: 32,
 } as const;
 
 export const TEST_MAP = {

@@ -29,6 +29,7 @@ export class Button extends Phaser.GameObjects.Container {
   private readonly onActivate: () => void;
   private hovered = false;
   private focused = false;
+  private pressed = false;
   enabled: boolean;
 
   constructor(scene: Phaser.Scene, x: number, y: number, opts: ButtonOptions) {
@@ -52,9 +53,18 @@ export class Button extends Phaser.GameObjects.Container {
     });
     this.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
       this.hovered = false;
+      this.pressed = false;
       this.redraw();
     });
-    this.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => this.activate());
+    // Only a press that started on this button counts as a click.
+    this.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
+      this.pressed = true;
+    });
+    this.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => {
+      const wasPressed = this.pressed;
+      this.pressed = false;
+      if (wasPressed) this.activate();
+    });
 
     scene.add.existing(this);
     this.redraw();

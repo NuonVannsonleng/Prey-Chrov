@@ -107,7 +107,7 @@ export class World extends Phaser.Scene {
     const kb = this.input.keyboard;
     kb?.off('keydown-ESC', this.openPause, this);
     kb?.off('keydown-F3', this.toggleDebug, this);
-    kb?.removeAllKeys(true);
+    kb?.removeAllKeys(true, true);
     this.scene.stop(SCENES.ui);
   }
 }
