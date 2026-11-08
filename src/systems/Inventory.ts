@@ -1,6 +1,8 @@
 export interface ItemStack {
   item: string;
   qty: number;
+  /** Remaining uses / burn seconds for single-stack tools and lights. */
+  durability?: number;
 }
 
 export const INVENTORY_SLOTS = 20;
@@ -33,7 +35,15 @@ export class Inventory {
 
   /** Copy of all slots, safe to hand to UI. */
   snapshot(): (ItemStack | null)[] {
-    return this.slots.map((s) => (s ? { item: s.item, qty: s.qty } : null));
+    return this.slots.map((s) => (s ? copyStack(s) : null));
+  }
+
+  /** Replaces every slot (used to roll back failed crafts and to load saves). */
+  restore(slots: ReadonlyArray<Readonly<ItemStack> | null>): void {
+    for (let i = 0; i < this.slots.length; i++) {
+      const s = slots[i];
+      this.slots[i] = s && s.qty > 0 ? copyStack(s) : null;
+    }
   }
 
   count(itemId: string): number {
@@ -53,13 +63,16 @@ export class Inventory {
     return room;
   }
 
-  /** Adds up to `qty`, topping up existing stacks first. Returns the amount that did NOT fit. */
-  add(itemId: string, qty: number): number {
+  /**
+   * Adds up to `qty`, topping up existing stacks first. Returns the amount that did NOT fit.
+   * Items with durability never merge into other stacks.
+   */
+  add(itemId: string, qty: number, durability?: number): number {
     let left = Math.max(0, Math.floor(qty));
     const max = this.maxStack(itemId);
     for (const s of this.slots) {
-      if (left === 0) break;
-      if (s && s.item === itemId && s.qty < max) {
+      if (left === 0 || durability !== undefined) break;
+      if (s && s.item === itemId && s.qty < max && s.durability === undefined) {
         const moved = Math.min(left, max - s.qty);
         s.qty += moved;
         left -= moved;
@@ -68,7 +81,7 @@ export class Inventory {
     for (let i = 0; i < this.slots.length && left > 0; i++) {
       if (this.slots[i]) continue;
       const moved = Math.min(left, max);
-      this.slots[i] = { item: itemId, qty: moved };
+      this.slots[i] = durability === undefined ? { item: itemId, qty: moved } : { item: itemId, qty: moved, durability };
       left -= moved;
     }
     return left;
@@ -88,6 +101,19 @@ export class Inventory {
     return Math.floor(qty) - left;
   }
 
+  /**
+   * Uses up durability on a slot's item. Returns 'broke' (item removed), 'ok', or 'none'
+   * if the slot holds nothing with durability.
+   */
+  wear(slot: number, amount: number): 'ok' | 'broke' | 'none' {
+    const s = this.slots[slot];
+    if (!s || s.durability === undefined) return 'none';
+    s.durability = Math.max(0, s.durability - amount);
+    if (s.durability > 0) return 'ok';
+    this.slots[slot] = null;
+    return 'broke';
+  }
+
   /** Takes up to `qty` from one slot. Returns the removed stack, or null. */
   takeFromSlot(slot: number, qty: number): ItemStack | null {
     const s = this.slots[slot];
@@ -95,7 +121,7 @@ export class Inventory {
     const taken = Math.min(Math.floor(qty), s.qty);
     s.qty -= taken;
     if (s.qty === 0) this.slots[slot] = null;
-    return { item: s.item, qty: taken };
+    return s.durability === undefined ? { item: s.item, qty: taken } : { item: s.item, qty: taken, durability: s.durability };
   }
 
   /**
@@ -107,7 +133,7 @@ export class Inventory {
     const a = this.slots[from];
     if (!a) return false;
     const b = this.slots[to];
-    if (b && b.item === a.item) {
+    if (b && b.item === a.item && a.durability === undefined && b.durability === undefined) {
       const max = this.maxStack(a.item);
       const moved = Math.min(a.qty, max - b.qty);
       if (moved <= 0) {
@@ -150,4 +176,8 @@ export class Inventory {
     const n = this.stackSize(itemId);
     return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
   }
+}
+
+function copyStack(s: Readonly<ItemStack>): ItemStack {
+  return s.durability === undefined ? { item: s.item, qty: s.qty } : { item: s.item, qty: s.qty, durability: s.durability };
 }

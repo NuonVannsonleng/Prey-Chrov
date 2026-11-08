@@ -1,0 +1,141 @@
+[
+  {
+    "id": "stone_axe",
+    "output": "stone_axe",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "stone",
+        "qty": 3
+      },
+      {
+        "item": "wood",
+        "qty": 2
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 2
+      }
+    ],
+    "station": "none",
+    "category": "tools"
+  },
+  {
+    "id": "stone_pickaxe",
+    "output": "stone_pickaxe",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "stone",
+        "qty": 3
+      },
+      {
+        "item": "wood",
+        "qty": 2
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 2
+      }
+    ],
+    "station": "none",
+    "category": "tools"
+  },
+  {
+    "id": "spear",
+    "output": "spear",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "bamboo",
+        "qty": 2
+      },
+      {
+        "item": "stone",
+        "qty": 1
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 1
+      }
+    ],
+    "station": "none",
+    "category": "tools"
+  },
+  {
+    "id": "torch",
+    "output": "torch",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "stick",
+        "qty": 2
+      },
+      {
+        "item": "leaf",
+        "qty": 2
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 1
+      }
+    ],
+    "station": "none",
+    "category": "light"
+  },
+  {
+    "id": "campfire",
+    "output": "campfire_kit",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "wood",
+        "qty": 3
+      },
+      {
+        "item": "stone",
+        "qty": 3
+      },
+      {
+        "item": "leaf",
+        "qty": 2
+      }
+    ],
+    "station": "none",
+    "category": "building"
+  },
+  {
+    "id": "bamboo_shelter",
+    "output": "bamboo_shelter_kit",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "bamboo",
+        "qty": 5
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 3
+      },
+      {
+        "item": "leaf",
+        "qty": 4
+      }
+    ],
+    "station": "none",
+    "category": "building"
+  },
+  {
+    "id": "roasted_bamboo_shoot",
+    "output": "roasted_bamboo_shoot",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "bamboo_shoot",
+        "qty": 1
+      }
+    ],
+    "station": "campfire",
+    "category": "food"
+  }
+]

@@ -14,6 +14,9 @@ export const TEX = {
   icons: 'tex-icons',
   chip: 'tex-chip',
   targetRing: 'tex-target-ring',
+  structures: 'tex-structures',
+  light: 'tex-light',
+  flame: 'tex-flame',
   vignette: 'tex-vignette',
   menuBg: 'tex-menu-bg',
   glow: 'tex-glow',
@@ -66,8 +69,34 @@ export type ResourceSprite = (typeof RESOURCE_SPRITES)[number];
 export const DEPLETED_FRAME: Record<ResourceSprite, number> = { tree: 0, bamboo: 1, rock: 2, bush: 3 };
 
 /** Item icon frames inside TEX.icons (items.json `icon`). */
-export const ICON_KEYS = ['wood', 'stick', 'bamboo', 'stone', 'flint', 'berries', 'fiber', 'leaf'] as const;
+export const ICON_KEYS = [
+  'wood',
+  'stick',
+  'bamboo',
+  'stone',
+  'flint',
+  'berries',
+  'fiber',
+  'leaf',
+  'stone_axe',
+  'stone_pickaxe',
+  'spear',
+  'torch',
+  'campfire',
+  'shelter',
+  'bamboo_shoot',
+  'roasted_shoot',
+] as const;
 export type IconKey = (typeof ICON_KEYS)[number];
+
+/** Placeable structure visuals (structures.json `sprite`), frames inside TEX.structures. */
+export const STRUCTURE_SPRITES = ['campfire', 'shelter'] as const;
+export type StructureSprite = (typeof STRUCTURE_SPRITES)[number];
+export const STRUCTURE_FRAME: Record<StructureSprite, { x: number; w: number; h: number }> = {
+  campfire: { x: 0, w: 32, h: 28 },
+  shelter: { x: 32, w: 72, h: 60 },
+};
+export const LIGHT_TEXTURE_SIZE = 256;
 
 export function playerFrameName(dir: PlayerDir, pose: PlayerPose): string {
   return `${dir}-${pose}`;

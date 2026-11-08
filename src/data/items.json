@@ -1,10 +1,255 @@
 [
-  { "id": "wood", "name": "Wood", "nameKm": "ឈើ", "description": "Heavy hardwood, still smelling of resin and rain.", "category": "material", "stackSize": 30, "rarity": "common", "icon": "wood", "tags": ["wood", "fuel", "building"] },
-  { "id": "stick", "name": "Stick", "description": "A dry branch, light enough to carry a dozen.", "category": "material", "stackSize": 50, "rarity": "common", "icon": "stick", "tags": ["wood", "fuel", "handle"] },
-  { "id": "bamboo", "name": "Bamboo", "nameKm": "ឫស្សី", "description": "A hollow green stalk, strong and straight.", "category": "material", "stackSize": 30, "rarity": "common", "icon": "bamboo", "tags": ["bamboo", "building"] },
-  { "id": "stone", "name": "Stone", "nameKm": "ថ្ម", "description": "A river-worn rock that fits the palm.", "category": "material", "stackSize": 30, "rarity": "common", "icon": "stone", "tags": ["stone", "tool_head"] },
-  { "id": "flint", "name": "Flint", "description": "A sharp grey shard that bites sparks from steel and stone.", "category": "material", "stackSize": 20, "rarity": "rare", "icon": "flint", "tags": ["stone", "fire", "tool_head"] },
-  { "id": "berries", "name": "Wild Berries", "description": "Tart jungle berries, dark as dusk.", "category": "food", "stackSize": 20, "rarity": "common", "icon": "berries", "tags": ["food", "forage"] },
-  { "id": "plant_fiber", "name": "Plant Fiber", "description": "Tough green strands, good for lashing things together.", "category": "material", "stackSize": 50, "rarity": "common", "icon": "fiber", "tags": ["binding"] },
-  { "id": "leaf", "name": "Broad Leaf", "nameKm": "ស្លឹក", "description": "A wide leaf that sheds rain and catches sparks.", "category": "material", "stackSize": 50, "rarity": "common", "icon": "leaf", "tags": ["thatch", "tinder"] }
+  {
+    "id": "wood",
+    "name": "Wood",
+    "nameKm": "ឈើ",
+    "description": "Heavy hardwood, still smelling of resin and rain.",
+    "category": "material",
+    "stackSize": 30,
+    "rarity": "common",
+    "icon": "wood",
+    "tags": [
+      "wood",
+      "fuel",
+      "building"
+    ]
+  },
+  {
+    "id": "stick",
+    "name": "Stick",
+    "description": "A dry branch, light enough to carry a dozen.",
+    "category": "material",
+    "stackSize": 50,
+    "rarity": "common",
+    "icon": "stick",
+    "tags": [
+      "wood",
+      "fuel",
+      "handle"
+    ]
+  },
+  {
+    "id": "bamboo",
+    "name": "Bamboo",
+    "nameKm": "ឫស្សី",
+    "description": "A hollow green stalk, strong and straight.",
+    "category": "material",
+    "stackSize": 30,
+    "rarity": "common",
+    "icon": "bamboo",
+    "tags": [
+      "bamboo",
+      "building"
+    ]
+  },
+  {
+    "id": "stone",
+    "name": "Stone",
+    "nameKm": "ថ្ម",
+    "description": "A river-worn rock that fits the palm.",
+    "category": "material",
+    "stackSize": 30,
+    "rarity": "common",
+    "icon": "stone",
+    "tags": [
+      "stone",
+      "tool_head"
+    ]
+  },
+  {
+    "id": "flint",
+    "name": "Flint",
+    "description": "A sharp grey shard that bites sparks from steel and stone.",
+    "category": "material",
+    "stackSize": 20,
+    "rarity": "rare",
+    "icon": "flint",
+    "tags": [
+      "stone",
+      "fire",
+      "tool_head"
+    ]
+  },
+  {
+    "id": "berries",
+    "name": "Wild Berries",
+    "description": "Tart jungle berries, dark as dusk.",
+    "category": "food",
+    "stackSize": 20,
+    "rarity": "common",
+    "icon": "berries",
+    "tags": [
+      "food",
+      "forage"
+    ],
+    "food": {
+      "hunger": 6,
+      "thirst": 4,
+      "health": 0
+    }
+  },
+  {
+    "id": "plant_fiber",
+    "name": "Plant Fiber",
+    "description": "Tough green strands, good for lashing things together.",
+    "category": "material",
+    "stackSize": 50,
+    "rarity": "common",
+    "icon": "fiber",
+    "tags": [
+      "binding"
+    ]
+  },
+  {
+    "id": "leaf",
+    "name": "Broad Leaf",
+    "nameKm": "ស្លឹក",
+    "description": "A wide leaf that sheds rain and catches sparks.",
+    "category": "material",
+    "stackSize": 50,
+    "rarity": "common",
+    "icon": "leaf",
+    "tags": [
+      "thatch",
+      "tinder"
+    ]
+  },
+  {
+    "id": "stone_axe",
+    "name": "Stone Axe",
+    "description": "A stone head lashed to a hardwood haft. Fells trees and bamboo far faster than bare hands.",
+    "category": "tool",
+    "stackSize": 1,
+    "rarity": "common",
+    "icon": "stone_axe",
+    "tags": [
+      "tool",
+      "axe"
+    ],
+    "tool": {
+      "kind": "axe",
+      "durability": 100,
+      "damage": 2
+    }
+  },
+  {
+    "id": "stone_pickaxe",
+    "name": "Stone Pickaxe",
+    "description": "A pointed stone on a stout haft, made for breaking boulders.",
+    "category": "tool",
+    "stackSize": 1,
+    "rarity": "common",
+    "icon": "stone_pickaxe",
+    "tags": [
+      "tool",
+      "pickaxe"
+    ],
+    "tool": {
+      "kind": "pickaxe",
+      "durability": 90,
+      "damage": 2
+    }
+  },
+  {
+    "id": "spear",
+    "name": "Spear",
+    "nameKm": "លំពែង",
+    "description": "A bamboo shaft with a stone tip. Meant for defence, but you cannot fight with it yet.",
+    "category": "tool",
+    "stackSize": 1,
+    "rarity": "common",
+    "icon": "spear",
+    "tags": [
+      "tool",
+      "weapon"
+    ],
+    "tool": {
+      "kind": "spear",
+      "durability": 60,
+      "damage": 4
+    }
+  },
+  {
+    "id": "torch",
+    "name": "Torch",
+    "nameKm": "ពិល",
+    "description": "Leaves and sticks bound into a flame. Burns only while held in the dark, about one night.",
+    "category": "light",
+    "stackSize": 1,
+    "rarity": "common",
+    "icon": "torch",
+    "tags": [
+      "light",
+      "fire"
+    ],
+    "light": {
+      "radius": 120,
+      "burnSeconds": 170
+    }
+  },
+  {
+    "id": "campfire_kit",
+    "name": "Campfire Kit",
+    "description": "Stones and wood ready to be laid. Place it to cook and keep the dark back.",
+    "category": "structure",
+    "stackSize": 5,
+    "rarity": "common",
+    "icon": "campfire",
+    "tags": [
+      "structure",
+      "fire"
+    ],
+    "places": "campfire"
+  },
+  {
+    "id": "bamboo_shelter_kit",
+    "name": "Bamboo Shelter Kit",
+    "description": "Bamboo poles, fiber and thatch. Place it to sleep safely through the night.",
+    "category": "structure",
+    "stackSize": 2,
+    "rarity": "common",
+    "icon": "shelter",
+    "tags": [
+      "structure",
+      "shelter"
+    ],
+    "places": "bamboo_shelter"
+  },
+  {
+    "id": "bamboo_shoot",
+    "name": "Bamboo Shoot",
+    "nameKm": "ទំពាំងឫស្សី",
+    "description": "Bitter when raw. Barely a snack, and it upsets the stomach.",
+    "category": "food",
+    "stackSize": 20,
+    "rarity": "common",
+    "icon": "bamboo_shoot",
+    "tags": [
+      "food",
+      "forage"
+    ],
+    "food": {
+      "hunger": 10,
+      "thirst": 0,
+      "health": -3
+    }
+  },
+  {
+    "id": "roasted_bamboo_shoot",
+    "name": "Roasted Bamboo Shoot",
+    "description": "Sweet and smoky from the coals. A proper meal.",
+    "category": "food",
+    "stackSize": 20,
+    "rarity": "common",
+    "icon": "roasted_shoot",
+    "tags": [
+      "food",
+      "cooked"
+    ],
+    "food": {
+      "hunger": 40,
+      "thirst": 0,
+      "health": 4
+    }
+  }
 ]

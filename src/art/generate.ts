@@ -21,6 +21,7 @@ import {
 import { mulberry32, randInt, randRange } from '../utils/random';
 import { createCanvasTexture, ellipse, hex, px, shade, type Ctx } from './canvas';
 import { generateGatheringTextures } from './gathering';
+import { generateSurvivalTextures } from './survival';
 
 /** Draws every placeholder texture on canvases. Keys and frame layout live in textures.ts. */
 
@@ -538,6 +539,7 @@ export function generateAllTextures(scene: Phaser.Scene): void {
   generateGlow(scene);
   generateMenuBackground(scene);
   generateGatheringTextures(scene);
+  generateSurvivalTextures(scene);
 
   const crisp = [
     TEX.tiles,
@@ -551,6 +553,8 @@ export function generateAllTextures(scene: Phaser.Scene): void {
     TEX.depleted,
     TEX.icons,
     TEX.chip,
+    TEX.structures,
+    TEX.flame,
   ];
   for (const key of crisp) scene.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
 }

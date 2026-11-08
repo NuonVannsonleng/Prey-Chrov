@@ -1,0 +1,26 @@
+[
+  {
+    "id": "campfire",
+    "name": "Campfire",
+    "sprite": "campfire",
+    "footprint": {
+      "w": 18,
+      "h": 10
+    },
+    "solid": true,
+    "lightRadius": 155,
+    "interaction": "cook"
+  },
+  {
+    "id": "bamboo_shelter",
+    "name": "Bamboo Shelter",
+    "sprite": "shelter",
+    "footprint": {
+      "w": 56,
+      "h": 18
+    },
+    "solid": true,
+    "lightRadius": 0,
+    "interaction": "sleep"
+  }
+]

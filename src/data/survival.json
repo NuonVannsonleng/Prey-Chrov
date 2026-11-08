@@ -1,0 +1,58 @@
+{
+  "maxHealth": 100,
+  "maxHunger": 100,
+  "maxThirst": 100,
+  "maxStamina": 100,
+  "hungerPerHour": 4.5,
+  "thirstPerHour": 6,
+  "starvationDamagePerHour": 3,
+  "dehydrationDamagePerHour": 5,
+  "regenPerHour": 3,
+  "regenMinHungerThirst": 20,
+  "warnAt": 30,
+  "sprintStaminaPerSecond": 14,
+  "staminaRegenPerSecond": 20,
+  "staminaRegenDelaySeconds": 1,
+  "sprintMinStamina": 20,
+  "drinkThirst": 45,
+  "sleep": {
+    "fromHour": 18.5,
+    "untilHour": 4.5,
+    "wakeHour": 6,
+    "staminaRestore": 100,
+    "healthRestore": 15,
+    "hungerCost": 15,
+    "thirstCost": 20
+  },
+  "day": {
+    "lengthSeconds": 480,
+    "startHour": 7
+  },
+  "darkness": [
+    [
+      0,
+      0.78
+    ],
+    [
+      4.5,
+      0.78
+    ],
+    [
+      6,
+      0
+    ],
+    [
+      19.5,
+      0
+    ],
+    [
+      21,
+      0.78
+    ],
+    [
+      24,
+      0.78
+    ]
+  ],
+  "playerLightRadius": 56
+}
