@@ -51,7 +51,8 @@ export class PlayerInventory {
         return;
       case 'drop': {
         const stack = this.inventory.get(req.slot);
-        if (!stack) return;
+        // The slot may have changed since the request (e.g. while a confirm dialog was open).
+        if (!stack || stack.item !== req.item) return;
         const qty = Math.min(stack.qty, Math.max(1, Math.floor(req.qty)));
         // Place first, then remove: a failed placement never deletes items.
         if (!this.dropToGround(stack.item, qty)) {

@@ -75,10 +75,15 @@ describe('Inventory', () => {
     expect(inv.count('wood')).toBe(35);
   });
 
-  it('rejects merging onto a full stack and out-of-range moves', () => {
+  it('swaps onto a full same-item stack; rejects no-ops and out-of-range moves', () => {
     const inv = make();
     inv.add('wood', 60);
     expect(inv.move(1, 0)).toBe(false);
+    inv.takeFromSlot(1, 25);
+    expect(inv.move(1, 0)).toBe(true);
+    expect(inv.get(0)).toEqual({ item: 'wood', qty: 5 });
+    expect(inv.get(1)).toEqual({ item: 'wood', qty: 30 });
+    inv.add('wood', 25);
     expect(inv.move(0, 0)).toBe(false);
     expect(inv.move(0, 99)).toBe(false);
     expect(inv.move(5, 0)).toBe(false);

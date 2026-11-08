@@ -17,7 +17,7 @@ export interface InventoryView {
 export type InventoryRequest =
   | { type: 'move'; from: number; to: number }
   | { type: 'split'; slot: number }
-  | { type: 'drop'; slot: number; qty: number }
+  | { type: 'drop'; slot: number; item: string; qty: number }
   | { type: 'select'; slot: number };
 
 export type ToastTone = 'info' | 'warn';

@@ -336,6 +336,18 @@ try {
   check('confirming drops the rare item', (await count('flint')) === 1);
   await page.keyboard.press('Digit1');
 
+  // QA follow-ups: stale drop requests are ignored; ground items are never lost when the pool is full.
+  const slot0Now = await evalW('return w.inventory.inventory.get(0);');
+  await evalW('w.inventory.handle({ type: "drop", slot: 0, item: "not_this_item", qty: 1 });');
+  const slot0After = await evalW('return w.inventory.inventory.get(0);');
+  check('drop request for a changed slot is ignored', JSON.stringify(slot0Now) === JSON.stringify(slot0After));
+  const spawned = await evalW(
+    'let ok = 0; for (let i = 0; i < 450; i++) if (w.pickups.spawn("stone", 1, 1850, 1200, w.now, 0, 20)) ok++;' +
+      'let total = 0; for (const p of w.pickups.pool) if (p.active && p.item === "stone" && p.image.x > 1700) total += p.qty;' +
+      'return { ok, total, active: w.pickups.activeCount, pool: w.pickups.pool.length };',
+  );
+  check('pickup pool caps out and merges instead of losing items', spawned.ok === 450 && spawned.total === 450 && spawned.pool <= 400, JSON.stringify(spawned));
+
   await page.keyboard.press('F3');
   await sleep(400);
   await page.screenshot({ path: `${OUT}/03-debug.png` });

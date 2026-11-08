@@ -34,6 +34,8 @@ export class InventoryPanel {
   constructor(
     scene: Phaser.Scene,
     private readonly requestDrop: (slot: number, qty: number) => void,
+    /** True while something modal sits above the panel (confirm dialog); the panel ignores pointer input. */
+    private readonly isBlocked: () => boolean,
   ) {
     const packRows = Math.ceil((INVENTORY_SLOTS - HOTBAR_SLOTS) / COLS);
     const gridW = COLS * SLOT + (COLS - 1) * GAP;
@@ -137,7 +139,7 @@ export class InventoryPanel {
   }
 
   private onDown(pointer: Phaser.Input.Pointer): void {
-    if (!this.isOpen || !pointer.leftButtonDown()) return;
+    if (!this.isOpen || this.isBlocked() || !pointer.leftButtonDown()) return;
     const i = this.slotAt(pointer.x, pointer.y);
     if (i < 0 || !this.view?.slots[i]) {
       if (i >= 0 && i < HOTBAR_SLOTS) gameEvents.emit('inventory:request', { type: 'select', slot: i });
@@ -153,7 +155,7 @@ export class InventoryPanel {
   }
 
   private onMove(pointer: Phaser.Input.Pointer): void {
-    if (!this.isOpen) return;
+    if (!this.isOpen || this.isBlocked()) return;
     if (this.dragFrom >= 0 && !this.dragging) {
       if (Math.hypot(pointer.x - this.dragStart.x, pointer.y - this.dragStart.y) > DRAG_THRESHOLD) {
         const stack = this.slots[this.dragFrom]?.item;
@@ -179,6 +181,10 @@ export class InventoryPanel {
 
   private onUp(pointer: Phaser.Input.Pointer): void {
     if (!this.isOpen || this.dragFrom < 0) return;
+    if (this.isBlocked()) {
+      this.cancelDrag();
+      return;
+    }
     const from = this.dragFrom;
     const wasDragging = this.dragging;
     this.cancelDrag();

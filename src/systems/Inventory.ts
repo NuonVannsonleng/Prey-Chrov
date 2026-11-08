@@ -99,8 +99,8 @@ export class Inventory {
   }
 
   /**
-   * Moves a slot onto another: merges same items up to the stack limit,
-   * otherwise swaps. Returns false if nothing changed.
+   * Moves a slot onto another: merges same items up to the stack limit (swapping if the
+   * target stack is already full), otherwise swaps. Returns false if nothing changed.
    */
   move(from: number, to: number): boolean {
     if (from === to || !this.valid(from) || !this.valid(to)) return false;
@@ -111,7 +111,10 @@ export class Inventory {
       const max = this.maxStack(a.item);
       const moved = Math.min(a.qty, max - b.qty);
       if (moved <= 0) {
-        return false;
+        if (a.qty === b.qty) return false;
+        this.slots[from] = b;
+        this.slots[to] = a;
+        return true;
       }
       b.qty += moved;
       a.qty -= moved;

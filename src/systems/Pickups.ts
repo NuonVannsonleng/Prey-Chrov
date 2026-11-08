@@ -23,6 +23,8 @@ interface Pickup {
   collectableAt: number;
   /** Player-dropped items only become collectable after the player has stepped away once. */
   armed: boolean;
+  /** Game time when the spawn pop finishes; before that the tween owns the position. */
+  settleAt: number;
   baseY: number;
   phase: number;
 }
@@ -39,10 +41,25 @@ export class Pickups {
     private readonly scene: Phaser.Scene,
     private readonly hooks: PickupHooks,
   ) {
-    for (let i = 0; i < PICKUP.poolSize; i++) {
-      const image = scene.add.image(0, 0, TEX.icons, 'wood').setOrigin(0.5, 1).setVisible(false).setActive(false);
-      this.pool.push({ image, item: '', qty: 0, active: false, claimed: false, collectableAt: 0, armed: true, baseY: 0, phase: 0 });
-    }
+    for (let i = 0; i < PICKUP.poolSize; i++) this.grow();
+  }
+
+  private grow(): Pickup {
+    const image = this.scene.add.image(0, 0, TEX.icons, 'wood').setOrigin(0.5, 1).setVisible(false).setActive(false);
+    const p: Pickup = {
+      image,
+      item: '',
+      qty: 0,
+      active: false,
+      claimed: false,
+      collectableAt: 0,
+      armed: true,
+      settleAt: 0,
+      baseY: 0,
+      phase: 0,
+    };
+    this.pool.push(p);
+    return p;
   }
 
   get activeCount(): number {
@@ -51,7 +68,11 @@ export class Pickups {
     return n;
   }
 
-  /** Spawns a ground stack near (x, y). Returns false if the pool is exhausted. */
+  /**
+   * Spawns a ground stack near (x, y). The pool grows up to PICKUP.maxPool; beyond that the
+   * quantity merges into an existing ground stack of the same item. Returns false only if
+   * neither is possible, so callers must keep the items (never silently lost).
+   */
   spawn(
     item: string,
     qty: number,
@@ -62,8 +83,15 @@ export class Pickups {
     scatter: number = PICKUP.scatter,
     droppedByPlayer = false,
   ): boolean {
-    const p = this.pool.find((c) => !c.active);
-    if (!p || qty <= 0) return false;
+    if (qty <= 0) return false;
+    let p = this.pool.find((c) => !c.active);
+    if (!p && this.pool.length < PICKUP.maxPool) p = this.grow();
+    if (!p) {
+      const same = this.pool.find((c) => c.active && !c.claimed && c.item === item);
+      if (!same) return false;
+      same.qty += qty;
+      return true;
+    }
     const tx = x + (Math.random() * 2 - 1) * scatter;
     const ty = y + (Math.random() * 2 - 1) * scatter * 0.6;
     p.item = item;
@@ -72,6 +100,7 @@ export class Pickups {
     p.claimed = false;
     p.collectableAt = now + delayMs;
     p.armed = !droppedByPlayer;
+    p.settleAt = now + 280;
     p.baseY = ty;
     p.phase = Math.random() * Math.PI * 2;
     this.scene.tweens.killTweensOf(p.image);
@@ -111,12 +140,12 @@ export class Pickups {
         } else if (dist <= PICKUP.collectRadius) {
           this.collect(p);
           continue;
-        } else if (!this.scene.tweens.isTweening(img)) {
+        } else if (now >= p.settleAt) {
           img.x += (dx / dist) * Math.min(step, dist);
           p.baseY += (dy / dist) * Math.min(step, dist);
         }
       }
-      if (!this.scene.tweens.isTweening(img)) {
+      if (now >= p.settleAt) {
         img.y = p.baseY - 1.5 - Math.sin(now / 260 + p.phase) * 1.5;
         img.setDepth(p.baseY);
       }

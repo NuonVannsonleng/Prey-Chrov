@@ -88,7 +88,9 @@ export const GATHER = {
 } as const;
 
 export const PICKUP = {
-  poolSize: 250,
+  poolSize: 120,
+  /** Hard cap on simultaneous ground stacks; past it, drops merge into same-item stacks. */
+  maxPool: 400,
   magnetRadius: 44,
   collectRadius: 12,
   magnetSpeed: 220,

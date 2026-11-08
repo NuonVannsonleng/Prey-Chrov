@@ -89,7 +89,11 @@ export class UI extends Phaser.Scene {
       })
       .setOrigin(1, 0)
       .setVisible(false);
-    this.panel = new InventoryPanel(this, (slot, qty) => this.requestDrop(slot, qty));
+    this.panel = new InventoryPanel(
+      this,
+      (slot, qty) => this.requestDrop(slot, qty),
+      () => this.dialog !== null,
+    );
     this.toast = new Toast(this);
 
     onSceneEvent(this, 'player:tick', (t) => {
@@ -109,7 +113,7 @@ export class UI extends Phaser.Scene {
     onSceneEvent(this, 'toast', ({ text, tone }) => this.toast.show(text, tone));
     onSceneEvent(this, 'inventory:full', () => {
       this.toast.show('Inventory full — drop something (Q) or reorganise (I)', 'warn');
-      this.hotbar.flashFull(this.view);
+      this.hotbar.flashFull();
     });
 
     const kb = this.input.keyboard;
@@ -173,7 +177,7 @@ export class UI extends Phaser.Scene {
     const stack = this.view?.slots[slot];
     if (!stack) return;
     const def = itemDef(stack.item);
-    const drop = () => gameEvents.emit('inventory:request', { type: 'drop', slot, qty });
+    const drop = () => gameEvents.emit('inventory:request', { type: 'drop', slot, item: stack.item, qty });
     if (def.rarity !== 'rare') {
       drop();
       return;

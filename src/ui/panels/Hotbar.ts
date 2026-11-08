@@ -15,6 +15,7 @@ export class Hotbar {
   private readonly nameLabel: Phaser.GameObjects.Text;
   private selected = 0;
   private flashUntil = 0;
+  private lastView: InventoryView | null = null;
 
   constructor(private readonly scene: Phaser.Scene) {
     const total = HOTBAR_SLOTS * SLOT + (HOTBAR_SLOTS - 1) * GAP;
@@ -44,6 +45,7 @@ export class Hotbar {
   }
 
   render(view: InventoryView): void {
+    this.lastView = view;
     this.selected = view.selected;
     const flash = this.scene.time.now < this.flashUntil;
     this.slots.forEach((slot, i) => {
@@ -54,11 +56,11 @@ export class Hotbar {
   }
 
   /** Briefly tints the hotbar red (inventory full). */
-  flashFull(view: InventoryView | null): void {
+  flashFull(): void {
     this.flashUntil = this.scene.time.now + 450;
-    if (view) this.render(view);
+    if (this.lastView) this.render(this.lastView);
     this.scene.time.delayedCall(460, () => {
-      if (view) this.render(view);
+      if (this.lastView) this.render(this.lastView);
     });
   }
 }

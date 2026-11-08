@@ -153,7 +153,11 @@ export class World extends Phaser.Scene {
       const { result, loot } = this.gathering.hit(node, 'hand', this.now, p.x);
       if (result === 'needs-tool') this.floating.show(node.targetX, node.targetY - 20, 'Needs a tool', '#e6b866');
       for (const stack of loot) {
-        this.pickups.spawn(stack.item, stack.qty, node.prop.x, node.prop.y - 4, this.now, 250);
+        if (this.pickups.spawn(stack.item, stack.qty, node.prop.x, node.prop.y - 4, this.now, 250)) continue;
+        const lost = this.inventory.add(stack.item, stack.qty);
+        if (lost > 0) {
+          this.floating.show(node.targetX, node.targetY - 20, 'No room for ' + lost + ' ' + itemDef(stack.item).name, '#d9644a');
+        }
       }
       return;
     }
