@@ -15,7 +15,8 @@ const check = (name, ok, detail = '') => {
 };
 
 const server = await preview({ preview: { port: 4317, strictPort: true }, logLevel: 'silent' });
-const url = 'http://localhost:4317/?debug';
+const SEED = 4242;
+const url = `http://localhost:4317/?debug&seed=${SEED}`;
 
 let browser;
 for (const channel of ['msedge', 'chrome']) {
@@ -118,7 +119,8 @@ try {
   const solid = await page.evaluate(() => {
     const w = window.__preyChrov.scene.getScene('World');
     const zones = w.props.solids.getChildren();
-    const z = zones.find((o) => o.x > 200 && o.x < 1700 && o.y > 200 && o.y < 1100) ?? zones[0];
+    const p = w.player;
+    const z = zones.slice().sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0];
     return { x: z.x, y: z.y, w: z.body.width, h: z.body.height };
   });
   const dirs = [
@@ -157,14 +159,14 @@ try {
   const nearestNode = (resId) =>
     evalW(
       'const p = w.player;' +
-        'const list = w.gathering.nodes.filter((n) => n.def.id === arg && !n.depleted && n.prop.y > 200);' +
+        'const list = w.gathering.nodes.filter((n) => n.def.id === arg && !n.depleted);' +
         'list.sort((a, b) => Math.hypot(a.prop.x - p.x, a.prop.y - p.y) - Math.hypot(b.prop.x - p.x, b.prop.y - p.y));' +
         'const n = list[0];' +
-        'return { idx: w.gathering.nodes.indexOf(n), x: n.prop.x, y: n.prop.y };',
+        'return { idx: n.prop.key, x: n.prop.x, y: n.prop.y };',
       resId,
     );
   const nodeState = (idx) =>
-    evalW('const n = w.gathering.nodes[arg]; return { depleted: n.depleted, hp: n.hp, body: n.zone.body.enable };', idx);
+    evalW('const n = w.gathering.nodes.find((x) => x.prop.key === arg); if (!n) return null; return { depleted: n.depleted, hp: n.hp, body: n.zone.body.enable };', idx);
   const staticBodies = () => evalW('return w.physics.world.staticBodies.size;');
   const gatherAt = async (node, holdMs) => {
     await teleport(node.x, node.y + 14);
@@ -208,7 +210,7 @@ try {
   await hold(['KeyD'], 700);
   check('stump is walkable (no phantom collider)', (await player()).x > tree.x + 5);
   await teleport(tree.x - 120, tree.y + 3);
-  await evalW('w.gathering.nodes[arg].respawnAt = 0;', tree.idx);
+  await evalW('w.gathering.nodes.find((x) => x.prop.key === arg).respawnAt = 0;', tree.idx);
   await sleep(300);
   const respawned = await nodeState(tree.idx);
   check('tree respawns with its collider', !respawned.depleted && respawned.body, JSON.stringify(respawned));
@@ -216,7 +218,7 @@ try {
   await sleep(100);
   await hold(['KeyD'], 700);
   check('respawned tree blocks movement again', (await player()).x < tree.x);
-  await teleport(1700, 300);
+  await teleport(tree.x - 140, tree.y + 40);
   await evalW('for (const n of w.gathering.nodes) if (n.depleted) n.respawnAt = 0;');
   await sleep(300);
   const bodiesAfter = await staticBodies();
@@ -231,7 +233,7 @@ try {
   check('hotbar reflects inventory', hotbarMatches);
 
   // Water: stand on the shore above the pond, face it, press E.
-  await teleport(22 * 32 + 16, 23 * 32 + 24);
+  await teleport(8 * 32 + 16, 2 * 32 + 24);
   await sleep(100);
   await hold(['KeyS'], 600);
   const waterTarget = await evalW('return w.interaction.current.kind;');
@@ -242,7 +244,7 @@ try {
   await page.screenshot({ path: OUT + '/06-water.png' });
 
   // Exactly-once pickup.
-  await teleport(30 * 32 + 16, 20 * 32 + 30);
+  await teleport(16, 30);
   await sleep(150);
   const sticks0 = await count('stick');
   await evalW('const p = w.player; w.pickups.spawn("stick", 5, p.x, p.y - 6, w.now, 0, 0);');
@@ -342,12 +344,55 @@ try {
   const slot0After = await evalW('return w.inventory.inventory.get(0);');
   check('drop request for a changed slot is ignored', JSON.stringify(slot0Now) === JSON.stringify(slot0After));
   const spawned = await evalW(
-    'let ok = 0; for (let i = 0; i < 450; i++) if (w.pickups.spawn("stone", 1, 1850, 1200, w.now, 0, 20)) ok++;' +
-      'let total = 0; for (const p of w.pickups.pool) if (p.active && p.item === "stone" && p.image.x > 1700) total += p.qty;' +
+    'let ok = 0; for (let i = 0; i < 450; i++) if (w.pickups.spawn("stone", 1, 900, 30, w.now, 0, 20)) ok++;' +
+      'let total = 0; for (const p of w.pickups.pool) if (p.active && p.item === "stone" && p.image.x > 850) total += p.qty;' +
       'return { ok, total, active: w.pickups.activeCount, pool: w.pickups.pool.length };',
   );
   check('pickup pool caps out and merges instead of losing items', spawned.ok === 450 && spawned.total === 450 && spawned.pool <= 400, JSON.stringify(spawned));
-  await evalW('for (const p of w.pickups.pool) if (p.active && p.image.x > 1700) { p.active = false; p.image.setVisible(false); }');
+  await evalW('for (const p of w.pickups.pool) if (p.active && p.image.x > 850) { p.active = false; p.image.setVisible(false); }');
+
+  // ---------- M4: seeded world, chunks, biomes, minimap ----------
+  const chunkSig = () => evalW('const c = w.gen.generateChunk(3, -2); return JSON.stringify(c).length + ":" + c.props.length + ":" + c.tiles.flat().join("").length;');
+  const sigBefore = await chunkSig();
+  check('world uses the requested seed', (await evalW('return w.seed;')) === SEED);
+  check('minimap shows the biome name', (await evalW('return ui.minimap.label.text;')).length > 3, await evalW('return ui.minimap.label.text;'));
+  await page.screenshot({ path: OUT + '/15-world-spawn.png' });
+
+  // Harvest a node near spawn, walk far away (its chunk unloads), come back: still harvested.
+  await teleport(16, 30);
+  await sleep(150);
+  const homeBush = await nearestNode('berry_bush');
+  await gatherAt(homeBush, 1100);
+  await sleep(300);
+  check('home bush harvested', (await nodeState(homeBush.idx))?.depleted === true);
+  const stats = () => evalW('return { chunks: w.chunks.loadedCount, nodes: w.chunks.nodes.length, bodies: w.physics.world.staticBodies.size, colliders: w.physics.world.colliders.length, display: w.children.list.length, canopies: w.props.canopyCount };');
+  const startStats = await stats();
+  let maxStats = { ...startStats };
+  const biomesSeen = new Set();
+  for (let i = 1; i <= 14; i++) {
+    await teleport(16 + i * 900, 30 + (i % 3) * 400);
+    await sleep(160);
+    const st = await stats();
+    for (const k of Object.keys(st)) maxStats[k] = Math.max(maxStats[k], st[k]);
+    biomesSeen.add(await evalW('return w.gen.biomeAt(Math.floor(w.player.x / 32), Math.floor(w.player.y / 32));'));
+  }
+  await page.screenshot({ path: OUT + '/16-world-far.png' });
+  check('far walk keeps chunk count bounded', maxStats.chunks <= 25, JSON.stringify(maxStats));
+  check('far walk keeps bodies/colliders/display bounded', maxStats.bodies < 1500 && maxStats.colliders < 40 && maxStats.display < 6000, JSON.stringify(maxStats));
+  check('far walk crosses several biomes', biomesSeen.size >= 2, [...biomesSeen].join(','));
+  await teleport(16, 30);
+  await sleep(400);
+  const backState = await nodeState(homeBush.idx);
+  check('harvested node stays harvested after its chunk unloads and reloads', backState?.depleted === true, JSON.stringify(backState));
+  const endStats = await stats();
+  check('returning home restores similar object counts (no accumulation)', endStats.bodies <= startStats.bodies + 40 && endStats.colliders <= startStats.colliders + 2, JSON.stringify({ startStats, endStats }));
+  // Negative coordinates load fine.
+  await teleport(-2500, -1800);
+  await sleep(300);
+  check('negative world coordinates stream in', (await evalW('return w.chunks.isLoaded(Math.floor(w.player.x / 1024), Math.floor(w.player.y / 1024));')) === true);
+  await teleport(16, 30);
+  await sleep(300);
+  check('chunk generation is deterministic for the seed', (await chunkSig()) === sigBefore);
 
   // ---------- M3: survival, crafting, structures, night, sleep/save, death ----------
   const toPageXY = async (gx, gy) => {
@@ -369,7 +414,7 @@ try {
   const craftRowButton = (recipeId) =>
     evalW('const r = ui.crafting.rows.find((x) => x.recipe.id === arg); return { x: r.button.x, y: r.button.y };', recipeId);
 
-  await teleport(30 * 32 + 16, 20 * 32 + 30);
+  await teleport(16, 30);
   await evalW('w.inventory.inventory.restore([]); w.inventory.selected = 0; w.inventory.broadcast();');
   await sleep(150);
   const hud = await evalW('return !!ui.status && ui.status.bars.length === 4 && ui.status.bars[0].value.text !== "";');
@@ -416,14 +461,14 @@ try {
   check('eating raw bamboo shoot: +food, -health', afterEat.hunger > 55 && afterEat.health < 80, JSON.stringify(afterEat));
 
   // Sprinting drains stamina.
-  await teleport(30 * 32 + 16, 20 * 32 + 30);
+  await teleport(16, 30);
   await hold(['ShiftLeft', 'KeyD'], 1200);
   const afterSprint = await survival();
   check('sprinting drains stamina', afterSprint.stamina < 95, 'stamina=' + afterSprint.stamina.toFixed(1));
 
   // Drinking raises thirst.
   await evalW('w.survival.stats.thirst = 30;');
-  await teleport(22 * 32 + 16, 23 * 32 + 24);
+  await teleport(8 * 32 + 16, 2 * 32 + 24);
   await hold(['KeyS'], 600);
   await hold(['KeyE'], 200);
   check('drinking restores thirst', (await survival()).thirst > 60, 'thirst=' + (await survival()).thirst.toFixed(1));
@@ -431,10 +476,10 @@ try {
   // Placement: invalid on water / trees, valid on clear ground; campfire then shelter.
   const invalid = await evalW(
     'const r = new Phaser.Geom.Rectangle(0, 0, 1, 1); const t = w.gathering.nodes.find((n) => n.def.sprite === "tree" && !n.depleted);' +
-      'return { water: w.structures.canPlace("campfire", 22 * 32 + 16, 27 * 32 + 16, 22 * 32 + 16, 25 * 32, r), tree: w.structures.canPlace("campfire", t.prop.x, t.prop.y, t.prop.x, t.prop.y + 40, r) };',
+      'return { water: w.structures.canPlace("campfire", 8 * 32 + 16, 6 * 32 + 16, 8 * 32 + 16, 3 * 32, r), tree: w.structures.canPlace("campfire", t.prop.x, t.prop.y, t.prop.x, t.prop.y + 40, r) };',
   );
   check('placement rejects water and trees', invalid.water === false && invalid.tree === false, JSON.stringify(invalid));
-  await teleport(30 * 32 + 16, 20 * 32 + 30);
+  await teleport(16, 30);
   await sleep(100);
   await evalW('w.inventory.add("campfire_kit", 1); w.inventory.add("bamboo_shelter_kit", 1);');
   const kitSlot = await evalW('return w.inventory.inventory.snapshot().findIndex((x) => x && x.item === "campfire_kit");');
@@ -469,7 +514,7 @@ try {
   // Shelter: place, too early to sleep at day, then sleep at night → next morning + save.
   const shelterSlot = await evalW('return w.inventory.inventory.snapshot().findIndex((x) => x && x.item === "bamboo_shelter_kit");');
   await evalW('w.inventory.inventory.move(arg, 3); w.inventory.broadcast();', shelterSlot);
-  await teleport(30 * 32 + 16, 17 * 32 + 20);
+  await teleport(16, -40);
   await sleep(100);
   await page.keyboard.press('Digit4');
   await page.keyboard.press('KeyF');
@@ -516,6 +561,7 @@ try {
   await sleep(700);
   const afterLoad = await evalW('return { day: w.clock.dayNumber, roast: w.inventory.inventory.count("roasted_bamboo_shoot"), axe: w.inventory.inventory.count("stone_axe"), structures: w.structures.list.length };');
   check('Continue restores day, inventory and structures', JSON.stringify(afterLoad) === JSON.stringify(beforeReload), JSON.stringify({ beforeReload, afterLoad }));
+  check('Continue restores the same seed and world', (await evalW('return w.seed;')) === SEED && (await chunkSig()) === sigBefore);
 
   // Corrupt save never blank-screens: menu shows it as damaged.
   // (checked in unit tests; here we verify death → GameOver instead)

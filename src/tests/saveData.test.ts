@@ -9,14 +9,16 @@ const data = validateGameData(RAW_GAME_DATA);
 const full: SaveData = {
   version: SAVE_VERSION,
   savedAt: 1_700_000_000_000,
+  seed: 12345,
   clockSeconds: 650,
   player: { x: 900, y: 600, health: 70, hunger: 60, thirst: 50, stamina: 90 },
   inventory: [{ item: 'stone_axe', qty: 1, durability: 40 }, null, { item: 'wood', qty: 12 }],
   selected: 2,
   structures: [{ type: 'campfire', x: 1000, y: 640 }],
-  nodes: [{ id: 3, hp: 0, depleted: true, respawnInMs: 5000, harvests: 2 }],
+  nodes: [{ key: '-1,0:3', hp: 0, depleted: true, respawnInMs: 5000, harvests: 2 }],
   pickups: [{ item: 'stick', qty: 2, x: 950, y: 610 }],
   objectives: ['gather', 'craft_axe'],
+  refundStructures: [],
 };
 
 describe('parseSave', () => {
@@ -41,7 +43,7 @@ describe('parseSave', () => {
         ...full,
         inventory: [{ item: 'wood', qty: -3 }, 'junk', { qty: 2 }, { item: 'wood', qty: 2, durability: 'x' }],
         structures: [{ type: 'campfire' }, { type: 'campfire', x: 1, y: 2 }, null],
-        nodes: [{ id: -1 }, { id: 2.5 }, { id: 4, hp: 'a' }],
+        nodes: [{ key: 'nope' }, { key: 5 }, { key: '0,-2:4', hp: 'a' }],
         pickups: [{ item: 'stick', qty: 1, x: 'no', y: 0 }],
         objectives: ['gather', 7],
         clockSeconds: -100,
@@ -51,7 +53,7 @@ describe('parseSave', () => {
     if (!('data' in r)) return;
     expect(r.data.inventory).toEqual([null, null, null, { item: 'wood', qty: 2 }]);
     expect(r.data.structures).toEqual([{ type: 'campfire', x: 1, y: 2 }]);
-    expect(r.data.nodes.map((n) => n.id)).toEqual([4]);
+    expect(r.data.nodes.map((n) => n.key)).toEqual(['0,-2:4']);
     expect(r.data.pickups).toEqual([]);
     expect(r.data.objectives).toEqual(['gather']);
     expect(r.data.clockSeconds).toBe(0);
@@ -64,6 +66,36 @@ describe('parseSave', () => {
       error: { kind: 'newer', version: SAVE_VERSION + 1 },
     });
     expect(parseSave(null)).toEqual({ error: { kind: 'none' } });
+  });
+});
+
+describe('migration v1 → v2', () => {
+  it('keeps stats, inventory and clock; refunds structures; resets position', () => {
+    const v1 = {
+      version: 1,
+      savedAt: 99,
+      clockSeconds: 900,
+      player: { x: 500, y: 400, health: 55, hunger: 40, thirst: 30, stamina: 80 },
+      inventory: [{ item: 'wood', qty: 4 }],
+      selected: 1,
+      structures: [{ type: 'campfire', x: 10, y: 20 }, { type: 'bamboo_shelter', x: 50, y: 60 }],
+      nodes: [{ id: 3, hp: 0, depleted: true, respawnInMs: 1, harvests: 1 }],
+      pickups: [{ item: 'stick', qty: 1, x: 1, y: 1 }],
+      objectives: ['gather'],
+    };
+    const r = parseSave(JSON.stringify(v1));
+    expect('data' in r).toBe(true);
+    if (!('data' in r)) return;
+    expect(r.data.version).toBe(SAVE_VERSION);
+    expect(r.data.player.health).toBe(55);
+    expect(Number.isNaN(r.data.player.x)).toBe(true);
+    expect(r.data.inventory).toEqual([{ item: 'wood', qty: 4 }]);
+    expect(r.data.clockSeconds).toBe(900);
+    expect(r.data.structures).toEqual([]);
+    expect(r.data.refundStructures).toEqual(['campfire', 'bamboo_shelter']);
+    expect(r.data.nodes).toEqual([]);
+    expect(r.data.pickups).toEqual([]);
+    expect(Number.isFinite(r.data.seed)).toBe(true);
   });
 });
 

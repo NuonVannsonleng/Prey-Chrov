@@ -29,6 +29,12 @@ export class Pause extends Phaser.Scene {
       .text(cx, 250, 'The forest waits.', { fontFamily: FONTS.ui, fontSize: '18px', color: CSS.textDim })
       .setOrigin(0.5);
 
+    const seed = this.registry.get('worldSeed');
+    if (typeof seed === 'number') {
+      this.add
+        .text(cx, 282, `World seed ${seed}`, { fontFamily: FONTS.ui, fontSize: '14px', color: CSS.textDim })
+        .setOrigin(0.5);
+    }
     const resume = new Button(this, cx, 330, { label: 'Resume', onActivate: () => this.resume() });
     const menu = new Button(this, cx, 400, { label: 'Main Menu', onActivate: () => this.toMenu() });
     new ButtonList(this, [resume, menu]);

@@ -54,6 +54,10 @@ export interface GameEventMap {
   'placement:mode': boolean;
   'placement:cancel': void;
   'objectives:changed': ObjectiveView[];
+  /** World seed, sent when the UI is ready (minimap uses its own generator with this seed). */
+  'world:info': { seed: number };
+  /** Placed structure positions (minimap markers). */
+  'structures:changed': Array<{ x: number; y: number; kind: string }>;
 }
 
 export interface SurvivalTick {

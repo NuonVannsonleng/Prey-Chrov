@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { DEPTH, GATHER, TILE_SIZE } from '../config';
 import type { ResourceNode } from '../entities/ResourceNode';
-import { TEX, WATER_TILES } from '../textures';
+import { SHALLOW_TILES, TEX, WATER_TILES } from '../textures';
 import type { Structure } from './Structures';
 
 export type InteractTarget =
@@ -28,12 +28,11 @@ export class Interaction {
   constructor(
     scene: Phaser.Scene,
     private readonly nodes: readonly ResourceNode[],
-    private readonly ground: Phaser.Tilemaps.TilemapLayer,
+    /** Tile index lookup at a world position (chunk-aware). */
+    private readonly tileAtWorld: (wx: number, wy: number) => number,
     private readonly structures: readonly Structure[],
   ) {
-    const first = nodes[0];
-    if (!first) throw new Error('Interaction needs at least one resource node');
-    this.nodeTarget = { kind: 'node', node: first, x: 0, y: 0 };
+    this.nodeTarget = { kind: 'node', node: null as unknown as ResourceNode, x: 0, y: 0 };
     this.ring = scene.add.image(0, 0, TEX.targetRing).setDepth(DEPTH.targetRing).setVisible(false);
     scene.tweens.add({ targets: this.ring, alpha: { from: 1, to: 0.45 }, duration: 600, yoyo: true, repeat: -1 });
   }
@@ -88,8 +87,11 @@ export class Interaction {
     const ty0 = Math.floor((py + fy * 10) / TILE_SIZE);
     for (let oy = -1; oy <= 1; oy++) {
       for (let ox = -1; ox <= 1; ox++) {
-        const tile = this.ground.getTileAt(tx0 + ox, ty0 + oy);
-        if (!tile || !WATER_TILES.includes(tile.index)) continue;
+        const ttx = tx0 + ox;
+        const tty = ty0 + oy;
+        const index = this.tileAtWorld(ttx * TILE_SIZE + TILE_SIZE / 2, tty * TILE_SIZE + TILE_SIZE / 2);
+        if (!WATER_TILES.includes(index) && !SHALLOW_TILES.includes(index)) continue;
+        const tile = { pixelX: ttx * TILE_SIZE, pixelY: tty * TILE_SIZE };
         // Nearest point of the water tile to the player.
         const wx = Phaser.Math.Clamp(cx, tile.pixelX, tile.pixelX + TILE_SIZE);
         const wy = Phaser.Math.Clamp(py, tile.pixelY, tile.pixelY + TILE_SIZE);

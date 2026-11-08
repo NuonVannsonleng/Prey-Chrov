@@ -3,7 +3,7 @@ import { RAW_GAME_DATA } from '../data/gameData';
 import { DataValidationError, reachableItems, validateGameData, type RawGameData } from '../data/schema';
 import { rollLoot } from '../systems/Loot';
 import { mulberry32 } from '../utils/random';
-import { TEST_MAP_RESOURCES, buildTestMap } from '../world/TestMap';
+import { WORLD_GEN } from '../config';
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 type Raw = typeof RAW_GAME_DATA;
@@ -47,12 +47,19 @@ describe('shipped game data', () => {
     expect([...data.recipes.values()].some((r) => r.station === 'campfire')).toBe(true);
   });
 
-  it('every resource the test map places exists, and the map uses each one', () => {
-    const placed = new Set(buildTestMap().props.map((p) => p.resource).filter(Boolean));
-    for (const id of Object.values(TEST_MAP_RESOURCES)) {
-      expect(data.resources.has(id), `${id} missing from resources.json`).toBe(true);
-      expect(placed.has(id), `${id} never placed on the map`).toBe(true);
+  it('guaranteed starter resources exist and cover every basic material', () => {
+    const ids = new Set<string>(WORLD_GEN.starterProps.map((p) => p.id));
+    for (const id of ids) expect(data.resources.has(id), `${id} missing from resources.json`).toBe(true);
+    for (const r of data.resources.values()) expect(ids.has(r.id), `starter area lacks ${r.id}`).toBe(true);
+  });
+
+  it('every biome has props and every resource appears in some biome', () => {
+    const used = new Set<string>();
+    for (const b of data.biomes.values()) {
+      expect(b.props.length).toBeGreaterThan(0);
+      for (const p of b.props) if (p.kind === 'resource') used.add(p.id);
     }
+    for (const id of data.resources.keys()) expect(used.has(id), `${id} never generated`).toBe(true);
   });
 
   it('every resource can be gathered by hand', () => {

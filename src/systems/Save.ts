@@ -1,7 +1,7 @@
 import type { ItemStack } from './Inventory';
 
 export const SAVE_KEY = 'preychrov.save';
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 export const CAN_LOAD_SAVES = true;
 
 export type SaveStatus =
@@ -25,7 +25,8 @@ export interface SavedStructure {
 
 /** Only nodes that differ from their fresh state are stored (compact diff). */
 export interface SavedNode {
-  id: number;
+  /** Stable world node key "cx,cy:index". */
+  key: string;
   hp: number;
   depleted: boolean;
   /** Game-time ms until respawn (relative, so the world clock can restart at 0). */
@@ -44,6 +45,8 @@ export interface SavedPickup {
 export interface SaveData {
   version: number;
   savedAt: number;
+  /** World generation seed (same seed → same world). */
+  seed: number;
   /** Game clock total seconds since day 1 00:00. */
   clockSeconds: number;
   player: { x: number; y: number; health: number; hunger: number; thirst: number; stamina: number };
@@ -54,6 +57,11 @@ export interface SaveData {
   pickups: SavedPickup[];
   /** Completed objective ids. */
   objectives: string[];
+  /**
+   * Structure types whose positions are no longer valid (e.g. from a pre-procedural-world save);
+   * they are returned to the player as kits on load.
+   */
+  refundStructures: string[];
 }
 
 function defaultStorage(): KeyValueStorage | null {
@@ -73,7 +81,23 @@ const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 
  * Migrations from version N to N+1. Add an entry whenever SAVE_VERSION increases;
  * each receives the raw object of version N and returns a raw object of version N+1.
  */
-const MIGRATIONS: Record<number, (old: Rec) => Rec> = {};
+const MIGRATIONS: Record<number, (old: Rec) => Rec> = {
+  // v1 saves came from the fixed M1–M3 test grove. The world is procedural from v2, so
+  // positions no longer mean anything: keep stats/inventory/clock/objectives, refund placed
+  // structures as kits, and start the player at the new world's spawn on a fresh seed.
+  1: (old) => ({
+    ...old,
+    version: 2,
+    seed: (typeof old['savedAt'] === 'number' ? old['savedAt'] : 1) >>> 0,
+    refundStructures: (Array.isArray(old['structures']) ? old['structures'] : []).flatMap((s: unknown) =>
+      isRec(s) && typeof s['type'] === 'string' ? [s['type']] : [],
+    ),
+    structures: [],
+    nodes: [],
+    pickups: [],
+    player: { ...(isRec(old['player']) ? old['player'] : {}), x: null, y: null },
+  }),
+};
 
 function readRaw(storage: KeyValueStorage | null): { raw: string | null } | { error: SaveStatus } {
   if (!storage) return { error: { kind: 'unavailable' } };
@@ -116,9 +140,11 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
 
   const p = isRec(rec['player']) ? rec['player'] : {};
   const inventory = Array.isArray(rec['inventory']) ? rec['inventory'] : [];
+  const seed = rec['seed'];
   const data: SaveData = {
     version: SAVE_VERSION,
     savedAt,
+    seed: typeof seed === 'number' && Number.isFinite(seed) ? seed >>> 0 : savedAt >>> 0,
     // NaN = missing: the game keeps its configured start hour instead of loading at midnight.
     clockSeconds: Number.isFinite(rec['clockSeconds']) ? Math.max(0, rec['clockSeconds'] as number) : NaN,
     player: {
@@ -147,11 +173,11 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
     }),
     nodes: (Array.isArray(rec['nodes']) ? rec['nodes'] : []).flatMap((n: unknown) => {
       if (!isRec(n)) return [];
-      const id = n['id'];
-      if (typeof id !== 'number' || !Number.isInteger(id) || id < 0) return [];
+      const key = n['key'];
+      if (typeof key !== 'string' || !/^-?\d+,-?\d+:\d+$/.test(key)) return [];
       return [
         {
-          id,
+          key,
           hp: Math.max(0, finite(n['hp'], 0)),
           depleted: n['depleted'] === true,
           respawnInMs: Math.max(0, finite(n['respawnInMs'], 0)),
@@ -170,6 +196,9 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
       return [typeof d === 'number' && d > 0 ? { item, qty, x, y, durability: d } : { item, qty, x, y }];
     }),
     objectives: (Array.isArray(rec['objectives']) ? rec['objectives'] : []).filter((o): o is string => typeof o === 'string'),
+    refundStructures: (Array.isArray(rec['refundStructures']) ? rec['refundStructures'] : []).filter(
+      (o): o is string => typeof o === 'string',
+    ),
   };
   return { data };
 }

@@ -62,7 +62,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const b = PLAYER.body;
     this.body.setSize(b.width, b.height, false);
     this.body.setOffset(b.offsetX, b.offsetY);
-    this.body.setCollideWorldBounds(true);
+    this.body.setCollideWorldBounds(false);
     this.playAnim(`player-idle-down`);
   }
 
@@ -70,7 +70,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
    * Reads input, smooths velocity, updates facing/animation. dt and now in ms (game time).
    * With `inputEnabled` false the player glides to a stop (used while panels are open).
    */
-  step(keys: PlayerKeys, dtMs: number, now: number, inputEnabled = true, sprintAllowed = true): void {
+  step(keys: PlayerKeys, dtMs: number, now: number, inputEnabled = true, sprintAllowed = true, speedScale = 1): void {
     const inp = this.moveInput;
     inp.up = inputEnabled && keys.up.isDown;
     inp.down = inputEnabled && keys.down.isDown;
@@ -79,6 +79,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     inp.sprint = inputEnabled && sprintAllowed && keys.sprint.isDown;
 
     targetVelocity(inp, PLAYER, this.target);
+    this.target.x *= speedScale;
+    this.target.y *= speedScale;
     this.current.x = this.body.velocity.x;
     this.current.y = this.body.velocity.y;
     approachVelocity(this.current, this.target, PLAYER, dtMs / 1000, this.next);

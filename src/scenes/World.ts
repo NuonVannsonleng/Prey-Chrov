@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { CAMERA, DEPTH, GATHER, PICKUP, SCENES, TILE_SIZE, WATER } from '../config';
+import { CAMERA, DEPTH, GATHER, PICKUP, SCENES, WATER } from '../config';
 import { getGameData, itemDef } from '../data/gameData';
 import type { GameData, Station, ToolKind } from '../data/schema';
 import { Player, type PlayerKeys } from '../entities/Player';
@@ -17,11 +17,12 @@ import { readSave, writeSave, type SaveData } from '../systems/Save';
 import { buildSave, clampSelected, sanitizeInventory } from '../systems/SaveGame';
 import { Structures } from '../systems/Structures';
 import { Survival } from '../systems/Survival';
-import { TEX, TILE, WATER_TILES } from '../textures';
+import { TILE } from '../textures';
 import { FloatingText } from '../ui/FloatingText';
 import { PropLayer } from '../world/PropLayer';
 import { oncePerKeyEvent } from '../utils/keys';
-import { buildTestMap } from '../world/TestMap';
+import { ChunkManager } from '../world/ChunkManager';
+import { WorldGen } from '../world/WorldGen';
 
 /** Upper bound on distinct stacks one harvest can drop (loot tables have at most this many items). */
 const MAX_LOOT_STACKS = 6;
@@ -35,6 +36,16 @@ interface WorldKeys extends PlayerKeys {
 export interface WorldStartData {
   /** Resume from the save slot instead of starting a new journey. */
   load?: boolean;
+  /** World seed for a new journey (random if omitted; ?seed=N in the URL also works). */
+  seed?: number;
+}
+
+/** Seed for a new journey: explicit, then ?seed= URL param, then random. */
+function pickSeed(explicit?: number): number {
+  if (explicit !== undefined && Number.isFinite(explicit)) return explicit >>> 0;
+  const fromUrl = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('seed') : null;
+  if (fromUrl !== null && fromUrl.trim() !== '' && Number.isFinite(Number(fromUrl))) return Number(fromUrl) >>> 0;
+  return (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0;
 }
 
 export class World extends Phaser.Scene {
@@ -42,8 +53,9 @@ export class World extends Phaser.Scene {
   private player!: Player;
   private keys!: WorldKeys;
   private props!: PropLayer;
-  private ground!: Phaser.Tilemaps.TilemapLayer;
-  private waterTiles: Phaser.Tilemaps.Tile[] = [];
+  private gen!: WorldGen;
+  private chunks!: ChunkManager;
+  private seed = 0;
   private gathering!: Gathering;
   private interaction!: Interaction;
   private pickups!: Pickups;
@@ -109,31 +121,29 @@ export class World extends Phaser.Scene {
   create(start?: WorldStartData): void {
     this.resetFlags();
     this.gameData = getGameData();
-    const map = buildTestMap();
-    const worldW = map.widthTiles * TILE_SIZE;
-    const worldH = map.heightTiles * TILE_SIZE;
+    // A loaded save decides the seed; otherwise pick one for the new journey.
+    const saved = start?.load ? readSave() : null;
+    const save = saved && 'data' in saved ? saved.data : null;
+    if (saved && 'error' in saved) {
+      this.time.delayedCall(400, () => gameEvents.emit('toast', { text: 'Saved journey could not be loaded — starting fresh', tone: 'warn' }));
+    }
+    this.seed = save ? save.seed : pickSeed(start?.seed);
+    this.registry.set('worldSeed', this.seed);
+    this.gen = new WorldGen(this.seed, this.gameData.biomes);
+    this.spawn = this.gen.spawnPoint();
 
-    const tilemap = this.make.tilemap({ data: map.ground, tileWidth: TILE_SIZE, tileHeight: TILE_SIZE });
-    const tileset = tilemap.addTilesetImage('ground', TEX.tiles, TILE_SIZE, TILE_SIZE, 0, 0);
-    const layer = tileset ? tilemap.createLayer(0, tileset, 0, 0) : null;
-    if (!layer) throw new Error('Ground layer failed to build');
-    this.ground = layer.setDepth(DEPTH.ground);
-    this.ground.setCollision([TILE.waterA, TILE.waterB]);
-    this.waterTiles = this.ground.filterTiles((t: Phaser.Tilemaps.Tile) => t.index === TILE.waterA);
-
-    this.physics.world.setBounds(0, 0, worldW, worldH);
     this.props = new PropLayer(this);
-    this.props.addScenery(map.props);
-    this.gathering = new Gathering(this, this.props, map.props, this.gameData);
-    this.structures = new Structures(this, this.props, this.ground, this.gameData.structures);
-    this.structures.keepClear = map.spawn;
-    this.spawn = map.spawn;
-    this.player = new Player(this, map.spawn.x, map.spawn.y);
+    this.player = new Player(this, this.spawn.x, this.spawn.y);
     this.physics.add.collider(this.player, this.props.solids);
-    this.physics.add.collider(this.player, this.ground);
+    this.chunks = new ChunkManager(this, this.gen, this.props, this.gameData, this.player);
+    this.structures = new Structures(this, this.props, this.chunks, this.gameData.structures);
+    this.structures.keepClear = this.spawn;
+    this.chunks.onLoad = (cx, cy) => this.structures.loadChunk(cx, cy);
+    this.chunks.onUnload = (cx, cy) => this.structures.unloadChunk(cx, cy);
+    this.gathering = new Gathering(this, this.chunks.nodes, this.gameData, this.seed);
 
     this.floating = new FloatingText(this);
-    this.interaction = new Interaction(this, this.gathering.nodes, this.ground, this.structures.list);
+    this.interaction = new Interaction(this, this.chunks.nodes, (x, y) => this.chunks.tileAtWorld(x, y), this.structures.list);
     this.building = new Building(this, this.structures);
     this.lighting = new Lighting(this, CAMERA.zoom);
     this.clock = new GameClock(this.gameData.survival.day);
@@ -162,13 +172,14 @@ export class World extends Phaser.Scene {
       },
     });
 
-    if (start?.load) this.loadFromSave();
+    if (save) this.applySave(save);
+    else this.chunks.loadAllAround(this.spawn.x, this.spawn.y, this.now);
     this.lastHealth = this.survival.stats.health;
     this.wasHungry = this.survival.hungry;
     this.wasThirsty = this.survival.thirsty;
 
     const cam = this.cameras.main;
-    cam.setBounds(0, 0, worldW, worldH);
+    cam.removeBounds();
     cam.setZoom(CAMERA.zoom);
     cam.setRoundPixels(true);
     cam.startFollow(this.player, true, CAMERA.lerp, CAMERA.lerp, 0, 12);
@@ -185,6 +196,8 @@ export class World extends Phaser.Scene {
     onSceneEvent(this, 'ui:ready', () => {
       gameEvents.emit('objectives:changed', this.objectives.view());
       gameEvents.emit('craft:stations', [...this.stations]);
+      gameEvents.emit('world:info', { seed: this.seed });
+      this.emitStructures();
     });
     this.scene.launch(SCENES.ui);
 
@@ -215,6 +228,7 @@ export class World extends Phaser.Scene {
     const dt = Math.min(delta, 100);
     const p = this.player;
     this.animateWater(dt);
+    this.chunks.update(p.x, p.y, this.now);
     if (this.busy) {
       this.pendingUse = false;
       this.pendingInteract = false;
@@ -225,7 +239,7 @@ export class World extends Phaser.Scene {
     const inputOn = !this.modalOpen;
     const cfg = this.gameData.survival;
 
-    p.step(this.keys, dt, this.now, inputOn, this.survival.canSprint);
+    p.step(this.keys, dt, this.now, inputOn, this.survival.canSprint, this.terrainSpeed(p.x, p.y));
     this.clock.advance(dt / 1000);
     this.survival.update(dt / 1000, this.clock.secondsPerHour, p.sprinting);
     this.watchSurvival();
@@ -512,6 +526,7 @@ export class World extends Phaser.Scene {
       return b.cancel();
     }
     this.inventory.broadcast();
+    this.emitStructures();
     this.floating.show(b.x, b.y - 30, `Built ${placed.def.name}`, '#8ec26a');
     if (placed.def.interaction === 'cook') this.completeObjective('campfire');
     if (placed.def.interaction === 'sleep') this.completeObjective('shelter');
@@ -560,7 +575,8 @@ export class World extends Phaser.Scene {
         player: this.player,
         inventory: this.inventory,
         structures: this.structures,
-        gathering: this.gathering,
+        chunks: this.chunks,
+        seed: this.seed,
         pickups: this.pickups,
         objectives: this.objectives,
         now: this.now,
@@ -568,13 +584,19 @@ export class World extends Phaser.Scene {
     );
   }
 
-  private loadFromSave(): void {
-    const r = readSave();
-    if ('error' in r) {
-      this.time.delayedCall(400, () => gameEvents.emit('toast', { text: 'Saved journey could not be loaded — starting fresh', tone: 'warn' }));
-      return;
-    }
-    this.applySave(r.data);
+  /** Wading through shallows is slow; mud a little slow. */
+  private terrainSpeed(x: number, y: number): number {
+    const t = this.chunks.tileAtWorld(x, y - 4);
+    if (t === TILE.shallowsA) return 0.6;
+    if (t === TILE.mud) return 0.85;
+    return 1;
+  }
+
+  private emitStructures(): void {
+    gameEvents.emit(
+      'structures:changed',
+      this.structures.records.map((s) => ({ x: s.x, y: s.y, kind: s.def.interaction ?? 'other' })),
+    );
   }
 
   private applySave(save: SaveData): void {
@@ -594,46 +616,44 @@ export class World extends Phaser.Scene {
         gameEvents.emit('toast', { text: `${removed} unknown item stack(s) from an older version were removed`, tone: 'warn' }),
       );
     }
-    let refunded = 0;
+    // Node diffs must exist before chunks load so harvested spots stay harvested.
+    this.chunks.restoreNodes(save.nodes, this.now);
+    const refundTypes: string[] = [...save.refundStructures];
     for (const st of save.structures) {
-      if (this.structures.list.some((s) => s.x === Math.round(st.x) && s.y === Math.round(st.y))) continue;
-      if (this.structures.place(st.type, st.x, st.y)) continue;
-      const kit = [...this.gameData.items.values()].find((i) => i.places === st.type);
-      if (kit && this.inventory.add(kit.id, 1) === 0) refunded++;
+      if (this.structures.hasAt(st.x, st.y)) continue;
+      if (!this.structures.place(st.type, st.x, st.y)) refundTypes.push(st.type);
+    }
+    this.placePlayer(ps.x, ps.y);
+    let refunded = 0;
+    for (const type of refundTypes) {
+      const kit = [...this.gameData.items.values()].find((i) => i.places === type);
+      if (!kit) continue;
+      refunded++;
+      // A full inventory never loses the kit: it lands on the ground at the player's feet.
+      if (this.inventory.add(kit.id, 1) > 0) this.pickups.spawn(kit.id, 1, this.player.x, this.player.y + 10, 0, 0, 6);
     }
     if (refunded > 0) {
       this.time.delayedCall(800, () => gameEvents.emit('toast', { text: `${refunded} structure(s) could not be rebuilt and were returned as kits`, tone: 'info' }));
-    }
-    const byId = new Map(this.gathering.nodes.map((n) => [n.prop.id, n]));
-    for (const sn of save.nodes) {
-      const node = byId.get(sn.id);
-      if (!node) continue;
-      node.harvestCount = sn.harvests;
-      if (sn.depleted) {
-        node.forceDepleted(this.now + sn.respawnInMs);
-      } else node.hp = Math.min(node.def.hp, Math.max(1, sn.hp));
     }
     for (const pk of save.pickups) {
       if (this.gameData.items.has(pk.item)) this.pickups.spawn(pk.item, pk.qty, pk.x, pk.y, 0, 0, 0, false, pk.durability);
     }
     this.objectives = new Objectives(save.objectives);
-    this.placePlayer(ps.x, ps.y);
   }
 
-  /** Puts the player at a saved spot if it is inside the world and not blocked; otherwise at spawn. */
+  /**
+   * Puts the player at a saved spot if it is valid (finite, not in deep water, not inside a
+   * solid); otherwise at spawn. Chunks around the candidate load first so the check is real.
+   */
   private placePlayer(x: number, y: number): void {
-    const b = this.physics.world.bounds;
-    const ok =
-      Number.isFinite(x) &&
-      Number.isFinite(y) &&
-      x > b.x + 8 &&
-      x < b.right - 8 &&
-      y > b.y + 16 &&
-      y < b.bottom - 4 &&
-      this.physics.overlapRect(x - 8, y - 11, 16, 11, false, true).length === 0 &&
-      !WATER_TILES.includes(this.ground.getTileAtWorldXY(x, y - 4)?.index ?? -1);
+    let ok = Number.isFinite(x) && Number.isFinite(y) && Math.abs(x) < 5e6 && Math.abs(y) < 5e6;
+    if (ok) {
+      this.chunks.loadAllAround(x, y, this.now);
+      ok = !this.chunks.isDeepWater(x, y - 4) && this.physics.overlapRect(x - 8, y - 11, 16, 11, false, true).length === 0;
+    }
     const px = ok ? x : this.spawn.x;
     const py = ok ? y : this.spawn.y;
+    if (!ok) this.chunks.loadAllAround(px, py, this.now);
     this.player.body.reset(px, py);
   }
 
@@ -673,8 +693,7 @@ export class World extends Phaser.Scene {
     this.nextWaterFrameAt -= dt;
     if (this.nextWaterFrameAt > 0) return;
     this.nextWaterFrameAt = WATER.frameMs;
-    // Swap the two water frames in place; only the index changes, so collision flags stay.
-    for (const t of this.waterTiles) t.index = t.index === TILE.waterA ? TILE.waterB : TILE.waterA;
+    this.chunks.animateWater();
   }
 
   private setPrompt(text: string): void {
@@ -756,6 +775,8 @@ export class World extends Phaser.Scene {
     kb?.off('keydown-F3', this.debugHandler);
     kb?.off('keydown', this.pressHandler);
     kb?.removeAllKeys(true, true);
+    // Scene shutdown destroys every game object and the physics world; just drop references.
+    this.chunks.forget();
     this.scene.stop(SCENES.ui);
   }
 }

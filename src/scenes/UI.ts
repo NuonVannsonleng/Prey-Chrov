@@ -10,6 +10,7 @@ import { Toast } from '../ui/components/Toast';
 import { CraftingPanel } from '../ui/panels/CraftingPanel';
 import { Hotbar } from '../ui/panels/Hotbar';
 import { InventoryPanel } from '../ui/panels/InventoryPanel';
+import { Minimap } from '../ui/panels/Minimap';
 import { StatusHud } from '../ui/panels/StatusHud';
 
 const HINTS = [
@@ -35,6 +36,7 @@ export class UI extends Phaser.Scene {
   private panel!: InventoryPanel;
   private crafting!: CraftingPanel;
   private status!: StatusHud;
+  private minimap!: Minimap;
   private hurtFlash!: Phaser.GameObjects.Rectangle;
   private placing = false;
   private toast!: Toast;
@@ -65,6 +67,7 @@ export class UI extends Phaser.Scene {
       .text(24, 20, 'ព្រៃជ្រៅ', { fontFamily: FONTS.title, fontSize: '22px', color: CSS.gold, padding: { top: 10, bottom: 6 } })
       .setAlpha(0.9);
     this.status = new StatusHud(this);
+    this.minimap = new Minimap(this);
     this.hints = this.buildHints();
     this.hotbar = new Hotbar(this);
     this.prompt = this.add
@@ -90,7 +93,7 @@ export class UI extends Phaser.Scene {
       .setOrigin(0, 0.5)
       .setVisible(false);
     this.debugText = this.add
-      .text(GAME_WIDTH - 20, 20, '', {
+      .text(GAME_WIDTH - 20, 210, '', {
         fontFamily: 'Consolas, monospace',
         fontSize: '14px',
         color: CSS.turquoise,
@@ -108,8 +111,11 @@ export class UI extends Phaser.Scene {
     this.crafting = new CraftingPanel(this);
     this.toast = new Toast(this);
 
+    onSceneEvent(this, 'world:info', ({ seed }) => this.minimap.setSeed(seed));
+    onSceneEvent(this, 'structures:changed', (list) => this.minimap.setStructures(list));
     onSceneEvent(this, 'player:tick', (t) => {
       this.lastTick = t;
+      this.minimap.update(t.x, t.y);
       if (this.sprintTag.visible !== t.sprinting) this.sprintTag.setVisible(t.sprinting);
     });
     onSceneEvent(this, 'debug:toggle', (on) => {

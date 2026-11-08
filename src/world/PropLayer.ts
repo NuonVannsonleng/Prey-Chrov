@@ -1,9 +1,8 @@
 import Phaser from 'phaser';
 import { CANOPY, DEPTH } from '../config';
 import { CANOPY_SIZE, TEX, type ResourceSprite } from '../textures';
-import type { Prop } from './TestMap';
 
-/** Collider footprints (px) at each prop's base. */
+/** Collider footprints (px) at each gatherable prop's base. */
 export const FOOTPRINT: Record<ResourceSprite, { w: number; h: number }> = {
   tree: { w: 14, h: 10 },
   rock: { w: 24, h: 12 },
@@ -20,29 +19,15 @@ export interface Canopy {
 }
 
 /**
- * Scenery props (ferns, non-gatherable trees), the shared static collider group
- * and the canopy registry that fades leaves over the player.
+ * Shared static collider group plus the canopy registry that fades leaves over the player.
+ * Chunks add and remove their solids/canopies here as they load and unload.
  */
 export class PropLayer {
   readonly solids: Phaser.Physics.Arcade.StaticGroup;
-  private readonly canopies: Canopy[] = [];
+  private readonly canopies = new Set<Canopy>();
 
   constructor(private readonly scene: Phaser.Scene) {
     this.solids = scene.physics.add.staticGroup();
-  }
-
-  /** Adds scenery for every prop without a resource id. */
-  addScenery(props: readonly Prop[]): void {
-    for (const p of props) {
-      if (p.resource !== null) continue;
-      if (p.kind === 'fern') {
-        this.scene.add.image(p.x, p.y, TEX.fern, p.variant).setOrigin(0.5, 1).setDepth(p.y);
-      } else if (p.kind === 'tree') {
-        this.scene.add.image(p.x, p.y, TEX.trunk, p.variant).setOrigin(0.5, 1).setDepth(p.y);
-        this.addSolid(p.x, p.y, FOOTPRINT.tree);
-        this.addCanopy(p.x, p.y, p.canopyVariant);
-      }
-    }
   }
 
   /** Creates a static collider zone whose bottom edge sits at the prop's base. */
@@ -53,15 +38,29 @@ export class PropLayer {
     return zone;
   }
 
-  addCanopy(trunkX: number, trunkBaseY: number, variant: number): Canopy {
+  /** Removes a solid from the group and destroys its body (no phantom colliders). */
+  removeSolid(zone: Phaser.GameObjects.Zone): void {
+    this.solids.remove(zone, true, true);
+  }
+
+  addCanopy(trunkX: number, trunkBaseY: number, variant: number, scale = 1, lift = 70): Canopy {
     const cx = trunkX;
-    const cy = trunkBaseY - 70;
-    const image = this.scene.add.image(cx, cy, TEX.canopy, variant).setDepth(DEPTH.canopy + trunkBaseY);
-    const hw = CANOPY_SIZE.w * 0.4;
-    const hh = CANOPY_SIZE.h * 0.4;
+    const cy = trunkBaseY - lift * scale;
+    const image = this.scene.add.image(cx, cy, TEX.canopy, variant).setScale(scale).setDepth(DEPTH.canopy + trunkBaseY);
+    const hw = CANOPY_SIZE.w * 0.4 * scale;
+    const hh = CANOPY_SIZE.h * 0.4 * scale;
     const canopy = { image, left: cx - hw, right: cx + hw, top: cy - hh, bottom: cy + hh + 12 };
-    this.canopies.push(canopy);
+    this.canopies.add(canopy);
     return canopy;
+  }
+
+  removeCanopy(c: Canopy): void {
+    this.canopies.delete(c);
+    c.image.destroy();
+  }
+
+  get canopyCount(): number {
+    return this.canopies.size;
   }
 
   /** Fades any visible canopy covering the target point; restores the rest. No allocations. */

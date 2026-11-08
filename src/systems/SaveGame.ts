@@ -1,7 +1,6 @@
 import type { GameData } from '../data/schema';
 import type { Player } from '../entities/Player';
 import type { GameClock } from './Clock';
-import type { Gathering } from './Gathering';
 import { HOTBAR_SLOTS, type ItemStack } from './Inventory';
 import type { Objectives } from './Objectives';
 import type { Pickups } from './Pickups';
@@ -9,6 +8,7 @@ import type { PlayerInventory } from './PlayerInventory';
 import { SAVE_VERSION, type SaveData } from './Save';
 import type { Structures } from './Structures';
 import type { Survival } from './Survival';
+import type { ChunkManager } from '../world/ChunkManager';
 
 export interface WorldState {
   clock: GameClock;
@@ -16,19 +16,21 @@ export interface WorldState {
   player: Player;
   inventory: PlayerInventory;
   structures: Structures;
-  gathering: Gathering;
+  chunks: ChunkManager;
+  seed: number;
   pickups: Pickups;
   objectives: Objectives;
   /** World game-time clock in ms (node respawn timers are relative to it). */
   now: number;
 }
 
-/** Snapshot of everything that matters for a resumed session. Unchanged nodes are omitted. */
+/** Snapshot of everything that matters for a resumed session. Unchanged nodes are omitted (compact diff). */
 export function buildSave(w: WorldState): SaveData {
   const s = w.survival.stats;
   return {
     version: SAVE_VERSION,
     savedAt: Date.now(),
+    seed: w.seed,
     clockSeconds: w.clock.totalSeconds,
     player: {
       x: Math.round(w.player.x),
@@ -41,17 +43,10 @@ export function buildSave(w: WorldState): SaveData {
     inventory: w.inventory.inventory.snapshot(),
     selected: w.inventory.selected,
     structures: w.structures.serialize(),
-    nodes: w.gathering.nodes
-      .filter((n) => n.depleted || n.hp < n.def.hp || n.harvestCount > 0)
-      .map((n) => ({
-        id: n.prop.id,
-        hp: n.hp,
-        depleted: n.depleted,
-        respawnInMs: n.depleted ? Math.max(0, n.respawnAt - w.now) : 0,
-        harvests: n.harvestCount,
-      })),
+    nodes: w.chunks.serializeNodes(w.now),
     pickups: w.pickups.serialize(),
     objectives: w.objectives.serialize(),
+    refundStructures: [],
   };
 }
 

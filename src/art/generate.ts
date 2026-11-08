@@ -22,6 +22,7 @@ import { mulberry32, randInt, randRange } from '../utils/random';
 import { createCanvasTexture, ellipse, hex, px, shade, type Ctx } from './canvas';
 import { generateGatheringTextures } from './gathering';
 import { generateSurvivalTextures } from './survival';
+import { drawExtraTiles, generateScenery } from './world';
 
 /** Draws every placeholder texture on canvases. Keys and frame layout live in textures.ts. */
 
@@ -99,6 +100,7 @@ function generateTiles(scene: Phaser.Scene): void {
     drawShore(ctx, TILE.shore * TILE_SIZE, rng);
     drawWater(ctx, TILE.waterA * TILE_SIZE, 0);
     drawWater(ctx, TILE.waterB * TILE_SIZE, 1);
+    drawExtraTiles(ctx);
   });
 }
 
@@ -540,6 +542,7 @@ export function generateAllTextures(scene: Phaser.Scene): void {
   generateMenuBackground(scene);
   generateGatheringTextures(scene);
   generateSurvivalTextures(scene);
+  generateScenery(scene);
 
   const crisp = [
     TEX.tiles,
@@ -555,6 +558,7 @@ export function generateAllTextures(scene: Phaser.Scene): void {
     TEX.chip,
     TEX.structures,
     TEX.flame,
+    TEX.scenery,
   ];
   for (const key of crisp) scene.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
 }

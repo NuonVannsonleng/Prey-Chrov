@@ -1,31 +1,44 @@
 import Phaser from 'phaser';
-import { BUILD, STATION_REACH, TILE_SIZE } from '../config';
+import { BUILD, CHUNK_TILES, STATION_REACH, TILE_SIZE } from '../config';
 import type { Station, StructureDef } from '../data/schema';
-import { TEX, WATER_TILES } from '../textures';
+import { TEX } from '../textures';
 import type { PropLayer } from '../world/PropLayer';
+import { chunkOf } from '../world/WorldGen';
 import type { SavedStructure } from './Save';
 
+/** A placed structure. Visual fields are null while its chunk is unloaded. */
 export interface Structure {
   def: StructureDef;
   x: number;
   y: number;
-  image: Phaser.GameObjects.Image;
+  image: Phaser.GameObjects.Image | null;
   flame: Phaser.GameObjects.Sprite | null;
+  zone: Phaser.GameObjects.Zone | null;
 }
 
 const FLAME_ANIM = 'campfire-flame';
 
-/** Placed campfires and shelters: creation, placement rules, station lookup and lights. */
+export interface PlacementWorld {
+  isDeepWater(wx: number, wy: number): boolean;
+  isLoaded(cx: number, cy: number): boolean;
+}
+
+/**
+ * Placed campfires and shelters. Records persist for the whole session (and saves);
+ * visuals/colliders exist only while their chunk is loaded (`list` = materialized ones).
+ */
 export class Structures {
+  readonly records: Structure[] = [];
+  /** Materialized structures (in loaded chunks). Shared with Interaction. */
   readonly list: Structure[] = [];
   private readonly rect = new Phaser.Geom.Rectangle();
-  /** World point that must stay buildable-free (the fallback player spawn). */
+  /** World point that must stay free of buildings (the fallback player spawn). */
   keepClear: { x: number; y: number } | null = null;
 
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly props: PropLayer,
-    private readonly ground: Phaser.Tilemaps.TilemapLayer,
+    private readonly world: PlacementWorld,
     private readonly defs: ReadonlyMap<string, StructureDef>,
   ) {
     if (!scene.anims.exists(FLAME_ANIM)) {
@@ -42,27 +55,61 @@ export class Structures {
     return this.defs.get(type);
   }
 
-  /** Creates a structure without validation (used by placement after checks, and by save loading). */
+  /** Adds a structure record (no validation) and materializes it if its chunk is loaded. */
   place(type: string, x: number, y: number): Structure | null {
     const def = this.defs.get(type);
     if (!def) return null;
-    x = Math.round(x);
-    y = Math.round(y);
-    const image = this.scene.add.image(x, y, TEX.structures, def.sprite).setOrigin(0.5, 1).setDepth(y);
-    if (def.solid) this.props.addSolid(x, y, def.footprint);
-    let flame: Phaser.GameObjects.Sprite | null = null;
-    if (def.interaction === 'cook' && def.lightRadius > 0) {
-      flame = this.scene.add.sprite(x, y - 7, TEX.flame, 0).setOrigin(0.5, 1).setDepth(y + 0.5);
-      flame.play(FLAME_ANIM);
-    }
-    const s = { def, x, y, image, flame };
-    this.list.push(s);
+    const s: Structure = { def, x: Math.round(x), y: Math.round(y), image: null, flame: null, zone: null };
+    this.records.push(s);
+    if (this.world.isLoaded(chunkOf(Math.floor(s.x / TILE_SIZE)), chunkOf(Math.floor(s.y / TILE_SIZE)))) this.materialize(s);
     return s;
   }
 
+  hasAt(x: number, y: number): boolean {
+    return this.records.some((s) => s.x === Math.round(x) && s.y === Math.round(y));
+  }
+
+  /** Chunk loaded: create visuals for its structures. */
+  loadChunk(cx: number, cy: number): void {
+    for (const s of this.records) if (!s.image && this.inChunk(s, cx, cy)) this.materialize(s);
+  }
+
+  /** Chunk unloaded: release visuals and colliders, keep the record. */
+  unloadChunk(cx: number, cy: number): void {
+    for (const s of this.records) if (s.image && this.inChunk(s, cx, cy)) this.dematerialize(s);
+  }
+
+  private inChunk(s: Structure, cx: number, cy: number): boolean {
+    const span = CHUNK_TILES * TILE_SIZE;
+    return Math.floor(s.x / span) === cx && Math.floor(s.y / span) === cy;
+  }
+
+  private materialize(s: Structure): void {
+    const { def, x, y } = s;
+    s.image = this.scene.add.image(x, y, TEX.structures, def.sprite).setOrigin(0.5, 1).setDepth(y);
+    if (def.solid) s.zone = this.props.addSolid(x, y, def.footprint);
+    if (def.interaction === 'cook' && def.lightRadius > 0) {
+      s.flame = this.scene.add.sprite(x, y - 7, TEX.flame, 0).setOrigin(0.5, 1).setDepth(y + 0.5);
+      s.flame.play(FLAME_ANIM);
+    }
+    this.list.push(s);
+  }
+
+  private dematerialize(s: Structure): void {
+    s.image?.destroy();
+    s.flame?.destroy();
+    if (s.zone) this.props.removeSolid(s.zone);
+    s.image = null;
+    s.flame = null;
+    s.zone = null;
+    const i = this.list.indexOf(s);
+    if (i >= 0) this.list.splice(i, 1);
+  }
+
   /**
-   * Whether a structure fits at (x, y): within reach, inside the world, not on water,
-   * not overlapping any solid (trees, rocks, structures) or the player.
+   * Whether a structure fits at (x, y): within reach, not on deep water, not overlapping any
+   * solid (trees, rocks, structures), the player, or the spawn point; padded so a structure
+   * can never leave a gap narrower than the player.
    */
   canPlace(type: string, x: number, y: number, playerX: number, playerY: number, playerBody: Phaser.Geom.Rectangle): boolean {
     const def = this.defs.get(type);
@@ -71,8 +118,6 @@ export class Structures {
     const { w, h } = def.footprint;
     const left = x - w / 2;
     const top = y - h;
-    const bounds = this.scene.physics.world.bounds;
-    if (left < bounds.x + 4 || top < bounds.y + 4 || left + w > bounds.right - 4 || y > bounds.bottom - 4) return false;
     for (const [cx, cy] of [
       [left, top],
       [left + w, top],
@@ -80,18 +125,14 @@ export class Structures {
       [left + w, y],
       [x, y - h / 2],
     ] as const) {
-      const tile = this.ground.getTileAtWorldXY(cx, cy);
-      if (!tile || WATER_TILES.includes(tile.index)) return false;
+      if (this.world.isDeepWater(cx, cy)) return false;
     }
-    // Keep a small margin around the footprint so structures never trap the player.
     const pad = 8;
-    const hits = this.scene.physics.overlapRect(left - pad, top - pad, w + pad * 2, h + pad * 2, false, true);
-    if (hits.length > 0) return false;
+    if (this.scene.physics.overlapRect(left - pad, top - pad, w + pad * 2, h + pad * 2, false, true).length > 0) return false;
     this.rect.setTo(left - pad, top - pad, w + pad * 2, h + pad * 2);
     if (Phaser.Geom.Intersects.RectangleToRectangle(this.rect, playerBody)) return false;
-    if (this.keepClear && Math.abs(this.keepClear.x - x) < w / 2 + 20 && Math.abs(this.keepClear.y - (y - h / 2)) < h / 2 + 20) return false;
-    // Large structures also must not sit right on top of each other visually.
-    for (const s of this.list) if (Math.abs(s.x - x) < (w + s.def.footprint.w) / 2 && Math.abs(s.y - y) < TILE_SIZE) return false;
+    if (this.keepClear && Math.abs(this.keepClear.x - x) < w / 2 + 16 && Math.abs(this.keepClear.y - (y - h / 2)) < h / 2 + 16) return false;
+    for (const s of this.records) if (Math.abs(s.x - x) < (w + s.def.footprint.w) / 2 && Math.abs(s.y - y) < TILE_SIZE) return false;
     return true;
   }
 
@@ -105,6 +146,6 @@ export class Structures {
   }
 
   serialize(): SavedStructure[] {
-    return this.list.map((s) => ({ type: s.def.id, x: s.x, y: s.y }));
+    return this.records.map((s) => ({ type: s.def.id, x: s.x, y: s.y }));
   }
 }

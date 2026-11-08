@@ -1,6 +1,8 @@
 import {
+  GROUND_TILE_KEYS,
   ICON_KEYS,
   RESOURCE_SPRITES,
+  SCENERY_SPRITES,
   STRUCTURE_SPRITES,
   type GroundTileKey,
   type IconKey,
@@ -172,6 +174,7 @@ export interface GameData {
   recipes: ReadonlyMap<string, RecipeDef>;
   structures: ReadonlyMap<string, StructureDef>;
   survival: SurvivalConfig;
+  biomes: ReadonlyMap<BiomeId, BiomeDef>;
 }
 
 export interface RawGameData {
@@ -181,6 +184,7 @@ export interface RawGameData {
   recipes: unknown;
   structures: unknown;
   survival: unknown;
+  biomes: unknown;
 }
 
 // ---------- Validation ----------
@@ -408,6 +412,41 @@ function validateSurvival(p: string[], s: unknown): void {
   }
 }
 
+function validateBiomes(p: string[], biomes: Rec[], resourceIds: Set<string>): void {
+  const ids = new Set(biomes.map((b) => b['id']));
+  for (const id of BIOME_IDS) if (!ids.has(id)) p.push(`biomes.json: missing biome "${id}"`);
+  for (const b of biomes) {
+    const w = `biome "${String(b['id'])}"`;
+    if (!BIOME_IDS.includes(b['id'] as BiomeId)) p.push(`${w}: id must be one of ${BIOME_IDS.join(', ')}`);
+    if (!isStr(b['name'])) p.push(`${w}: name required`);
+    if (b['nameKm'] !== undefined && !isStr(b['nameKm'])) p.push(`${w}: nameKm must be a non-empty string`);
+    if (typeof b['minimapColor'] !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(b['minimapColor'] as string))
+      p.push(`${w}: minimapColor must be #rrggbb`);
+    if (!isStr(b['ambience'])) p.push(`${w}: ambience required`);
+    if (!isNum(b['nightDanger']) || num(b['nightDanger']) < 0) p.push(`${w}: nightDanger must be >= 0`);
+    const ground = b['ground'];
+    if (!Array.isArray(ground) || ground.length === 0) p.push(`${w}: ground must be a non-empty array`);
+    else
+      ground.forEach((g: unknown, i) => {
+        if (!isRec(g) || !GROUND_TILE_KEYS.includes(g['tile'] as GroundTileKey)) p.push(`${w} ground[${i}]: unknown tile ${String(isRec(g) ? g['tile'] : g)}`);
+        else if (!isNum(g['weight']) || num(g['weight']) <= 0) p.push(`${w} ground[${i}]: weight must be > 0`);
+      });
+    const props = b['props'];
+    if (!Array.isArray(props)) p.push(`${w}: props must be an array`);
+    else
+      props.forEach((pr: unknown, i) => {
+        if (!isRec(pr)) return void p.push(`${w} props[${i}]: must be an object`);
+        const kind = pr['kind'];
+        if (kind === 'resource') {
+          if (!resourceIds.has(pr['id'] as string)) p.push(`${w} props[${i}]: unknown resource ${String(pr['id'])}`);
+        } else if (kind === 'scenery') {
+          if (!(SCENERY_SPRITES as readonly string[]).includes(pr['id'] as string)) p.push(`${w} props[${i}]: unknown scenery ${String(pr['id'])}`);
+        } else p.push(`${w} props[${i}]: kind must be resource or scenery`);
+        if (!isNum(pr['density']) || num(pr['density']) < 0 || num(pr['density']) > 200) p.push(`${w} props[${i}]: density must be 0–200`);
+      });
+  }
+}
+
 /** Validates raw JSON and returns typed lookup maps. Throws DataValidationError listing every problem. */
 export function validateGameData(raw: RawGameData): GameData {
   const p: string[] = [];
@@ -416,6 +455,7 @@ export function validateGameData(raw: RawGameData): GameData {
   const resources = collectIds(p, 'resources.json', raw.resources);
   const recipes = collectIds(p, 'recipes.json', raw.recipes);
   const structures = collectIds(p, 'structures.json', raw.structures);
+  const biomes = collectIds(p, 'biomes.json', raw.biomes);
   const ids = (list: Rec[]) => new Set(list.map((i) => i['id']).filter(isStr));
   const itemIds = ids(items);
 
@@ -425,6 +465,7 @@ export function validateGameData(raw: RawGameData): GameData {
   validateRecipes(p, recipes, itemIds);
   validateStructures(p, structures);
   validateSurvival(p, raw.survival);
+  validateBiomes(p, biomes, ids(resources));
 
   if (p.length) throw new DataValidationError(p);
 
@@ -435,6 +476,7 @@ export function validateGameData(raw: RawGameData): GameData {
     recipes: new Map((recipes as unknown as RecipeDef[]).map((r) => [r.id, r])),
     structures: new Map((structures as unknown as StructureDef[]).map((s) => [s.id, s])),
     survival: raw.survival as SurvivalConfig,
+    biomes: new Map((biomes as unknown as BiomeDef[]).map((b) => [b.id, b])),
   };
 
   // Reachability: every item must be gatherable or craftable from gatherable items.

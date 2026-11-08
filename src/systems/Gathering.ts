@@ -1,11 +1,9 @@
 import Phaser from 'phaser';
-import { DEPTH, GATHER, TEST_MAP } from '../config';
+import { DEPTH, GATHER } from '../config';
 import type { GameData, ToolKind } from '../data/schema';
 import { ResourceNode, type HitResult } from '../entities/ResourceNode';
 import { TEX, type ResourceSprite } from '../textures';
-import { hash2, mulberry32 } from '../utils/random';
-import type { PropLayer } from '../world/PropLayer';
-import type { Prop } from '../world/TestMap';
+import { hash2, hashString, mulberry32 } from '../utils/random';
 import type { ItemStack } from './Inventory';
 import { rollLoot } from './Loot';
 
@@ -17,9 +15,8 @@ const CHIP_TINT: Record<ResourceSprite, number> = {
 };
 const HP_BAR_MS = 1600;
 
-/** Owns every gatherable node: hits, feedback, loot rolls and respawn timers (game time). */
+/** Hits, feedback, loot rolls and respawn timers (game time) for the currently loaded nodes. */
 export class Gathering {
-  readonly nodes: ResourceNode[] = [];
   private readonly chips: Phaser.GameObjects.Particles.ParticleEmitter;
   private readonly hpBar: Phaser.GameObjects.Graphics;
   private hpBarNode: ResourceNode | null = null;
@@ -27,16 +24,11 @@ export class Gathering {
 
   constructor(
     private readonly scene: Phaser.Scene,
-    props: PropLayer,
-    mapProps: readonly Prop[],
+    /** Live list of loaded nodes, owned by the ChunkManager. */
+    readonly nodes: readonly ResourceNode[],
     private readonly data: GameData,
+    private readonly seed: number,
   ) {
-    for (const p of mapProps) {
-      if (!p.resource) continue;
-      const def = data.resources.get(p.resource);
-      if (!def) throw new Error(`Map references unknown resource "${p.resource}"`);
-      this.nodes.push(new ResourceNode(scene, props, p, def));
-    }
     this.chips = scene.add
       .particles(0, 0, TEX.chip, {
         emitting: false,
@@ -72,7 +64,7 @@ export class Gathering {
 
     const lootTable = this.data.loot.get(node.def.lootTable);
     if (!lootTable) return { result, loot: [] };
-    const rng = mulberry32(hash2(node.prop.id, node.harvestCount, TEST_MAP.seed));
+    const rng = mulberry32(hash2(hashString(node.prop.key), node.harvestCount, this.seed));
     return { result, loot: rollLoot(lootTable, rng) };
   }
 
