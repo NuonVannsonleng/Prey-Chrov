@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.2.0 — M2: Gathering, pickup and inventory (2026-11-09)
+
+### Added
+- Data-driven content in `src/data/`:
+  - `items.json` (8 items), `loot.json` (4 tables) and `resources.json` (4 node types), with typed schema and validation in `schema.ts`.
+  - Validation errors show on screen at boot.
+  - The content-designer role authored the data, using a stand-in agent with the `content-designer` instructions.
+- Gatherable jungle trees, bamboo clumps, boulders and berry bushes:
+  - HP, hit shake/flash/chips, an HP bar and a swing pose.
+  - Depleted visuals (stump, cut stubs, rubble, picked bush).
+  - Loot rolls are deterministic.
+  - Respawn runs on game time and waits while the player is in the way.
+- Pooled ground pickups with magnet, exactly-once collection, floating "+N Item" text and full-inventory handling.
+- A pond and stream with animated solid water, a walkable shore, and drinking (E).
+- Contextual target ring and an "E — Verb Name" prompt; hold E or the mouse to repeat.
+- 20-slot inventory whose first 6 slots are the hotbar:
+  - Stack limits per item; move, merge or swap; split; drop.
+  - HUD hotbar (1–6, mouse wheel, click).
+  - Inventory panel (I) with drag and drop and tooltips.
+  - Q / Ctrl+Q drop; rare items need confirmation.
+  - Dropped items stay put until you step away.
+- Input routing: Esc closes the dialog, then the panel, then pauses. World ignores gameplay input while a modal is open.
+- Tests: 53 unit tests (inventory, data validation and reachability, loot) and 48 headless-browser smoke checks.
+
+### QA
+- First pass, run by a stand-in for `phaser-qa` (Sonnet with its instructions word for word): **0 Critical, 4 Warnings**. All four are fixed:
+  1. A rare-item drop could hit a slot that changed while the confirm dialog was open. Drop requests now carry the item id, and the panel ignores pointer input while a dialog is open.
+  2. Harvest loot could be lost if the pickup pool was exhausted. The pool now grows to a 400 cap, then merges into the nearest same-item ground stack. Loot that still has nowhere to go goes to the inventory, and a node can't be harvested when the ground is saturated.
+  3. The hotbar "full" flash re-rendered stale contents. It now uses the latest view.
+  4. Pickups scanned the tween list every frame. They now use a `settleAt` timestamp.
+- Applied suggestion: dragging onto a full same-item stack now swaps the stacks.
+- Second pass (verification): all four warnings confirmed fixed, **0 Critical, 0 Warnings**. Both of its suggestions were applied: nearest-stack merge, and refusing harvests when the ground is saturated.
+
+### Known limitations
+- Drinking has no stat effect until thirst lands in M3.
+- Gathering is by hand only (tools come in M3), and selected hotbar items can't be used yet.
+- Nothing from M2 is saved; returning to the menu resets the grove.
+- Khmer item names (ឈើ, ឫស្សី, ថ្ម, ស្លឹក) need native-speaker review.
+
 ## 0.1.0 — M1: Game shell, menus, movement, test world (2026-11-08)
 
 ### Added

@@ -13,6 +13,9 @@ import { FloatingText } from '../ui/FloatingText';
 import { PropLayer } from '../world/PropLayer';
 import { buildTestMap } from '../world/TestMap';
 
+/** Upper bound on distinct stacks one harvest can drop (loot tables have at most this many items). */
+const MAX_LOOT_STACKS = 6;
+
 interface WorldKeys extends PlayerKeys {
   interact: Phaser.Input.Keyboard.Key;
 }
@@ -148,6 +151,12 @@ export class World extends Phaser.Scene {
     if (clicked || target.kind === 'node') {
       const node = clicked ?? (target.kind === 'node' ? target.node : null);
       if (!node) return;
+      // Never destroy a node whose loot would have nowhere to go.
+      if (this.pickups.freeSlots < MAX_LOOT_STACKS) {
+        this.nextActAt = this.now + GATHER.hitCooldownMs;
+        this.floating.show(node.targetX, node.targetY - 20, 'Too many items on the ground', '#d9644a');
+        return;
+      }
       p.swing(node.targetX, node.targetY, this.now, GATHER.swingMs);
       this.nextActAt = this.now + GATHER.hitCooldownMs;
       const { result, loot } = this.gathering.hit(node, 'hand', this.now, p.x);

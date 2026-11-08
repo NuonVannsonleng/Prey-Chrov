@@ -1,7 +1,7 @@
 {
   "name": "prey-chrov",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Prey Chrov (ព្រៃជ្រៅ — The Deep Forest): a 2D top-down survival adventure.",
   "type": "module",
   "scripts": {

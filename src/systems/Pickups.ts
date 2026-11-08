@@ -62,6 +62,13 @@ export class Pickups {
     return p;
   }
 
+  /** Ground stacks that can still be created (free pool entries + room to grow). */
+  get freeSlots(): number {
+    let free = PICKUP.maxPool - this.pool.length;
+    for (const p of this.pool) if (!p.active) free++;
+    return free;
+  }
+
   get activeCount(): number {
     let n = 0;
     for (const p of this.pool) if (p.active) n++;
@@ -87,7 +94,16 @@ export class Pickups {
     let p = this.pool.find((c) => !c.active);
     if (!p && this.pool.length < PICKUP.maxPool) p = this.grow();
     if (!p) {
-      const same = this.pool.find((c) => c.active && !c.claimed && c.item === item);
+      let same: Pickup | null = null;
+      let best = Infinity;
+      for (const c of this.pool) {
+        if (!c.active || c.claimed || c.item !== item) continue;
+        const d = Math.hypot(c.image.x - x, c.baseY - y);
+        if (d < best) {
+          best = d;
+          same = c;
+        }
+      }
       if (!same) return false;
       same.qty += qty;
       return true;

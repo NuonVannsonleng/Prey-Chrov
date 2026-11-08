@@ -41,7 +41,7 @@ Status legend: **Done** · **In progress** · **Not started**
 - **Respawn** runs on game-time timers (180–400 s by type), so it freezes while paused. A respawn waits if the player is standing in the footprint. The same body is re-added, so the static body count stays constant (verified).
 - **Loot:** guaranteed and weighted rolls. The RNG is seeded by (map seed, node id, harvest count), so loot is deterministic and won't be re-rollable by reloading later.
 - **Pickups:**
-  - Pooled (250); no physics bodies, so no phantom colliders.
+  - Pooled (120 to start, growing to a 400 cap); no physics bodies, so no phantom colliders. Past the cap, new drops merge into an existing ground stack of the same item, and harvest loot that still cannot be placed goes straight into the inventory.
   - They pop out of the node, bob, and are pulled toward the player within 44 px.
   - A floating "+3 Wood" style label shows on collection.
   - A `claimed` flag set before the collect tween means each pickup is added exactly once.
@@ -66,7 +66,7 @@ Status legend: **Done** · **In progress** · **Not started**
 
 - `npm run typecheck` and `npm run build`: pass.
 - `npm test`: 53 unit tests (inventory rules, data validation and reachability, test-map resources, deterministic and weighted loot, plus the M1 tests).
-- `npm run smoke`: 46 checks in headless Edge. They include:
+- `npm run smoke`: 48 checks in headless Edge. They include:
   - gathering all four node types and collecting the drops
   - the stump being walkable, and the respawned tree blocking movement again
   - a stable static-body count
@@ -78,8 +78,10 @@ Status legend: **Done** · **In progress** · **Not started**
   - the panel blocking movement, and drag-moving a stack
   - Esc closing the panel without pausing
   - rare-drop confirmation (Esc keeps, Drop drops)
+  - a stale drop request (slot changed) being ignored
+  - pool exhaustion merging instead of losing items
   - all M1 checks and zero console errors
-- QA: see CHANGELOG.
+- QA: two passes by a stand-in for `phaser-qa` (Sonnet with its instructions word for word). Round 1 found 0 Critical and 4 Warnings; all fixed. Round 2 found 0 Critical and 0 Warnings. Details in CHANGELOG.
 
 ### Known limitations
 
@@ -87,7 +89,7 @@ Status legend: **Done** · **In progress** · **Not started**
 - Gathering is by hand only; tool multipliers are in data and take effect when tools arrive in M3.
 - Holding a hotbar item does nothing yet. There's no equip/use until tools and food consumption (M3).
 - Gathered nodes, ground items and the inventory aren't saved. Returning to the menu resets the grove (saves in M3/M7).
-- Pickups never despawn. The 250-item pool is the hard cap, and a drop that can't fit shows "Too many items on the ground here" and keeps the item.
+- Pickups never despawn. At the 400-stack cap with no same-item stack to merge into, a player drop shows "Too many items on the ground here" and the item stays in the inventory.
 - There's no "drop with confirmation" for non-rare stacks; only rare items ask.
 - Khmer `nameKm` values (ឈើ, ឫស្សី, ថ្ម, ស្លឹក) need native-speaker review.
 
