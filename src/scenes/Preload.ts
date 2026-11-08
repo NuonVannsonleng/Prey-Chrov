@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { SCENES } from '../config';
 import { ensurePlayerAnimations } from '../entities/Player';
-import { generateAllTextures } from '../textures';
+import { generateAllTextures } from '../art/generate';
 
 /** Generates all placeholder art in code, then opens the menu. */
 export class Preload extends Phaser.Scene {

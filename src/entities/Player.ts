@@ -19,9 +19,9 @@ export function ensurePlayerAnimations(anims: Phaser.Animations.AnimationManager
     if (!anims.exists(walkKey)) {
       anims.create({
         key: walkKey,
-        frames: ['stepA', 'idle', 'stepB', 'idle'].map((pose) => ({
+        frames: (['stepA', 'idle', 'stepB', 'idle'] as const).map((pose) => ({
           key: TEX.player,
-          frame: playerFrameName(dir, pose as 'idle'),
+          frame: playerFrameName(dir, pose),
         })),
         frameRate: PLAYER.walkFrameRate,
         repeat: -1,
