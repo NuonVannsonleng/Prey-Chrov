@@ -1,0 +1,10 @@
+[
+  { "id": "wood", "name": "Wood", "nameKm": "ឈើ", "description": "Heavy hardwood, still smelling of resin and rain.", "category": "material", "stackSize": 30, "rarity": "common", "icon": "wood", "tags": ["wood", "fuel", "building"] },
+  { "id": "stick", "name": "Stick", "description": "A dry branch, light enough to carry a dozen.", "category": "material", "stackSize": 50, "rarity": "common", "icon": "stick", "tags": ["wood", "fuel", "handle"] },
+  { "id": "bamboo", "name": "Bamboo", "nameKm": "ឫស្សី", "description": "A hollow green stalk, strong and straight.", "category": "material", "stackSize": 30, "rarity": "common", "icon": "bamboo", "tags": ["bamboo", "building"] },
+  { "id": "stone", "name": "Stone", "nameKm": "ថ្ម", "description": "A river-worn rock that fits the palm.", "category": "material", "stackSize": 30, "rarity": "common", "icon": "stone", "tags": ["stone", "tool_head"] },
+  { "id": "flint", "name": "Flint", "description": "A sharp grey shard that bites sparks from steel and stone.", "category": "material", "stackSize": 20, "rarity": "rare", "icon": "flint", "tags": ["stone", "fire", "tool_head"] },
+  { "id": "berries", "name": "Wild Berries", "description": "Tart jungle berries, dark as dusk.", "category": "food", "stackSize": 20, "rarity": "common", "icon": "berries", "tags": ["food", "forage"] },
+  { "id": "plant_fiber", "name": "Plant Fiber", "description": "Tough green strands, good for lashing things together.", "category": "material", "stackSize": 50, "rarity": "common", "icon": "fiber", "tags": ["binding"] },
+  { "id": "leaf", "name": "Broad Leaf", "nameKm": "ស្លឹក", "description": "A wide leaf that sheds rain and catches sparks.", "category": "material", "stackSize": 50, "rarity": "common", "icon": "leaf", "tags": ["thatch", "tinder"] }
+]

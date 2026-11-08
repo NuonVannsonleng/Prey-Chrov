@@ -1,0 +1,6 @@
+[
+  { "id": "jungle_tree", "name": "Jungle Tree", "verb": "Chop", "sprite": "tree", "hp": 7, "respawnSeconds": 240, "lootTable": "jungle_tree_loot", "toolMultipliers": { "hand": 1, "axe": 3, "pickaxe": 0.5 } },
+  { "id": "bamboo_clump", "name": "Bamboo Clump", "verb": "Cut", "sprite": "bamboo", "hp": 5, "respawnSeconds": 180, "lootTable": "bamboo_clump_loot", "toolMultipliers": { "hand": 1, "axe": 2.5, "pickaxe": 0.5 } },
+  { "id": "boulder", "name": "Boulder", "verb": "Break", "sprite": "rock", "hp": 9, "respawnSeconds": 300, "lootTable": "boulder_loot", "toolMultipliers": { "hand": 1, "axe": 0.5, "pickaxe": 3 } },
+  { "id": "berry_bush", "name": "Berry Bush", "verb": "Pick", "sprite": "bush", "hp": 2, "respawnSeconds": 400, "lootTable": "berry_bush_loot", "toolMultipliers": { "hand": 1, "axe": 2, "pickaxe": 1 } }
+]
