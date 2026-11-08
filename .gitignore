@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+Thumbs.db
+smoke-output/
+.claude/settings.local.json
+
+# Duplicate of the root master prompt + agents (originals kept locally)
+Prey_Chrov_Claude_Code_Starter/
