@@ -18,6 +18,9 @@ const FLAME_ANIM = 'campfire-flame';
 /** Placed campfires and shelters: creation, placement rules, station lookup and lights. */
 export class Structures {
   readonly list: Structure[] = [];
+  private readonly rect = new Phaser.Geom.Rectangle();
+  /** World point that must stay buildable-free (the fallback player spawn). */
+  keepClear: { x: number; y: number } | null = null;
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -48,7 +51,7 @@ export class Structures {
     const image = this.scene.add.image(x, y, TEX.structures, def.sprite).setOrigin(0.5, 1).setDepth(y);
     if (def.solid) this.props.addSolid(x, y, def.footprint);
     let flame: Phaser.GameObjects.Sprite | null = null;
-    if (def.sprite === 'campfire') {
+    if (def.interaction === 'cook' && def.lightRadius > 0) {
       flame = this.scene.add.sprite(x, y - 7, TEX.flame, 0).setOrigin(0.5, 1).setDepth(y + 0.5);
       flame.play(FLAME_ANIM);
     }
@@ -81,11 +84,12 @@ export class Structures {
       if (!tile || WATER_TILES.includes(tile.index)) return false;
     }
     // Keep a small margin around the footprint so structures never trap the player.
-    const pad = 4;
+    const pad = 8;
     const hits = this.scene.physics.overlapRect(left - pad, top - pad, w + pad * 2, h + pad * 2, false, true);
     if (hits.length > 0) return false;
-    const rect = new Phaser.Geom.Rectangle(left - pad, top - pad, w + pad * 2, h + pad * 2);
-    if (Phaser.Geom.Intersects.RectangleToRectangle(rect, playerBody)) return false;
+    this.rect.setTo(left - pad, top - pad, w + pad * 2, h + pad * 2);
+    if (Phaser.Geom.Intersects.RectangleToRectangle(this.rect, playerBody)) return false;
+    if (this.keepClear && Math.abs(this.keepClear.x - x) < w / 2 + 20 && Math.abs(this.keepClear.y - (y - h / 2)) < h / 2 + 20) return false;
     // Large structures also must not sit right on top of each other visually.
     for (const s of this.list) if (Math.abs(s.x - x) < (w + s.def.footprint.w) / 2 && Math.abs(s.y - y) < TILE_SIZE) return false;
     return true;

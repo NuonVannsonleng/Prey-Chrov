@@ -124,3 +124,51 @@ export const BUILD = {
 
 /** Distance (px) within which a campfire counts as a crafting station / interaction target. */
 export const STATION_REACH = 70;
+
+/** Tiles per chunk side (32 × 32 tiles = 1024 px). */
+export const CHUNK_TILES = 32;
+
+export const CHUNKS = {
+  /** Chunks within this Chebyshev radius of the player's chunk are loaded. */
+  loadRadius: 1,
+  /** Chunks beyond this radius are unloaded (hysteresis avoids thrashing at borders). */
+  unloadRadius: 2,
+  /** New chunks built per frame (the player's own chunk is always built immediately). */
+  buildsPerFrame: 1,
+} as const;
+
+/** Procedural world tuning (shape of noise fields, safe spawn, landmarks). */
+export const WORLD_GEN = {
+  moistureScale: 210,
+  vegetationScale: 150,
+  riverScale: 190,
+  riverWidth: 0.05,
+  fordScale: 36,
+  fordThreshold: 0.35,
+  swampMoisture: 0.5,
+  bambooVegetation: 0.38,
+  clearingVegetation: -0.42,
+  /** Tiles around (0,0) that are always a safe clearing with no rivers. */
+  spawnSafeRadius: 14,
+  starterPond: { tx: 8, ty: 6, rx: 3.2, ry: 2.2 },
+  starterProps: [
+    { id: 'jungle_tree', tx: -5, ty: -3 },
+    { id: 'jungle_tree', tx: -7, ty: 2 },
+    { id: 'jungle_tree', tx: 4, ty: -6 },
+    { id: 'boulder', tx: -4, ty: 5 },
+    { id: 'boulder', tx: 6, ty: -2 },
+    { id: 'berry_bush', tx: 2, ty: 5 },
+    { id: 'berry_bush', tx: -3, ty: -6 },
+    { id: 'bamboo_clump', tx: -9, ty: -1 },
+    { id: 'bamboo_clump', tx: 3, ty: 9 },
+  ],
+  ruinCellChunks: 5,
+  ruinChancePercent: 55,
+  ruinRadius: 10,
+} as const;
+
+export const MINIMAP = {
+  size: 150,
+  tilesPerPixel: 2,
+  redrawTiles: 3,
+} as const;

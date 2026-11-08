@@ -119,7 +119,8 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
   const data: SaveData = {
     version: SAVE_VERSION,
     savedAt,
-    clockSeconds: Math.max(0, finite(rec['clockSeconds'], 0)),
+    // NaN = missing: the game keeps its configured start hour instead of loading at midnight.
+    clockSeconds: Number.isFinite(rec['clockSeconds']) ? Math.max(0, rec['clockSeconds'] as number) : NaN,
     player: {
       x: finite(p['x'], NaN),
       y: finite(p['y'], NaN),
@@ -194,7 +195,8 @@ export function writeSave(data: SaveData, storage: KeyValueStorage | null = defa
 export function inspectSave(storage: KeyValueStorage | null = defaultStorage(), daySeconds = 480): SaveStatus {
   const r = readSave(storage);
   if ('error' in r) return r.error;
-  return { kind: 'valid', version: r.data.version, savedAt: r.data.savedAt, day: Math.floor(r.data.clockSeconds / daySeconds) + 1 };
+  const clock = Number.isFinite(r.data.clockSeconds) ? r.data.clockSeconds : 0;
+  return { kind: 'valid', version: r.data.version, savedAt: r.data.savedAt, day: Math.floor(clock / daySeconds) + 1 };
 }
 
 /** Player-facing explanation of the save slot state. */

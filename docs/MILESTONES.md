@@ -5,12 +5,83 @@ Status legend: **Done** · **In progress** · **Not started**
 | # | Name | Status |
 | --- | --- | --- |
 | M1 | Game shell, menus, movement, test world | Done |
-| M2 | Gathering, pickup and inventory | Done — awaiting playtest approval |
-| M3 | Survival, crafting, first night, death | Not started |
+| M2 | Gathering, pickup and inventory | Done |
+| M3 | Survival, crafting, first night, death | Done |
 | M4 | Seeded procedural world, chunks, biomes, minimap | Not started |
 | M5 | Wildlife, night spirits, combat and guardian shrines | Not started |
 | M6 | Monsoon, ruins, tablets and core quest | Not started |
 | M7 | Persistence, performance and MVP polish | Not started |
+
+---
+
+## M3 — Survival, crafting, first night, death
+
+### Implemented (playable)
+
+- **Survival stats** (`systems/Survival.ts`, tuned in `data/survival.json`):
+  - Health, food (hunger), water (thirst) and stamina drain per game hour, so frame rate never changes them.
+  - The HUD warns at 30, with a toast and a red tag next to the bar.
+  - At 0, starvation or dehydration costs health, with a red screen flash and a toast.
+  - Health regenerates while food and water are both 20 or more.
+  - Sprinting drains stamina. Hitting 0 makes you "Exhausted" until stamina recovers to 20.
+- **Eight-minute day** (`systems/Clock.ts`): 1 game hour is 20 s and the game starts at 07:00. The HUD clock shows the day number, time and phase.
+- **Darkness** follows a keyframe curve in data: light from about 05:30 to 20:30, then a dark 0.78 night. There's a faint light around the player, held torches light 120 px, and campfires light 155 px with a warm flicker (`systems/Lighting.ts`).
+- **Crafting (C):**
+  - Recipes: stone axe, stone pickaxe, spear, torch, campfire kit, bamboo shelter kit, and roasted bamboo shoot (cooked at a campfire).
+  - The panel shows owned/required counts per ingredient (✓/✗) and a 🔒 when a campfire is needed.
+  - Blocked crafts explain why: missing materials, a station needed, or no room.
+  - Crafting is atomic and rolls back if the output doesn't fit.
+- **Tools:**
+  - A held axe or pickaxe is used automatically when it beats bare hands (an axe fells a tree in 2 hits instead of 7).
+  - Every hit costs 1 durability, shown as a bar on the slot. Tools break with a message.
+  - The spear can be crafted, but it says plainly that combat comes later.
+- **Food (F):** berries (small food and water); raw bamboo shoots (+10 food, −3 health); roasted shoots (+40 food, +4 health). Bamboo clumps now drop shoots.
+- **Structures:**
+  - Select a kit and press **F** to show a tinted ghost within 90 px.
+  - It's red on water, trees, rocks, other structures, the player or the world edge; click or press F to build.
+  - Right-click or Esc cancels.
+  - Campfire: a solid light source and cooking station; **E** there opens cooking.
+  - Bamboo shelter: **E** sleeps between 18:30 and 04:30.
+- **Sleep and save:**
+  - Sleeping fades to the next 06:00 and costs some food and water (it never kills).
+  - It restores stamina and heals 15.
+  - The game clock jumps, so respawns progress overnight, and the journey is **saved**.
+- **Continue (menu)** loads the save:
+  - Restored: clock, stats, inventory (with durability), selected slot, structures, depleted or damaged nodes (as a compact diff), ground items, and objectives.
+  - Corrupt, partial or newer saves never crash. Partial fields fall back to defaults, and unknown items are removed with a notice.
+  - **New journey** asks before replacing a save; the old save stays until you next sleep.
+- **GameOver:** shows the day, time and cause with a tip, plus New journey, Load last sleep and Main menu. The save is never deleted.
+- **First-day checklist:** gather, craft an axe, drink, campfire, shelter, sleep. It completes from actual gameplay and is saved; H hides it.
+
+### Verification
+
+- `npm run typecheck` and `npm run build` pass.
+- `npm test`: 89 unit tests. They cover the clock and darkness, survival drain, death, stamina and food, atomic crafting with station and rollback, durability, save parse/sanitize/migration paths, data validation and crafting reachability, and that night 1 is survivable with no food or water.
+- `npm run smoke`: 68 browser checks. The M3 ones:
+  - HUD bars present
+  - blocked craft with feedback, then a successful axe craft at full durability
+  - the axe fells a tree and wears
+  - eating a raw shoot (food up, health down)
+  - sprint draining stamina
+  - drinking restoring water
+  - placement rejecting water and trees
+  - placing a campfire, then cooking through E
+  - placing a shelter
+  - no sleeping during the day
+  - darkness at 23:00, and a torch burning
+  - sleeping to 06:00 on day 2, which saves
+  - reload → Continue restoring day, inventory and structures
+  - dehydration → GameOver → New journey on day 1
+- QA: a stand-in for `phaser-qa` found 0 Critical and 4 Warnings, all fixed; details in CHANGELOG.
+
+### Known limitations
+
+- Only sleep saves. Full autosave and save-on-quit come in M7.
+- Campfires never run out of fuel. Fuel is planned later; the spec says "consumes fuel later".
+- The spear has no target until wildlife and combat in M5.
+- The tutorial checklist text is in code (`systems/Objectives.ts`), not data. Quests move to `quests.json` in M6.
+- Darkness is a full-screen overlay; there's no shadow casting.
+- Khmer names `ពិល` (torch), `លំពែង` (spear) and `ទំពាំងឫស្សី` (bamboo shoot) need native-speaker review.
 
 ---
 

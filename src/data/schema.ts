@@ -1,4 +1,12 @@
-import { ICON_KEYS, RESOURCE_SPRITES, STRUCTURE_SPRITES, type IconKey, type ResourceSprite, type StructureSprite } from '../textures';
+import {
+  ICON_KEYS,
+  RESOURCE_SPRITES,
+  STRUCTURE_SPRITES,
+  type GroundTileKey,
+  type IconKey,
+  type ResourceSprite,
+  type StructureSprite,
+} from '../textures';
 
 // ---------- Types (JSON shapes) ----------
 
@@ -468,4 +476,33 @@ export function reachableItems(data: Pick<GameData, 'resources' | 'loot' | 'reci
     }
   }
   return have;
+}
+
+// ---------- Biomes (biomes.json) ----------
+
+/** Biome ids are fixed: world generation logic decides where each one appears. */
+export const BIOME_IDS = ['clearing', 'deep_jungle', 'bamboo_grove', 'river_swamp', 'ancient_ruins'] as const;
+export type BiomeId = (typeof BIOME_IDS)[number];
+
+export interface BiomeProp {
+  /** "resource" → resources.json id; "scenery" → a SCENERY_SPRITES key. */
+  kind: 'resource' | 'scenery';
+  id: string;
+  /** Expected number per 32×32-tile chunk of this biome (before spacing rules reject some). */
+  density: number;
+}
+
+export interface BiomeDef {
+  id: BiomeId;
+  name: string;
+  nameKm?: string;
+  /** #rrggbb minimap colour. */
+  minimapColor: string;
+  /** Weighted ground tile keys (GROUND_TILE_KEYS). */
+  ground: Array<{ tile: GroundTileKey; weight: number }>;
+  props: BiomeProp[];
+  /** Short mood description (used for ambience/audio later). */
+  ambience: string;
+  /** Multiplier for night threat spawns (M5). 1 = normal. */
+  nightDanger: number;
 }

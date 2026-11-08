@@ -126,6 +126,7 @@ export class World extends Phaser.Scene {
     this.props.addScenery(map.props);
     this.gathering = new Gathering(this, this.props, map.props, this.gameData);
     this.structures = new Structures(this, this.props, this.ground, this.gameData.structures);
+    this.structures.keepClear = map.spawn;
     this.spawn = map.spawn;
     this.player = new Player(this, map.spawn.x, map.spawn.y);
     this.physics.add.collider(this.player, this.props.solids);
@@ -143,7 +144,7 @@ export class World extends Phaser.Scene {
       (item, qty, durability) => this.dropInFront(item, qty, durability),
       () => this.stations,
       (_recipe, output) => {
-        if (output === 'stone_axe') this.completeObjective('craft_axe');
+        if (itemDef(output).tool?.kind === 'axe') this.completeObjective('craft_axe');
       },
     );
     this.pickups = new Pickups(this, {
@@ -215,6 +216,8 @@ export class World extends Phaser.Scene {
     const p = this.player;
     this.animateWater(dt);
     if (this.busy) {
+      this.pendingUse = false;
+      this.pendingInteract = false;
       this.renderLighting();
       return;
     }
@@ -227,6 +230,7 @@ export class World extends Phaser.Scene {
     this.survival.update(dt / 1000, this.clock.secondsPerHour, p.sprinting);
     this.watchSurvival();
     if (this.survival.dead) {
+      this.emitTicks(cfg);
       this.die();
       return;
     }
@@ -286,7 +290,12 @@ export class World extends Phaser.Scene {
     const held = this.inventory.held;
     const light = held ? itemDef(held.item).light : undefined;
     if (light && this.darkness() > TORCH_DARKNESS) l.add(p.x + p.facingVec.x * 6, p.y - 16, light.radius, 0.8);
-    for (const s of this.structures.list) if (s.def.lightRadius > 0) l.add(s.x, s.y - 8, s.def.lightRadius, 1);
+    const view = this.cameras.main.worldView;
+    for (const s of this.structures.list) {
+      const r = s.def.lightRadius;
+      if (r <= 0 || s.x + r < view.x || s.x - r > view.right || s.y + r < view.y || s.y - r > view.bottom) continue;
+      l.add(s.x, s.y - 8, r, 1);
+    }
     l.render(this.darkness(), this.now);
   }
 
@@ -339,7 +348,7 @@ export class World extends Phaser.Scene {
 
   private updateStations(): void {
     this.structures.stationsNear(this.player.x, this.player.y, this.stations);
-    const key = [...this.stations].join(',');
+    const key = this.stations.has('campfire') ? 'campfire' : '';
     if (key === this.stationsKey) return;
     this.stationsKey = key;
     gameEvents.emit('craft:stations', [...this.stations]);
@@ -443,6 +452,16 @@ export class World extends Phaser.Scene {
       return;
     }
     if (def.food) {
+      const st = this.survival.stats;
+      const cfgS = this.gameData.survival;
+      const helps =
+        (def.food.hunger > 0 && st.hunger < cfgS.maxHunger - 1) ||
+        (def.food.thirst > 0 && st.thirst < cfgS.maxThirst - 1) ||
+        (def.food.health > 0 && st.health < cfgS.maxHealth - 1);
+      if (!helps) {
+        gameEvents.emit('toast', { text: `You're not hungry — save the ${def.name} for later`, tone: 'info' });
+        return;
+      }
       this.survival.eat(def.food);
       this.inventory.inventory.takeFromSlot(this.inventory.selected, 1);
       this.inventory.broadcast();
@@ -510,6 +529,7 @@ export class World extends Phaser.Scene {
     this.player.halt();
     this.pointerHeld = false;
     const cam = this.cameras.main;
+    cam.fadeEffect.reset();
     cam.fadeOut(700, 2, 4, 8);
     cam.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
       const secs = this.clock.secondsUntil(sl.wakeHour);
@@ -521,6 +541,8 @@ export class World extends Phaser.Scene {
       this.completeObjective('sleep');
       const saved = this.save();
       this.input.keyboard?.resetKeys();
+      this.pendingUse = false;
+      this.pendingInteract = false;
       cam.fadeIn(900, 2, 4, 8);
       this.busy = false;
       gameEvents.emit('toast', {
@@ -556,7 +578,7 @@ export class World extends Phaser.Scene {
   }
 
   private applySave(save: SaveData): void {
-    this.clock.totalSeconds = save.clockSeconds;
+    if (Number.isFinite(save.clockSeconds)) this.clock.totalSeconds = save.clockSeconds;
     const ps = save.player;
     this.survival = new Survival(this.gameData.survival, {
       ...(Number.isFinite(ps.health) && ps.health > 0 ? { health: ps.health } : {}),
@@ -572,7 +594,16 @@ export class World extends Phaser.Scene {
         gameEvents.emit('toast', { text: `${removed} unknown item stack(s) from an older version were removed`, tone: 'warn' }),
       );
     }
-    for (const st of save.structures) this.structures.place(st.type, st.x, st.y);
+    let refunded = 0;
+    for (const st of save.structures) {
+      if (this.structures.list.some((s) => s.x === Math.round(st.x) && s.y === Math.round(st.y))) continue;
+      if (this.structures.place(st.type, st.x, st.y)) continue;
+      const kit = [...this.gameData.items.values()].find((i) => i.places === st.type);
+      if (kit && this.inventory.add(kit.id, 1) === 0) refunded++;
+    }
+    if (refunded > 0) {
+      this.time.delayedCall(800, () => gameEvents.emit('toast', { text: `${refunded} structure(s) could not be rebuilt and were returned as kits`, tone: 'info' }));
+    }
     const byId = new Map(this.gathering.nodes.map((n) => [n.prop.id, n]));
     for (const sn of save.nodes) {
       const node = byId.get(sn.id);
@@ -615,6 +646,7 @@ export class World extends Phaser.Scene {
     const summary = { day: this.clock.dayNumber, time: this.clock.label(), cause };
     const cam = this.cameras.main;
     cam.shake(250, 0.004);
+    cam.fadeEffect.reset();
     cam.fadeOut(1400, 40, 6, 4);
     cam.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
       this.scene.stop(SCENES.ui);

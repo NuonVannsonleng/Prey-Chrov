@@ -17,6 +17,8 @@ export const TEX = {
   structures: 'tex-structures',
   light: 'tex-light',
   flame: 'tex-flame',
+  scenery: 'tex-scenery',
+  minimap: 'tex-minimap',
   vignette: 'tex-vignette',
   menuBg: 'tex-menu-bg',
   glow: 'tex-glow',
@@ -34,9 +36,36 @@ export const TILE = {
   shore: 7,
   waterA: 8,
   waterB: 9,
+  mud: 10,
+  stoneFloor: 11,
+  shallowsA: 12,
+  shallowsB: 13,
+  jungleFloor: 14,
 } as const;
-export const TILE_COUNT = 10;
+export const TILE_COUNT = 15;
+/** Solid (deep) water. */
 export const WATER_TILES: readonly number[] = [TILE.waterA, TILE.waterB];
+/** Walkable shallow water (slows the player; drinkable). */
+export const SHALLOW_TILES: readonly number[] = [TILE.shallowsA, TILE.shallowsB];
+
+/** Ground tile keys biomes.json may use, mapped to tile indices. */
+export const GROUND_TILE = {
+  grass: TILE.grassA,
+  grass_alt: TILE.grassB,
+  grass_flowers: TILE.grassFlowers,
+  moss: TILE.moss,
+  leaf_litter: TILE.leafLitter,
+  mud: TILE.mud,
+  stone_floor: TILE.stoneFloor,
+  jungle_floor: TILE.jungleFloor,
+  path: TILE.path,
+} as const;
+export type GroundTileKey = keyof typeof GROUND_TILE;
+export const GROUND_TILE_KEYS = Object.keys(GROUND_TILE) as GroundTileKey[];
+
+/** Non-gatherable scenery sprites biomes.json may scatter (frames inside TEX.scenery). */
+export const SCENERY_SPRITES = ['fern', 'big_tree', 'reeds', 'ruin_wall', 'ruin_pillar', 'ruin_rubble', 'ruin_altar'] as const;
+export type ScenerySprite = (typeof SCENERY_SPRITES)[number];
 
 export const PLAYER_DIRS = ['down', 'up', 'side'] as const;
 export type PlayerDir = (typeof PLAYER_DIRS)[number];

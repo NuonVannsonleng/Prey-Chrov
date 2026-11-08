@@ -3,7 +3,7 @@
 A 2D top-down survival adventure set in a fictional Cambodian jungle, built with **Phaser 3 + TypeScript + Vite**.
 All art is generated in code as replaceable placeholders.
 
-> Status: **Milestone 2** — gathering, pickups and inventory on a fixed test map. See [docs/MILESTONES.md](docs/MILESTONES.md).
+> Status: **Milestone 3** — survive the first day and night: gather, craft, build a campfire and shelter, sleep (saves), Continue. See [docs/MILESTONES.md](docs/MILESTONES.md).
 
 ## Run
 
@@ -27,12 +27,14 @@ npm run dev        # http://localhost:5173
 | --- | --- |
 | W A S D | Move |
 | Shift | Sprint |
-| E (hold) / Left click (hold) | Gather the highlighted tree, bamboo, boulder or bush · drink at water |
+| E (hold) / Left click (hold) | Gather the highlighted tree, bamboo, boulder or bush · drink at water · cook at a campfire · sleep in a shelter |
+| F | Eat the held food, or place the held campfire / shelter kit (click or F to build, right-click / Esc to cancel) |
+| C | Crafting panel |
 | 1–6 / Mouse wheel | Select hotbar slot |
 | I | Inventory panel (drag to move, Shift+click to split, drag outside to drop) |
 | Q / Ctrl+Q | Drop one / the whole selected stack (rare items ask first) |
-| Esc | Close panel, otherwise pause / resume |
-| H | Hide / show control hints |
+| Esc | Close dialog / panel / build mode, otherwise pause / resume |
+| H | Hide / show control hints and the first-day checklist |
 | F3 | Debug overlay (FPS, position, collision boxes) |
 | ↑ ↓ / Enter | Navigate menus |
 

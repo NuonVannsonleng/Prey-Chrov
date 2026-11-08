@@ -32,7 +32,7 @@ describe('parseSave', () => {
     expect(r.data.inventory).toEqual([]);
     expect(r.data.structures).toEqual([]);
     expect(Number.isNaN(r.data.player.x)).toBe(true);
-    expect(r.data.clockSeconds).toBe(0);
+    expect(Number.isNaN(r.data.clockSeconds)).toBe(true);
   });
 
   it('drops malformed entries instead of crashing', () => {

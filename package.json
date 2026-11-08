@@ -1,7 +1,7 @@
 {
   "name": "prey-chrov",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Prey Chrov (ព្រៃជ្រៅ — The Deep Forest): a 2D top-down survival adventure.",
   "type": "module",
   "scripts": {
@@ -13,7 +13,8 @@
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
-    "phaser": "^3.90.0"
+    "phaser": "^3.90.0",
+    "simplex-noise": "^4.0.3"
   },
   "devDependencies": {
     "playwright-core": "^1.65.0",

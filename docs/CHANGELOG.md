@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.3.0 — M3: Survival, crafting, first night, death (2026-11-09)
+
+### Added
+- Survival stats (health, food, water, stamina) with warnings, starvation/dehydration damage, regen, and sprint exhaustion; all rates are in `survival.json`.
+- An 8-minute game-time day/night clock. Darkness overlay with player, torch and campfire lights; torches burn while held in the dark.
+- Crafting panel (C) with owned/required counts and station locks. Recipes: stone axe, pickaxe, spear, torch, campfire, bamboo shelter, and roasted bamboo shoot (cooked at a campfire).
+- Tools speed up matching nodes and lose durability.
+- F eats or places the held item; raw shoots cost a little health.
+- Build mode with a valid/invalid ghost. Campfires are a cooking and light station; the bamboo shelter is for sleeping.
+- Sleeping from dusk skips to morning and saves.
+- Continue restores the session: clock, stats, inventory with durability, structures, node diffs, ground items and objectives. Sanitizing removes unknown items and refunds unknown structures as kits. New journey asks before replacing a save.
+- GameOver screen with day, time, cause and a tip, plus New journey, Load last sleep and Main menu.
+- First-day checklist (teach-through-play), saved and hideable.
+
+### Fixed
+- Phaser re-dispatches queued key events within a frame, so scene keydown handlers now process each DOM event once.
+- Quick key taps were lost by `Key.JustDown`. F and E now use keydown events.
+- Rare items had the same border colour as the selected slot.
+
+### QA
+- Round 1, by a stand-in for `phaser-qa` (Sonnet with its instructions word for word): **0 Critical, 4 Warnings**. All four are fixed:
+  1. Sleep or death could soft-lock behind a running camera fade; fades are now forced.
+  2. Keys pressed during sleep or death fired after waking; they're now discarded.
+  3. A save without a clock loaded at midnight; it now keeps the start hour.
+  4. Per-frame allocations in placement and station checks were removed.
+- Suggestions applied:
+  - Final stats show before the death fade.
+  - Food isn't eaten when it can't help.
+  - Off-screen lights are culled.
+  - Duplicate or unknown structures in a save are deduplicated or refunded as kits.
+  - The spawn point stays clear of buildings, and placement leaves wider gaps so nothing can trap the player.
+  - The axe objective and the campfire flame are driven by data, not hardcoded ids.
+
+
 ## 0.2.0 — M2: Gathering, pickup and inventory (2026-11-09)
 
 ### Added
