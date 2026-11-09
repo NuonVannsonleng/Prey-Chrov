@@ -13,6 +13,7 @@ import quests from './quests.json';
 import lore from './lore.json';
 import ending from './ending.json';
 import fishing from './fishing.json';
+import progression from './progression.json';
 import structures from './structures.json';
 import survival from './survival.json';
 import { validateGameData, type GameData, type ItemDef } from './schema';
@@ -36,6 +37,7 @@ export const RAW_GAME_DATA = {
   lore,
   ending,
   fishing,
+  progression,
 };
 
 let cached: GameData | null = null;

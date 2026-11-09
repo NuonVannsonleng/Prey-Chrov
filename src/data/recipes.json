@@ -509,5 +509,141 @@
     ],
     "station": "pot",
     "category": "medicine"
+  },
+  {
+    "id": "flint_axe",
+    "output": "flint_axe",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "flint",
+        "qty": 2
+      },
+      {
+        "item": "wood",
+        "qty": 2
+      },
+      {
+        "item": "hide",
+        "qty": 1
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 2
+      }
+    ],
+    "station": "workbench",
+    "category": "tools",
+    "unlock": "flint_working"
+  },
+  {
+    "id": "flint_pickaxe",
+    "output": "flint_pickaxe",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "flint",
+        "qty": 2
+      },
+      {
+        "item": "wood",
+        "qty": 2
+      },
+      {
+        "item": "hide",
+        "qty": 1
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 2
+      }
+    ],
+    "station": "workbench",
+    "category": "tools",
+    "unlock": "flint_working"
+  },
+  {
+    "id": "fang_spear",
+    "output": "fang_spear",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "tiger_fang",
+        "qty": 1
+      },
+      {
+        "item": "bamboo",
+        "qty": 2
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 2
+      }
+    ],
+    "station": "workbench",
+    "category": "tools",
+    "unlock": "fang_craft"
+  },
+  {
+    "id": "hide_vest",
+    "output": "hide_vest",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "hide",
+        "qty": 3
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 4
+      }
+    ],
+    "station": "workbench",
+    "category": "gear",
+    "unlock": "tanning"
+  },
+  {
+    "id": "leaf_cape",
+    "output": "leaf_cape",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "leaf",
+        "qty": 10
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 4
+      },
+      {
+        "item": "bamboo",
+        "qty": 1
+      }
+    ],
+    "station": "workbench",
+    "category": "gear",
+    "unlock": "weaving"
+  },
+  {
+    "id": "bark_sandals",
+    "output": "bark_sandals",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "wood",
+        "qty": 1
+      },
+      {
+        "item": "hide",
+        "qty": 1
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 2
+      }
+    ],
+    "station": "workbench",
+    "category": "gear",
+    "unlock": "trail_craft"
   }
 ]

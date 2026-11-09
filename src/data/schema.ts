@@ -14,7 +14,7 @@ import {
 
 // ---------- Types (JSON shapes) ----------
 
-export const ITEM_CATEGORIES = ['material', 'food', 'tool', 'light', 'structure', 'quest', 'medicine', 'container'] as const;
+export const ITEM_CATEGORIES = ['material', 'food', 'tool', 'light', 'structure', 'quest', 'medicine', 'container', 'gear'] as const;
 export type ItemCategory = (typeof ITEM_CATEGORIES)[number];
 
 export const RARITIES = ['common', 'uncommon', 'rare'] as const;
@@ -23,7 +23,7 @@ export type Rarity = (typeof RARITIES)[number];
 export const TOOL_KINDS = ['hand', 'axe', 'pickaxe', 'spear', 'rod'] as const;
 export type ToolKind = (typeof TOOL_KINDS)[number];
 
-export const RECIPE_CATEGORIES = ['tools', 'light', 'building', 'food', 'medicine'] as const;
+export const RECIPE_CATEGORIES = ['tools', 'light', 'building', 'food', 'medicine', 'gear'] as const;
 export type RecipeCategory = (typeof RECIPE_CATEGORIES)[number];
 
 export const STATIONS = ['none', 'campfire', 'pot', 'workbench'] as const;
@@ -49,7 +49,7 @@ export interface ItemDef {
   icon: IconKey;
   tags: string[];
   /** Held tool: kind used for gathering multipliers; durability = successful hits before breaking. */
-  tool?: { kind: Exclude<ToolKind, 'hand'>; durability: number; damage: number };
+  tool?: { kind: Exclude<ToolKind, 'hand'>; durability: number; damage: number; /** Repair material (default: the recipe's first ingredient). */ repairItem?: string };
   /** Eating (F) applies these deltas. Health may be negative (e.g. raw, bitter food). */
   food?: { hunger: number; thirst: number; health: number };
   /** Using (F) enters placement mode for this structures.json id; placing consumes one. */
@@ -62,6 +62,36 @@ export interface ItemDef {
   returns?: string;
   /** A container: E at water while holding it turns one into this item. */
   fillsTo?: string;
+  /** Wearable gear (M11): one item per slot; F equips. */
+  gear?: GearDef;
+}
+
+export const GEAR_SLOTS = ['body', 'feet'] as const;
+export type GearSlot = (typeof GEAR_SLOTS)[number];
+
+export interface GearDef {
+  slot: GearSlot;
+  /** Fraction of incoming damage removed (0..0.6). */
+  damageReduction?: number;
+  /** Multiplier on warmth lost in the rain (0..1). */
+  rainWarmth?: number;
+  /** Extra walking speed fraction. */
+  speed?: number;
+  /** Multiplier on the mud/shallows slow-down (0..1; 0.5 halves it). */
+  terrain?: number;
+}
+
+export const SKILL_IDS = ['foraging', 'crafting', 'survival', 'combat', 'exploration'] as const;
+export type SkillId = (typeof SKILL_IDS)[number];
+
+/** progression.json (M11): skills, XP sources (no grind: unique firsts and small daily-capped repeats) and knowledge. */
+export interface ProgressionConfig {
+  /** Cumulative XP needed for levels 1, 2, 3. */
+  levels: number[];
+  skills: Array<{ id: SkillId; name: string; effect: string }>;
+  effects: { foragingExtraChance: number; toolWear: number; survivalDrain: number; combatDamage: number; exploreSpeed: number };
+  sources: Record<string, { skill: SkillId; xp: number; unique?: boolean; dailyCap?: number; text: string }>;
+  knowledge: Array<{ id: string; name: string; hint: string; text: string; item?: string; skill?: SkillId; level?: number }>;
 }
 
 export interface LootEntry {
@@ -120,6 +150,8 @@ export interface RecipeDef {
   /** "campfire" recipes need a placed campfire within reach. */
   station: Station;
   category: RecipeCategory;
+  /** Knowledge id that must be learned before this recipe can be crafted (M11). */
+  unlock?: string;
 }
 
 /** structures.json: array of StructureDef (placeable world objects). */
@@ -237,6 +269,7 @@ export interface GameData {
   lore: LoreConfig;
   ending: EndingConfig;
   fishing: FishingConfig;
+  progression: ProgressionConfig;
 }
 
 export interface RawGameData {
@@ -257,6 +290,7 @@ export interface RawGameData {
   lore: unknown;
   ending: unknown;
   fishing: unknown;
+  progression: unknown;
 }
 
 // ---------- Validation ----------
@@ -344,6 +378,17 @@ function validateItems(p: string[], items: Rec[], structureIds: Set<string>, ite
       if (!isRec(med) || !isNum(med['heal']) || num(med['heal']) < 0 || !Array.isArray(med['cures']) || !(med['cures'] as unknown[]).every((c) => c === 'poison'))
         p.push(`${w}: medicine needs heal >= 0 and cures (only "poison" is known)`);
     }
+    const gear = it['gear'];
+    if (gear !== undefined) {
+      if (!isRec(gear) || !GEAR_SLOTS.includes(gear['slot'] as GearSlot)) p.push(`${w}: gear.slot must be body|feet`);
+      else {
+        const frac = (k: string, max: number) => gear[k] === undefined || (isNum(gear[k]) && num(gear[k]) >= 0 && num(gear[k]) <= max);
+        if (!frac('damageReduction', 0.6) || !frac('rainWarmth', 1) || !frac('speed', 0.3) || !frac('terrain', 1)) p.push(`${w}: gear values out of range`);
+      }
+      if (stack !== 1) p.push(`${w}: gear must have stackSize 1`);
+    }
+    const rep = isRec(tool) ? tool['repairItem'] : undefined;
+    if (rep !== undefined && !itemIds.has(rep as string)) p.push(`${w}: tool.repairItem unknown item`);
     for (const k of ['returns', 'fillsTo'] as const) {
       const v = it[k];
       if (v !== undefined && !itemIds.has(v as string)) p.push(`${w}: ${k} unknown item ${String(v)}`);
@@ -466,6 +511,39 @@ function validateStructures(p: string[], structures: Rec[]): void {
     const sb = s['sleepBonus'];
     if (sb !== undefined && (!isRec(sb) || !isNum(sb['health']) || num(sb['health']) < 0)) p.push(`${w}: sleepBonus.health must be >= 0`);
   }
+}
+
+function validateProgression(p: string[], raw: unknown, itemIds: Set<string>, recipes: Rec[]): void {
+  if (!isRec(raw)) {
+    p.push('progression.json: must be an object');
+    return;
+  }
+  const levels = raw['levels'];
+  if (!Array.isArray(levels) || levels.length < 1 || !levels.every((l, i) => isInt(l) && l > 0 && (i === 0 || l > (levels[i - 1] as number))))
+    p.push('progression.levels must be increasing positive integers');
+  const skills = Array.isArray(raw['skills']) ? (raw['skills'] as Rec[]) : [];
+  for (const id of SKILL_IDS) if (!skills.some((s) => s['id'] === id && isStr(s['name']) && isStr(s['effect']))) p.push(`progression.skills: missing ${id}`);
+  const sources = raw['sources'];
+  if (!isRec(sources)) p.push('progression.sources required');
+  else
+    for (const [k, v] of Object.entries(sources)) {
+      if (!isRec(v) || !SKILL_IDS.includes(v['skill'] as SkillId) || !isInt(v['xp']) || num(v['xp']) < 1 || !isStr(v['text'])) p.push(`progression.sources.${k} invalid`);
+      // No grind: every source is either a one-time first or capped per day.
+      else if (v['unique'] !== true && !(isInt(v['dailyCap']) && num(v['dailyCap']) >= 1)) p.push(`progression.sources.${k} must be unique or have a dailyCap`);
+    }
+  const know = Array.isArray(raw['knowledge']) ? (raw['knowledge'] as Rec[]) : [];
+  const knowIds = new Set<string>();
+  for (const k of know) {
+    const w = `knowledge "${String(k['id'])}"`;
+    if (!isStr(k['id']) || !isStr(k['name']) || !isStr(k['hint']) || !isStr(k['text'])) p.push(`${w}: id, name, hint, text required`);
+    knowIds.add(k['id'] as string);
+    const byItem = k['item'] !== undefined;
+    const bySkill = k['skill'] !== undefined;
+    if (byItem === bySkill) p.push(`${w}: needs exactly one of item or skill`);
+    if (byItem && !itemIds.has(k['item'] as string)) p.push(`${w}: unknown item`);
+    if (bySkill && (!SKILL_IDS.includes(k['skill'] as SkillId) || !isInt(k['level']) || num(k['level']) < 1)) p.push(`${w}: skill and level >= 1 required`);
+  }
+  for (const r of recipes) if (r['unlock'] !== undefined && !knowIds.has(r['unlock'] as string)) p.push(`recipe "${String(r['id'])}": unknown unlock ${String(r['unlock'])}`);
 }
 
 function validateFishing(p: string[], f: unknown, lootIds: Set<string>): void {
@@ -725,6 +803,7 @@ export function validateGameData(raw: RawGameData): GameData {
   validateM5Configs(p, raw);
   validateM6(p, raw, tablets, quests, ids(loot));
   validateFishing(p, raw.fishing, ids(loot));
+  validateProgression(p, raw.progression, itemIds, recipes);
 
   if (p.length) throw new DataValidationError(p);
 
@@ -746,6 +825,7 @@ export function validateGameData(raw: RawGameData): GameData {
     lore: raw.lore as LoreConfig,
     ending: raw.ending as EndingConfig,
     fishing: raw.fishing as FishingConfig,
+    progression: raw.progression as ProgressionConfig,
   };
 
   // Reachability: every item must be gatherable or craftable from gatherable items.

@@ -1,0 +1,179 @@
+{
+  "levels": [
+    3,
+    8,
+    15
+  ],
+  "skills": [
+    {
+      "id": "foraging",
+      "name": "Foraging",
+      "effect": "+10% chance per level of an extra harvest"
+    },
+    {
+      "id": "crafting",
+      "name": "Crafting",
+      "effect": "-10% tool wear per level"
+    },
+    {
+      "id": "survival",
+      "name": "Survival",
+      "effect": "-6% hunger and thirst drain per level"
+    },
+    {
+      "id": "combat",
+      "name": "Combat",
+      "effect": "+1 melee damage per level"
+    },
+    {
+      "id": "exploration",
+      "name": "Exploration",
+      "effect": "+4% walking speed per level"
+    }
+  ],
+  "effects": {
+    "foragingExtraChance": 0.1,
+    "toolWear": 0.1,
+    "survivalDrain": 0.06,
+    "combatDamage": 1,
+    "exploreSpeed": 0.04
+  },
+  "sources": {
+    "gather_first": {
+      "skill": "foraging",
+      "xp": 2,
+      "unique": true,
+      "text": "a new kind of harvest"
+    },
+    "identify": {
+      "skill": "foraging",
+      "xp": 2,
+      "unique": true,
+      "text": "a plant identified"
+    },
+    "gather": {
+      "skill": "foraging",
+      "xp": 1,
+      "dailyCap": 3,
+      "text": "steady gathering"
+    },
+    "craft_first": {
+      "skill": "crafting",
+      "xp": 2,
+      "unique": true,
+      "text": "a new recipe made"
+    },
+    "build_first": {
+      "skill": "crafting",
+      "xp": 2,
+      "unique": true,
+      "text": "a new kind of structure"
+    },
+    "craft": {
+      "skill": "crafting",
+      "xp": 1,
+      "dailyCap": 3,
+      "text": "careful work"
+    },
+    "survive_night": {
+      "skill": "survival",
+      "xp": 2,
+      "unique": true,
+      "text": "a night survived"
+    },
+    "monsoon_day": {
+      "skill": "survival",
+      "xp": 3,
+      "unique": true,
+      "text": "a monsoon day endured"
+    },
+    "cook": {
+      "skill": "survival",
+      "xp": 1,
+      "dailyCap": 2,
+      "text": "a meal cooked"
+    },
+    "defeat_first": {
+      "skill": "combat",
+      "xp": 3,
+      "unique": true,
+      "text": "a new foe faced"
+    },
+    "defeat": {
+      "skill": "combat",
+      "xp": 1,
+      "dailyCap": 3,
+      "text": "a fight won"
+    },
+    "tablet": {
+      "skill": "exploration",
+      "xp": 3,
+      "unique": true,
+      "text": "a tablet read"
+    },
+    "chest": {
+      "skill": "exploration",
+      "xp": 2,
+      "unique": true,
+      "text": "a ruin chest opened"
+    },
+    "biome": {
+      "skill": "exploration",
+      "xp": 2,
+      "unique": true,
+      "text": "a new land discovered"
+    },
+    "outpost": {
+      "skill": "exploration",
+      "xp": 2,
+      "unique": true,
+      "text": "an outpost founded"
+    },
+    "shrine": {
+      "skill": "exploration",
+      "xp": 1,
+      "unique": true,
+      "text": "a shrine honoured"
+    }
+  },
+  "knowledge": [
+    {
+      "id": "flint_working",
+      "name": "Flint working",
+      "hint": "Reach Crafting 1",
+      "skill": "crafting",
+      "level": 1,
+      "text": "You learn to knap flint into keen edges."
+    },
+    {
+      "id": "tanning",
+      "name": "Tanning",
+      "hint": "Obtain a hide",
+      "item": "hide",
+      "text": "You learn to scrape and cure hide."
+    },
+    {
+      "id": "fang_craft",
+      "name": "Fang craft",
+      "hint": "Obtain a tiger fang",
+      "item": "tiger_fang",
+      "text": "You learn to bind a great fang to a shaft."
+    },
+    {
+      "id": "weaving",
+      "name": "Leaf weaving",
+      "hint": "Reach Survival 1",
+      "skill": "survival",
+      "level": 1,
+      "text": "You learn to weave leaves into a rain cape."
+    },
+    {
+      "id": "trail_craft",
+      "name": "Trail craft",
+      "hint": "Reach Exploration 1",
+      "skill": "exploration",
+      "level": 1,
+      "text": "You learn to make sandals for long trails."
+    }
+  ]
+}

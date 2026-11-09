@@ -162,6 +162,12 @@ export const ICON_KEYS = [
   'bed',
   'flag',
   'rain_water',
+  'flint_axe',
+  'flint_pickaxe',
+  'fang_spear',
+  'hide_vest',
+  'leaf_cape',
+  'bark_sandals',
 ] as const;
 export type IconKey = (typeof ICON_KEYS)[number];
 
