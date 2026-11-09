@@ -17,6 +17,21 @@ export interface CharacterView {
   knowledge: string[];
 }
 
+export interface MapData {
+  seed: number;
+  player: { x: number; y: number };
+  /** Explored 8-tile cells as "cx,cy". */
+  explored: string[];
+  markers: Array<{ x: number; y: number; kind: 'pin' | 'note'; text: string }>;
+  outposts: Array<{ x: number; y: number; name: string }>;
+  ruins: Array<{ x: number; y: number; solved: boolean }>;
+  landmarks: Array<{ x: number; y: number; name: string }>;
+  shortcuts: Array<{ x: number; y: number }>;
+  shrines: Array<{ x: number; y: number }>;
+  signs: Array<{ x: number; y: number }>;
+  heart: { x: number; y: number } | null;
+}
+
 export interface OutpostInfo {
   name: string;
   x: number;
@@ -86,6 +101,13 @@ export interface GameEventMap {
   /** M11: worn gear, skills and knowledge for the character panel and crafting locks. */
   'character:changed': CharacterView;
   'equipment:unequip': 'body' | 'feet';
+  /** M13 full map: UI asks, World answers with everything discovered. */
+  'map:request': void;
+  'map:data': MapData;
+  /** Add a custom marker at a world point, or remove the one nearest it. */
+  'map:marker': { x: number; y: number };
+  /** Compass: up to three nearest markers to point at on screen ([] = none / no compass). */
+  'markers:pointers': Array<{ x: number; y: number; label: string }>;
   /** Outpost flags for the minimap and journal. */
   'outposts:changed': OutpostInfo[];
   /** World entered/left structure placement mode; UI routes Esc to cancel it. */

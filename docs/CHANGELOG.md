@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.13.0 — M13: Maps, landmarks and ruin puzzles (2026-11-09)
+
+### Added
+- Full map (M) with fog of war, custom markers, navigation notes, a compass with on-screen pointers, and trail signs.
+- Rare landmarks (great fig, termite mound, split boulder) and hidden stepping-stone shortcuts across rivers.
+- Three ruin layouts, each with a lamp-order or pressure-plate puzzle that unseals a reliquary; telegraphed spike traps; loose-stone caches.
+- Exploration XP for landmarks, shortcuts, puzzles and caches; all discoveries are saved.
+
+### Compatibility
+- Worlds generate exactly as before for everything that existed in older saves (prop keys stable); new ruin pieces and landmarks are added on top.
+
 ## 0.12.0 — M12: Stealth, smarter creatures and dynamic encounters (2026-11-09)
 
 ### Added

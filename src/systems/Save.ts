@@ -79,6 +79,16 @@ export interface SaveData {
   openedChests: string[];
   /** Plant identification: resource ids the player has gathered at least once (M9). */
   knownPlants: string[];
+  /** M13: exploration (fog-of-war cells, discoveries, custom markers, solved ruin puzzles). */
+  exploration: {
+    explored: string[];
+    ruins: string[];
+    landmarks: string[];
+    shortcuts: string[];
+    shrines: string[];
+    puzzles: string[];
+    markers: Array<{ x: number; y: number; kind: 'pin' | 'note'; text: string }>;
+  };
   /** M12: the night index the ambush was last rolled for (one roll per night, across reloads). */
   ambushNight: number;
   /** M11: skills, one-time awards, daily caps and knowledge. */
@@ -260,6 +270,26 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
     }),
     openedChests: (Array.isArray(rec['openedChests']) ? rec['openedChests'] : []).filter((o): o is string => typeof o === 'string'),
     ambushNight: Math.floor(finite(rec['ambushNight'], -1)),
+    exploration: ((ex: unknown) => {
+      const r = isRec(ex) ? ex : {};
+      const strs = (v: unknown, max: number) => (Array.isArray(v) ? v.filter((o): o is string => typeof o === 'string' && o.length < 64).slice(0, max) : []);
+      const markers = (Array.isArray(r['markers']) ? r['markers'] : []).slice(0, 40).flatMap((m: unknown) => {
+        if (!isRec(m)) return [];
+        const x = finite(m['x'], NaN);
+        const y = finite(m['y'], NaN);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return [];
+        return [{ x, y, kind: m['kind'] === 'note' ? ('note' as const) : ('pin' as const), text: typeof m['text'] === 'string' ? m['text'].slice(0, 60) : '' }];
+      });
+      return {
+        explored: (Array.isArray(r['explored']) ? r['explored'] : []).filter((o): o is string => typeof o === 'string' && o.length < 32).slice(-40000),
+        ruins: strs(r['ruins'], 2000),
+        landmarks: strs(r['landmarks'], 2000),
+        shortcuts: strs(r['shortcuts'], 2000),
+        shrines: strs(r['shrines'], 2000),
+        puzzles: strs(r['puzzles'], 2000),
+        markers,
+      };
+    })(rec['exploration']),
     knownPlants: (Array.isArray(rec['knownPlants']) ? rec['knownPlants'] : []).filter((o): o is string => typeof o === 'string'),
     progression: ((pr: unknown) => {
       const r = isRec(pr) ? pr : {};

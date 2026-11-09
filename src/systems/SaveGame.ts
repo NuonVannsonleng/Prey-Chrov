@@ -26,6 +26,7 @@ export interface WorldState {
   openedChests: ReadonlySet<string>;
   knownPlants: ReadonlySet<string>;
   ambushNight: number;
+  exploration: SaveData['exploration'];
   progression: SaveData['progression'];
   equipment: SaveData['equipment'];
   quest: { tabletsRead: readonly string[]; heartReached: boolean; restored: boolean };
@@ -64,6 +65,7 @@ export function buildSave(w: WorldState): SaveData {
     openedChests: [...w.openedChests],
     knownPlants: [...w.knownPlants],
     ambushNight: w.ambushNight,
+    exploration: w.exploration,
     progression: w.progression,
     equipment: w.equipment,
     tabletsRead: [...w.quest.tabletsRead],

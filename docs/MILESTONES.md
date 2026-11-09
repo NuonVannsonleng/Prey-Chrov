@@ -16,6 +16,84 @@ Status legend: **Done** · **In progress** · **Not started**
 | M10 | Better building and persistent outposts | Done |
 | M11 | Equipment, gear upgrades and meaningful progression | Done |
 | M12 | Advanced AI, stealth and dynamic encounters | Done |
+| M13 | Exploration tools, mapping and ruins | Done |
+
+---
+
+## M13 — Exploration tools, mapping and ruins
+
+### Implemented (playable)
+
+- **Full map (M) with fog of war:**
+  - Ground you have walked is revealed in 8-tile areas around you; the rest stays dark.
+  - The map shows you, outposts, ruins (gold once their puzzle is solved), landmarks, river shortcuts, Neak Ta shrines, trail signs, the Heart of the Forest once revealed, and your markers.
+  - Drag (or WASD / arrow keys) to pan.
+  - **Click to add a custom marker; click one to remove it.** Up to 30 markers and notes. Nothing is ever replaced automatically.
+- **Compass** (1 flint, 1 stick, 1 leaf): while you carry it, your three nearest markers get edge-of-screen pointers with distances.
+- **Navigation notes** (2 leaves and 1 fibre make two): use one (F) to pin a note on your map where you stand, labelled with the place and day, for example "Forest Clearing, day 8".
+- **Trail signs** (2 sticks and 1 fibre make two): placeable posts that show on your map.
+- **Rare landmarks:** about one in two 128-tile areas holds one, always on dry land and clear of ruins, spawn and the Heart.
+  - **Great strangler fig:** its hollow roots hide a one-time cache.
+  - **Towering termite mound.**
+  - **Lightning-split boulder.**
+
+  Walking near a landmark discovers it, with a toast, a map entry and Exploration XP.
+- **Shortcut discoveries:** hidden **stepping stones** cross deep rivers along continuous lines, one north–south and one east–west per 40-tile band, so rivers flowing either way get crossings. They are drawn as stones and are walkable. Crossing one records the shortcut on your map at the stones themselves.
+- **Ruins: three distinct layouts.** The layout and puzzle are fixed per site and seed, so each ruin varies but stays the same on every visit.
+  - **Open courtyard:** the original layout.
+  - **Inner ring:** a ring wall around the altar, open east and west.
+  - **Colonnade:** extra pillar pairs.
+- **Each ruin has a puzzle that unseals a reliquary** (good loot).
+  - **Lamp order:** three lamps carry sun, moon and water symbols, and a glyph stone shows the order. A wrong order puts the flames out, so you can retry freely.
+  - **Pressure plates:** press all four floor plates within 9 seconds.
+- **Traps with telegraphs:** in some ruins, spike traps cross the inside of the south gateway. They cycle safe (1.8 s), **glinting warning** (0.65 s), then raised (1 s, 8 damage; armour and invulnerability frames apply). A click sounds as they glint. The other three gateways are always clear.
+- **Environmental secrets:** loose stones in some ruin walls hide a one-time cache, as do the fig's hollow roots.
+- **Guardian shrines are untouched:** no puzzles, traps or caches at Neak Ta shrines. They only appear on the map as places of respect.
+- **Persistence:** the explored map, discoveries, solved puzzles, opened reliquaries and caches, and markers and notes are all saved.
+
+### Verification
+
+- `npm run typecheck` and `npm run build` pass.
+- `npm test`: 170 unit tests. **These cover the roadmap test:**
+  - every planned puzzle piece exists (none lost at chunk edges)
+  - every puzzle piece, reliquary, trap and cache can be reached from outside its ruin (5 ruins × 4 seeds)
+  - lamp sets are complete, and the glyph spells the solution
+  - plate routes fit the time window
+  - all three layouts appear
+  - traps always warn before rising
+  - every landmark **spawns** on dry land and is not walled in
+  - stepping stones are walkable shallows
+- **One-off old-save check:** chunks from the pre-M13 generator were compared with the new one around ruins and landmarks. All 7,942 surviving props keep their exact key, kind and position, and only vegetation sitting on new pieces is cleared.
+- `npm run smoke`: 204 browser checks. The M13 ones:
+  - fog of war
+  - M opens the map, and clicks add and remove markers
+  - a navigation note
+  - compass pointers
+  - a ruin puzzle solved end to end, opening the reliquary (sealed before)
+  - spike traps cycle with a warning and hurt only while raised
+  - a loose-stone cache
+  - discovering a landmark
+  - discovering stepping stones
+  - map contents
+  - **reload preserves the explored map, discoveries, solved puzzles, opened reliquaries and markers**
+- QA stand-in review: build, 170 tests and 204/204 smoke passed. Fixed afterwards:
+  - **Critical:** about a third of landmarks never spawned because they fell near chunk edges. They now snap inside their chunk, and a test checks they spawn.
+  - **Critical:** new ruin pieces shifted saved prop keys in older saves, so chests could be re-looted and harvest states misplaced. New pieces are now appended after vegetation, and stepping-stone banks stay shore, which keeps every older key stable (verified above).
+  - **Warnings:**
+    - traps ignored armour and invulnerability frames
+    - stepping lines could dead-end, and the map icon sat at the area centre
+    - markers were hard to click off
+    - notes silently replaced the oldest marker
+    - the plate timer ran while a panel was open
+    - the trap warning was silent
+  - Suggestion: an oversized explored list now keeps the newest areas.
+  - Re-verified with the full smoke run (204/204).
+
+### Known limitations
+
+- Reachability is tested locally around each ruin and landmark, not along a full path from spawn. Rivers always have fords and stepping stones, but an island landmark is possible in principle.
+- Lamp progress mid-puzzle is not saved; a reload simply restarts that puzzle.
+- The map shows explored areas at 8-tile resolution.
 
 ---
 

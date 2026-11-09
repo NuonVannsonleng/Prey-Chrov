@@ -11,6 +11,7 @@ import { Toast } from '../ui/components/Toast';
 import { CraftingPanel } from '../ui/panels/CraftingPanel';
 import { StoragePanel } from '../ui/panels/StoragePanel';
 import { CharacterPanel } from '../ui/panels/CharacterPanel';
+import { MapPanel } from '../ui/panels/MapPanel';
 import { Hotbar } from '../ui/panels/Hotbar';
 import { InventoryPanel } from '../ui/panels/InventoryPanel';
 import { Minimap } from '../ui/panels/Minimap';
@@ -30,6 +31,7 @@ const HINTS = [
   ['C', 'Crafting'],
   ['J', 'Journal (quest, tablets)'],
   ['K', 'Character (gear, skills)'],
+  ['M', 'Map (click: add/remove marker)'],
   ['Q', 'Drop one (Ctrl: stack)'],
   ['R · X', 'Rotate / repair · dismantle'],
   ['Z (hold)', 'Crouch: quiet; hide in bushes'],
@@ -49,6 +51,11 @@ export class UI extends Phaser.Scene {
   private crafting!: CraftingPanel;
   private storage!: StoragePanel;
   private character!: CharacterPanel;
+  private map!: MapPanel;
+  /** Compass pointers toward the nearest map markers. */
+  private pointerG!: Phaser.GameObjects.Graphics;
+  private readonly pointerT: Phaser.GameObjects.Text[] = [];
+  private pointers: Array<{ x: number; y: number; label: string }> = [];
   private status!: StatusHud;
   private minimap!: Minimap;
   private journal!: JournalPanel;
@@ -144,6 +151,9 @@ export class UI extends Phaser.Scene {
     this.crafting = new CraftingPanel(this);
     this.storage = new StoragePanel(this);
     this.character = new CharacterPanel(this);
+    this.map = new MapPanel(this);
+    this.pointerG = this.add.graphics().setDepth(90);
+    for (let i = 0; i < 3; i++) this.pointerT.push(this.add.text(0, 0, '', { fontFamily: FONTS.ui, fontSize: '12px', fontStyle: '700', color: '#f4a090', stroke: '#071210', strokeThickness: 3 }).setOrigin(0.5).setDepth(90).setVisible(false));
     this.journal = new JournalPanel(this);
     this.tabletView = new TabletView(this);
     this.toast = new Toast(this);
@@ -156,7 +166,14 @@ export class UI extends Phaser.Scene {
       this.status.setObjectivesVisible(false);
     }
 
-    onSceneEvent(this, 'world:info', ({ seed }) => this.minimap.setSeed(seed));
+    onSceneEvent(this, 'world:info', ({ seed }) => {
+      this.minimap.setSeed(seed);
+      this.map.setSeed(seed);
+    });
+    onSceneEvent(this, 'map:data', (d) => this.map.render(d));
+    onSceneEvent(this, 'markers:pointers', (list) => {
+      this.pointers = list;
+    });
     onSceneEvent(this, 'structures:changed', (list) => this.minimap.setStructures(list));
     onSceneEvent(this, 'player:tick', (t) => {
       this.lastTick = t;
@@ -164,6 +181,7 @@ export class UI extends Phaser.Scene {
       if (this.modal) this.questArrow.setVisible(false);
       else this.questArrow.update(t.x, t.y);
       if (this.sprintTag.visible !== t.sprinting) this.sprintTag.setVisible(t.sprinting);
+      this.drawPointers(t.x, t.y);
       const st = t.stealth === 'hidden' ? 'HIDDEN' : t.stealth === 'crouch' ? 'CROUCHING' : '';
       if (this.stealthTag.text !== st) this.stealthTag.setText(st).setVisible(st !== '');
     });
@@ -257,7 +275,7 @@ export class UI extends Phaser.Scene {
     }
     this.weather.update(time);
     if (this.tabletView.isOpen !== this.modal && this.tabletView.isOpen) this.syncModal();
-    if (!this.tabletView.isOpen && this.modal && !this.panel.isOpen && !this.crafting.isOpen && !this.journal.isOpen && !this.storage.isOpen && !this.character.isOpen && !this.dialog) this.syncModal();
+    if (!this.tabletView.isOpen && this.modal && !this.panel.isOpen && !this.crafting.isOpen && !this.journal.isOpen && !this.storage.isOpen && !this.character.isOpen && !this.map.isOpen && !this.dialog) this.syncModal();
     if (!this.debugOn || time - this.lastDebugUpdate < 200) return;
     this.lastDebugUpdate = time;
     const t = this.lastTick;
@@ -275,6 +293,7 @@ export class UI extends Phaser.Scene {
       else if (this.tabletView.isOpen) this.closeTablet();
       else if (this.storage.isOpen) this.closeStorage();
       else if (this.character.isOpen) this.setCharacter(false);
+      else if (this.map.isOpen) this.setMap(false);
       else if (this.journal.isOpen) this.setJournal(false);
       else if (this.crafting.isOpen) this.setCrafting(false);
       else if (this.panel.isOpen) this.setPanel(false);
@@ -298,7 +317,24 @@ export class UI extends Phaser.Scene {
       if (event.code === 'KeyE') this.time.delayedCall(0, () => this.closeStorage());
       return;
     }
+    if (event.code === 'KeyM') {
+      if (this.panel.isOpen) this.setPanel(false);
+      if (this.crafting.isOpen) this.setCrafting(false);
+      if (this.journal.isOpen) this.setJournal(false);
+      if (this.character.isOpen) this.setCharacter(false);
+      this.setMap(!this.map.isOpen);
+      return;
+    }
+    if (this.map.isOpen) {
+      const step = event.shiftKey ? 20 : 6;
+      if (event.code === 'ArrowLeft' || event.code === 'KeyA') this.map.pan(-step, 0);
+      else if (event.code === 'ArrowRight' || event.code === 'KeyD') this.map.pan(step, 0);
+      else if (event.code === 'ArrowUp' || event.code === 'KeyW') this.map.pan(0, -step);
+      else if (event.code === 'ArrowDown' || event.code === 'KeyS') this.map.pan(0, step);
+      return;
+    }
     if (event.code === 'KeyK') {
+      if (this.map.isOpen) this.setMap(false);
       if (this.panel.isOpen) this.setPanel(false);
       if (this.crafting.isOpen) this.setCrafting(false);
       if (this.journal.isOpen) this.setJournal(false);
@@ -376,6 +412,39 @@ export class UI extends Phaser.Scene {
     this.syncModal();
   }
 
+  private setMap(open: boolean): void {
+    if (open) this.map.open();
+    else this.map.close();
+    this.syncModal();
+  }
+
+  /** Edge pointers (with distance) toward the nearest markers while a compass is carried. */
+  private drawPointers(px: number, py: number): void {
+    const g = this.pointerG.clear();
+    const show = !this.modal && this.pointers.length > 0;
+    this.pointers.forEach((m, i) => {
+      const t = this.pointerT[i];
+      if (!t) return;
+      const dx = (m.x - px) * 2;
+      const dy = (m.y - py) * 2;
+      const onScreen = Math.abs(dx) < GAME_WIDTH / 2 - 60 && Math.abs(dy) < GAME_HEIGHT / 2 - 90;
+      if (!show || onScreen) {
+        t.setVisible(false);
+        return;
+      }
+      const len = Math.hypot(dx, dy) || 1;
+      // Keep pointers clear of the HUD (top) and the prompt / hotbar (bottom).
+      const k = Math.min((GAME_WIDTH / 2 - 70) / Math.abs(dx || 1e-6), (dy < 0 ? GAME_HEIGHT / 2 - 130 : GAME_HEIGHT / 2 - 190) / Math.abs(dy || 1e-6));
+      const sx = GAME_WIDTH / 2 + dx * k;
+      const sy = GAME_HEIGHT / 2 + dy * k;
+      const ux = dx / len;
+      const uy = dy / len;
+      g.fillStyle(0xd9644a, 0.9).fillTriangle(sx + ux * 10, sy + uy * 10, sx - uy * 6, sy + ux * 6, sx + uy * 6, sy - ux * 6);
+      t.setText(`${m.label} · ${Math.round(len / 2 / 32)} m`).setPosition(sx - ux * 22, sy - uy * 22).setVisible(true);
+    });
+    for (let i = this.pointers.length; i < this.pointerT.length; i++) this.pointerT[i]?.setVisible(false);
+  }
+
   private setCharacter(open: boolean): void {
     if (open) this.character.open();
     else this.character.close();
@@ -401,7 +470,7 @@ export class UI extends Phaser.Scene {
   }
 
   private syncModal(): void {
-    const modal = this.panel.isOpen || this.crafting.isOpen || this.journal.isOpen || this.tabletView.isOpen || this.storage.isOpen || this.character.isOpen || this.dialog !== null;
+    const modal = this.panel.isOpen || this.crafting.isOpen || this.journal.isOpen || this.tabletView.isOpen || this.storage.isOpen || this.character.isOpen || this.map.isOpen || this.dialog !== null;
     if (modal === this.modal) return;
     this.modal = modal;
     this.toast.setLow(modal);

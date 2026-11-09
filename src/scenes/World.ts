@@ -21,6 +21,8 @@ import { Gathering } from '../systems/Gathering';
 import { FishingSession } from '../systems/Fishing';
 import { Progression } from '../systems/Progression';
 import { playerNoise } from '../systems/Perception';
+import { LANDMARK_NAMES, PLATE_WINDOW_SECONDS, STEPPING_CELL, ruinKey, ruinPlan, trapPhase, type LandmarkId } from '../world/RuinPlan';
+import type { LandmarkObj, RuinFeatureObj } from '../world/ChunkManager';
 import { Interaction } from '../systems/Interaction';
 import { Lighting } from '../systems/Lighting';
 import { Objectives } from '../systems/Objectives';
@@ -136,6 +138,14 @@ export class World extends Phaser.Scene {
   private hidden = false;
   private nextCoverAt = 0;
   private ambushRolledNight = -1;
+  /** M13 exploration state (saved). */
+  private readonly explored = new Set<string>();
+  private readonly found = { ruins: new Set<string>(), landmarks: new Set<string>(), shortcuts: new Set<string>(), shrines: new Set<string>(), puzzles: new Set<string>() };
+  private markers: Array<{ x: number; y: number; kind: 'pin' | 'note'; text: string }> = [];
+  private readonly lampProgress = new Map<string, string[]>();
+  private readonly plateProgress = new Map<string, { pressed: Set<string>; until: number }>();
+  private nextTrapHitAt = 0;
+  private readonly trapPhases = new Map<string, string>();
   private ambushAt = 0;
   private readonly encFrame = { playerX: 0, playerY: 0, darkness: 0, day: 1, spiritWard: false, noise: 0, hidden: false, crouching: false, monsoon: false, distTiles: 0 };
   private nextKnowledgeAt = 0;
@@ -229,11 +239,18 @@ export class World extends Phaser.Scene {
     this.nextKnowledgeAt = 0;
     this.ambushAt = 0;
     this.ambushRolledNight = -1;
+    this.explored.clear();
+    for (const s of Object.values(this.found)) s.clear();
+    this.markers = [];
+    this.lampProgress.clear();
+    this.plateProgress.clear();
+    this.nextTrapHitAt = 0;
+    this.trapPhases.clear();
     this.noise = 0;
     this.hidden = false;
 
     this.floating = new FloatingText(this);
-    this.interaction = new Interaction(this, this.chunks.nodes, (x, y) => this.chunks.tileAtWorld(x, y), this.structures.list, this.chunks.shrines, this.chunks.ruins, this.chunks.roots, () => this.chunks.heart);
+    this.interaction = new Interaction(this, this.chunks.nodes, (x, y) => this.chunks.tileAtWorld(x, y), this.structures.list, this.chunks.shrines, this.chunks.ruins, this.chunks.roots, () => this.chunks.heart, this.chunks.features, this.chunks.landmarks);
     this.quest = new QuestLog(this.gameData, [], false, this.gen.tabletSites().length);
     this.openedChests.clear();
     this.nextWeatherAt = 0;
@@ -339,6 +356,8 @@ export class World extends Phaser.Scene {
       this.emitCharacter();
     });
     onSceneEvent(this, 'equipment:unequip', (slot) => this.unequip(slot));
+    onSceneEvent(this, 'map:request', () => gameEvents.emit('map:data', this.mapData()));
+    onSceneEvent(this, 'map:marker', ({ x, y }) => this.toggleMarker(x, y));
     this.scene.launch(SCENES.ui);
 
     this.events.on(Phaser.Scenes.Events.RESUME, this.onResume, this);
@@ -445,6 +464,8 @@ export class World extends Phaser.Scene {
     this.updateShrines();
     this.updateRuins();
     this.updateHeart();
+    this.frameDt = dt;
+    this.updateFeatures();
     this.updateQuestTarget();
     this.emitEffects();
     if (this.now >= this.nextAutosaveAt) {
@@ -577,7 +598,7 @@ export class World extends Phaser.Scene {
   }
 
   /** Applies damage with i-frames, knockback, flash and shake. Returns false while invulnerable. */
-  private hurtPlayer(damage: number, cause: 'wildlife' | 'spirit', fromX: number, fromY: number): boolean {
+  private hurtPlayer(damage: number, cause: 'wildlife' | 'spirit' | 'injury', fromX: number, fromY: number): boolean {
     if (this.now < this.playerInvulnUntil || this.busy || damage <= 0) return false;
     const c = this.gameData.combat;
     const p = this.player;
@@ -679,6 +700,7 @@ export class World extends Phaser.Scene {
     // The biome you start in isn't a discovery.
     const biome = this.gen.biomeAt(Math.floor(this.player.x / 32), Math.floor(this.player.y / 32));
     if (biome !== this.gen.biomeAt(Math.floor(this.spawn.x / 32), Math.floor(this.spawn.y / 32))) this.grant('biome', biome);
+    this.updateDiscovery();
     if (this.now >= this.nextKnowledgeAt) {
       this.nextKnowledgeAt = this.now + 1000;
       this.checkKnowledge();
@@ -1045,6 +1067,10 @@ export class World extends Phaser.Scene {
         return `E — ${this.gameData.ending.text.prompt}`;
       case 'roots':
         return this.gameData.ending.text.rootsBlock;
+      case 'feature':
+        return target.kind === 'feature' ? this.featurePrompt(target.feature) : '';
+      case 'landmark':
+        return target.kind === 'landmark' ? (target.landmark.id === 'great_fig' && !this.openedChests.has(`fig@${target.landmark.key}`) ? 'E — Search the hollow roots' : LANDMARK_NAMES[target.landmark.id as LandmarkId] ?? '') : '';
       case 'ruin':
         if (target.kind !== 'ruin') return '';
         if (target.ruin.kind === 'chest') return this.openedChests.has(target.ruin.key) ? 'An empty stone chest' : 'E — Open the stone chest';
@@ -1096,6 +1122,14 @@ export class World extends Phaser.Scene {
     }
     if (target.kind === 'heart' && pressed) {
       this.offerAtHeart();
+      return;
+    }
+    if (target.kind === 'feature' && pressed) {
+      this.useFeature(target.feature);
+      return;
+    }
+    if (target.kind === 'landmark' && pressed) {
+      this.useLandmark(target.landmark);
       return;
     }
     if (target.kind === 'roots' && pressed) {
@@ -1206,6 +1240,14 @@ export class World extends Phaser.Scene {
     }
     if (def.gear) {
       this.equip(def);
+      return;
+    }
+    if (def.id === 'nav_note') {
+      this.writeNote();
+      return;
+    }
+    if (def.id === 'compass') {
+      gameEvents.emit('toast', { text: 'While you carry the compass, your map markers (M) point the way on screen', tone: 'info' });
       return;
     }
     if (def.food) {
@@ -1557,6 +1599,15 @@ export class World extends Phaser.Scene {
         openedChests: this.openedChests,
         knownPlants: this.knownPlants,
         ambushNight: this.ambushRolledNight,
+        exploration: {
+          explored: [...this.explored],
+          ruins: [...this.found.ruins],
+          landmarks: [...this.found.landmarks],
+          shortcuts: [...this.found.shortcuts],
+          shrines: [...this.found.shrines],
+          puzzles: [...this.found.puzzles],
+          markers: this.markers.map((m) => ({ ...m })),
+        },
         progression: this.progression.serialize(),
         equipment: { body: this.equipment.body ? { item: this.equipment.body.item, qty: 1 } : null, feet: this.equipment.feet ? { item: this.equipment.feet.item, qty: 1 } : null },
         quest: { tabletsRead: this.quest.tabletsRead, heartReached: this.quest.heartReached, restored: this.quest.restored },
@@ -1587,6 +1638,275 @@ export class World extends Phaser.Scene {
     const feet = this.feetGear;
     const slow = (1 - base) * (feet?.terrain ?? 1);
     return (1 - slow) * (this.fx.speed + (feet?.speed ?? 0));
+  }
+
+  // ---------- Exploration, map and ruins (M13) ----------
+
+  /** Fog of war, ruins, landmarks, shortcuts and shrines you have come near (every half second). */
+  private updateDiscovery(): void {
+    const p = this.player;
+    const ptx = Math.floor(p.x / 32);
+    const pty = Math.floor(p.y / 32);
+    const ccx = Math.floor(ptx / 8);
+    const ccy = Math.floor(pty / 8);
+    for (let oy = -2; oy <= 2; oy++) for (let ox = -2; ox <= 2; ox++) if (ox * ox + oy * oy <= 5) this.explored.add(`${ccx + ox},${ccy + oy}`);
+    for (const r of this.gen.ruinsNear(ptx, pty, 18)) this.found.ruins.add(ruinKey(r));
+    for (const s of this.chunks.shrines) if (Math.hypot(s.x - p.x, s.y - p.y) < 260) this.found.shrines.add(`${Math.round(s.x)},${Math.round(s.y)}`);
+    for (const l of this.chunks.landmarks) {
+      const key = `${l.id}@${Math.round(l.x)},${Math.round(l.y)}`;
+      if (this.found.landmarks.has(key) || Math.hypot(l.x - p.x, l.y - p.y) > 200) continue;
+      this.found.landmarks.add(key);
+      this.grant('landmark', key);
+      gameEvents.emit('toast', { text: `Landmark discovered: ${LANDMARK_NAMES[l.id as LandmarkId] ?? l.id}. It is now on your map (M).`, tone: 'info' });
+    }
+    if (this.gen.steppingAt(ptx, Math.floor((p.y - 4) / 32))) {
+      const cell = `${Math.floor(ptx / STEPPING_CELL)},${Math.floor(pty / STEPPING_CELL)}`;
+      const key = `${cell}|${ptx},${pty}`;
+      if (![...this.found.shortcuts].some((k) => k.split('|')[0] === cell)) {
+        this.found.shortcuts.add(key);
+        this.grant('shortcut', key);
+        gameEvents.emit('toast', { text: 'Shortcut found: hidden stepping stones across the river. Marked on your map (M).', tone: 'info' });
+      }
+    }
+    // Compass: point at the nearest markers.
+    if (this.inventory.inventory.count('compass') > 0 && this.markers.length) {
+      const near = [...this.markers]
+        .sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))
+        .slice(0, 3)
+        .map((m, i) => ({ x: m.x, y: m.y, label: m.text || `Marker ${i + 1}` }));
+      gameEvents.emit('markers:pointers', near);
+    } else gameEvents.emit('markers:pointers', []);
+  }
+
+  private mapData(): import('../systems/GameEvents').MapData {
+    const parse = (k: string) => {
+      const at = k.indexOf('@');
+      const [x, y] = k.slice(at + 1).split(',').map(Number) as [number, number];
+      return { x, y, id: k.slice(0, at) };
+    };
+    const h = this.quest.stage === 'heart' || this.quest.stage === 'restore' || this.quest.stage === 'done' ? this.gen.heartSite() : null;
+    return {
+      seed: this.seed,
+      player: { x: this.player.x, y: this.player.y },
+      explored: [...this.explored],
+      markers: this.markers.map((m) => ({ ...m })),
+      outposts: this.structures.records.filter((s) => s.def.outpost).map((s) => ({ x: s.x, y: s.y, name: s.name ?? s.def.name })),
+      ruins: [...this.found.ruins].map((k) => {
+        const [tx, ty] = k.split(',').map(Number) as [number, number];
+        return { x: tx * 32 + 16, y: ty * 32 + 16, solved: this.found.puzzles.has(k) };
+      }),
+      landmarks: [...this.found.landmarks].map((k) => {
+        const l = parse(k);
+        return { x: l.x, y: l.y, name: LANDMARK_NAMES[l.id as LandmarkId] ?? l.id };
+      }),
+      shortcuts: [...this.found.shortcuts].map((k) => {
+        const at = k.split('|')[1];
+        if (at) {
+          const [tx, ty] = at.split(',').map(Number) as [number, number];
+          return { x: tx * 32 + 16, y: ty * 32 + 16 };
+        }
+        const [cx, cy] = k.split(',').map(Number) as [number, number];
+        return { x: (cx * STEPPING_CELL + STEPPING_CELL / 2) * 32, y: (cy * STEPPING_CELL + STEPPING_CELL / 2) * 32 };
+      }),
+      shrines: [...this.found.shrines].map((k) => {
+        const [x, y] = k.split(',').map(Number) as [number, number];
+        return { x, y };
+      }),
+      signs: this.structures.records.filter((s) => s.def.id === 'trail_sign').map((s) => ({ x: s.x, y: s.y })),
+      heart: h ? { x: h.tx * 32 + 16, y: h.ty * 32 + 16 } : null,
+    };
+  }
+
+  /** Click on the map: remove the marker under the click, or add a pin there (max 30). */
+  private toggleMarker(x: number, y: number): void {
+    const i = this.markers.findIndex((m) => Math.hypot(m.x - x, m.y - y) < 520);
+    if (i >= 0) this.markers.splice(i, 1);
+    else if (this.markers.length < 30) this.markers.push({ x: Math.round(x), y: Math.round(y), kind: 'pin', text: `Marker ${this.markers.length + 1}` });
+    else gameEvents.emit('toast', { text: 'Your map holds up to 30 markers — click one to remove it', tone: 'info' });
+    gameEvents.emit('map:data', this.mapData());
+  }
+
+  private writeNote(): void {
+    const p = this.player;
+    if (this.markers.length >= 30) {
+      gameEvents.emit('toast', { text: 'Your map holds up to 30 markers — remove one (M, click it) first', tone: 'info' });
+      return;
+    }
+    if (!this.inventory.inventory.takeFromSlot(this.inventory.selected, 1)) return;
+    this.inventory.broadcast();
+    const biome = this.gameData.biomes.get(this.gen.biomeAt(Math.floor(p.x / 32), Math.floor(p.y / 32)));
+    const text = `${biome?.name ?? 'Note'}, day ${this.clock.dayNumber}`;
+    this.markers.push({ x: Math.round(p.x), y: Math.round(p.y), kind: 'note', text });
+    gameEvents.emit('sfx', 'leaf');
+    this.floating.show(p.x, p.y - 34, `Noted: ${text}`, '#e6b866');
+  }
+
+  private featurePrompt(f: RuinFeatureObj): string {
+    const solved = this.found.puzzles.has(f.ruin);
+    switch (f.kind) {
+      case 'lamp':
+        return solved ? 'The lamp burns steadily' : `E — Light the ${f.fid} lamp`;
+      case 'glyph':
+        return 'E — Read the carved symbols';
+      case 'reliquary':
+        return this.openedChests.has(`reliquary@${f.ruin}`) ? 'An empty reliquary' : solved ? 'E — Open the reliquary' : 'A sealed reliquary';
+      case 'secret':
+        return this.openedChests.has(`secret@${f.key}`) ? 'An empty hollow' : 'E — Look at the loose stones';
+      default:
+        return '';
+    }
+  }
+
+  private useFeature(f: RuinFeatureObj): void {
+    this.nextActAt = this.now + 300;
+    const solved = this.found.puzzles.has(f.ruin);
+    if (f.kind === 'glyph') {
+      const pretty: Record<string, string> = { sun: '☀ sun', moon: '☾ moon', water: '≈ water' };
+      gameEvents.emit('toast', { text: `The carvings show: ${f.fid.split('-').map((s) => pretty[s] ?? s).join(', then ')}.`, tone: 'info' });
+      gameEvents.emit('sfx', 'tablet');
+      return;
+    }
+    if (f.kind === 'lamp') {
+      if (solved) return;
+      const plan = this.planFor(f.ruin);
+      if (!plan) return;
+      const prog = this.lampProgress.get(f.ruin) ?? [];
+      if (prog.includes(f.fid)) return;
+      prog.push(f.fid);
+      gameEvents.emit('sfx', 'shrine');
+      if (plan.order.slice(0, prog.length).join() !== prog.join()) {
+        this.lampProgress.delete(f.ruin);
+        gameEvents.emit('toast', { text: 'The flames gutter out. The order was wrong; the glyph stone holds it.', tone: 'warn' });
+        return;
+      }
+      this.lampProgress.set(f.ruin, prog);
+      if (prog.length === plan.order.length) this.solvePuzzle(f.ruin);
+      return;
+    }
+    if (f.kind === 'reliquary') {
+      const key = `reliquary@${f.ruin}`;
+      if (this.openedChests.has(key)) {
+        gameEvents.emit('toast', { text: 'The reliquary is empty.', tone: 'info' });
+        return;
+      }
+      if (!solved) {
+        const plan = this.planFor(f.ruin);
+        gameEvents.emit('toast', {
+          text: plan?.puzzle === 'lamps' ? 'Sealed. The three lamps of this ruin must be lit in the right order.' : 'Sealed. Every floor plate here must be pressed at once — or nearly.',
+          tone: 'info',
+        });
+        return;
+      }
+      this.openedChests.add(key);
+      this.dropLoot('reliquary', f.x, f.y, hashString(key));
+      gameEvents.emit('sfx', 'chest');
+      this.floating.show(f.x, f.y - 30, 'The reliquary opens', '#e6b866');
+      return;
+    }
+    if (f.kind === 'secret') {
+      const key = `secret@${f.key}`;
+      if (this.openedChests.has(key)) return;
+      this.openedChests.add(key);
+      this.grant('secret', key);
+      this.dropLoot('hidden_cache', f.x, f.y, hashString(key));
+      gameEvents.emit('sfx', 'stone');
+      gameEvents.emit('toast', { text: 'Behind the loose stones: a hidden cache!', tone: 'info' });
+    }
+  }
+
+  private useLandmark(l: LandmarkObj): void {
+    this.nextActAt = this.now + 300;
+    const key = `fig@${l.key}`;
+    if (l.id === 'great_fig' && !this.openedChests.has(key)) {
+      this.openedChests.add(key);
+      this.grant('secret', key);
+      this.dropLoot('hidden_cache', l.x, l.y + 10, hashString(key));
+      gameEvents.emit('toast', { text: 'Tucked among the fig\'s hollow roots: a forgotten bundle.', tone: 'info' });
+      return;
+    }
+    const text: Record<string, string> = {
+      great_fig: 'A strangler fig older than any trail, its roots a cathedral of wood.',
+      termite_mound: 'A termite mound taller than a person. The whole hill hums faintly.',
+      split_boulder: 'A boulder split clean in two by lightning; ferns already grow in the crack.',
+    };
+    gameEvents.emit('toast', { text: text[l.id] ?? '', tone: 'info' });
+  }
+
+  private dropLoot(table: string, x: number, y: number, salt: number): void {
+    const t = this.gameData.loot.get(table);
+    if (!t) return;
+    for (const stack of rollLoot(t, mulberry32(hash2(salt, 7, this.seed)))) {
+      if (!this.pickups.spawn(stack.item, stack.qty, x, y + 12, this.now, 250, 10)) this.inventory.add(stack.item, stack.qty);
+    }
+  }
+
+  private planCache = new Map<string, ReturnType<typeof ruinPlan>>();
+  private planFor(ruin: string): ReturnType<typeof ruinPlan> | null {
+    let plan = this.planCache.get(ruin);
+    if (!plan) {
+      const [tx, ty] = ruin.split(',').map(Number) as [number, number];
+      if (!Number.isFinite(tx) || !Number.isFinite(ty)) return null;
+      plan = ruinPlan({ tx, ty }, this.seed);
+      this.planCache.set(ruin, plan);
+    }
+    return plan;
+  }
+
+  private solvePuzzle(ruin: string): void {
+    if (this.found.puzzles.has(ruin)) return;
+    this.found.puzzles.add(ruin);
+    this.lampProgress.delete(ruin);
+    this.plateProgress.delete(ruin);
+    this.grant('puzzle', ruin);
+    gameEvents.emit('sfx', 'chest');
+    this.shake(220, 0.003);
+    gameEvents.emit('toast', { text: 'A deep grinding sound… the reliquary unseals.', tone: 'info' });
+  }
+
+  /** Feature frames from state; floor plates and spike traps react to the player. */
+  private frameDt = 0;
+
+  private updateFeatures(): void {
+    const p = this.player;
+    for (const f of this.chunks.features) {
+      const solved = this.found.puzzles.has(f.ruin);
+      let frame: string | null = null;
+      if (f.kind === 'lamp') frame = `lamp_${f.fid}_${solved || (this.lampProgress.get(f.ruin) ?? []).includes(f.fid) ? 'on' : 'off'}`;
+      else if (f.kind === 'reliquary') frame = this.openedChests.has(`reliquary@${f.ruin}`) ? 'reliquary_open' : 'reliquary_closed';
+      else if (f.kind === 'secret') frame = this.openedChests.has(`secret@${f.key}`) ? 'secret_found' : 'secret';
+      else if (f.kind === 'plate') {
+        const on = !this.modalOpen && Math.abs(p.x - f.x) < 14 && Math.abs(p.y - (f.y + 2)) < 12;
+        let prog = this.plateProgress.get(f.ruin);
+        // The window pauses while a panel is open.
+        if (prog && this.modalOpen) prog.until += this.frameDt;
+        if (prog && this.now > prog.until && !solved) {
+          this.plateProgress.delete(f.ruin);
+          prog = undefined;
+          gameEvents.emit('toast', { text: 'The plates sink back with a sigh. Press them all, quickly.', tone: 'warn' });
+        }
+        if (on && !solved && !prog?.pressed.has(f.fid)) {
+          prog ??= { pressed: new Set<string>(), until: this.now + PLATE_WINDOW_SECONDS * 1000 };
+          prog.pressed.add(f.fid);
+          this.plateProgress.set(f.ruin, prog);
+          gameEvents.emit('sfx', 'stone');
+          if (prog.pressed.size === 1) gameEvents.emit('toast', { text: `A plate sinks with a click… ${PLATE_WINDOW_SECONDS} seconds to press the rest.`, tone: 'info' });
+          if (prog.pressed.size >= 4) this.solvePuzzle(f.ruin);
+        }
+        frame = solved || prog?.pressed.has(f.fid) ? 'plate_down' : 'plate_up';
+      } else if (f.kind === 'trap') {
+        const phase = trapPhase(this.now, Number(f.fid));
+        frame = `trap_${phase}`;
+        // A click as the spikes glint (fair warning you can hear as well as see).
+        if (phase === 'warn' && this.trapPhases.get(f.key) !== 'warn' && Math.hypot(p.x - f.x, p.y - f.y) < 260) gameEvents.emit('sfx', 'ui');
+        this.trapPhases.set(f.key, phase);
+        // Through hurtPlayer: armour and invulnerability frames apply as for any other hit.
+        if (phase === 'up' && this.now >= this.nextTrapHitAt && Math.abs(p.x - f.x) < 15 && Math.abs(p.y - (f.y + 2)) < 12) {
+          this.nextTrapHitAt = this.now + 900;
+          this.hurtPlayer(8, 'injury', f.x, f.y + 10);
+        }
+      }
+      if (frame && f.image.frame.name !== frame) f.image.setFrame(frame);
+    }
   }
 
   // ---------- Stealth and ambushes (M12) ----------
@@ -2088,6 +2408,14 @@ export class World extends Phaser.Scene {
     this.objectives = new Objectives(save.objectives);
     for (const k of save.knownPlants) this.knownPlants.add(k);
     this.ambushRolledNight = save.ambushNight;
+    const ex = save.exploration;
+    for (const k of ex.explored) this.explored.add(k);
+    for (const k of ex.ruins) this.found.ruins.add(k);
+    for (const k of ex.landmarks) this.found.landmarks.add(k);
+    for (const k of ex.shortcuts) this.found.shortcuts.add(k);
+    for (const k of ex.shrines) this.found.shrines.add(k);
+    for (const k of ex.puzzles) this.found.puzzles.add(k);
+    this.markers = ex.markers.map((m) => ({ ...m }));
     this.progression = new Progression(this.gameData.progression, save.progression);
     for (const slot of ['body', 'feet'] as const) {
       const e = save.equipment[slot];

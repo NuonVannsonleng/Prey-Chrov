@@ -1537,6 +1537,166 @@ try {
   await evalW7('w.encounters.clear();');
   await setClock(7, 11);
 
+  // ---------- M13: exploration tools, mapping and ruins ----------
+  await setClock(8, 10);
+  await evalW7('w.encounters.clear(); w.survival.stats.health = 100; w.inventory.inventory.restore([]); w.inventory.broadcast();');
+  const home13 = await evalW7('return { x: w.player.x, y: w.player.y };');
+  const explored0 = await evalW7('return w.explored.size;');
+  check('fog of war: the ground you have walked is recorded', explored0 > 0, String(explored0));
+  // Full map: open, add a marker by clicking, remove it by clicking again.
+  await page.keyboard.press('KeyM');
+  await sleep(400);
+  const mapOpen = await evalW7('return ui.map.isOpen && w.modalOpen;');
+  await page.screenshot({ path: OUT + '/40-map.png' });
+  const mk = await evalW7('return ui.map.worldToScreen(w.player.x + 2000, w.player.y - 1200);');
+  await clickGame(mk.x, mk.y);
+  await sleep(250);
+  const added = await evalW7('return w.markers.length;');
+  await clickGame(mk.x, mk.y);
+  await sleep(250);
+  const removed = await evalW7('return w.markers.length;');
+  check('M opens the map; clicking adds a marker and clicking it again removes it', mapOpen && added === 1 && removed === 0, JSON.stringify({ mapOpen, added, removed }));
+  await clickGame(mk.x, mk.y);
+  await sleep(200);
+  await page.keyboard.press('KeyM');
+  await sleep(200);
+  // Navigation note (F) and compass pointers.
+  await evalW7('w.inventory.add("nav_note", 1); w.inventory.add("compass", 1); const i = w.inventory.inventory.snapshot().findIndex((s) => s && s.item === "nav_note"); w.inventory.inventory.move(i, 0); w.inventory.selected = 0; w.inventory.broadcast();');
+  await page.keyboard.press('KeyF');
+  await sleep(300);
+  const note = await evalW7('const m = w.markers.find((x) => x.kind === "note"); return m ? m.text : null;');
+  check('a navigation note marks where you stand with the place and day', !!note && /day/.test(note), String(note));
+  await evalW7('w.nextWeatherAt = 0;');
+  await sleep(700);
+  const ptr = await evalW7('return { n: ui.pointers.length, vis: ui.pointerT.some((t) => t.visible), text: ui.pointerT.map((t) => t.text).join("|") };');
+  check('carrying a compass points the way to far markers on screen', ptr.n >= 1 && ptr.vis && /m/.test(ptr.text), JSON.stringify(ptr));
+
+  // A ruin puzzle end to end (lamps or plates), then the reliquary.
+  const ruin13 = await evalW7(`
+    const t = { x: Math.floor(w.player.x / 32), y: Math.floor(w.player.y / 32) };
+    const sites = w.gen.ruinsNear(t.x, t.y, 700).sort((a, b) => Math.hypot(a.tx - t.x, a.ty - t.y) - Math.hypot(b.tx - t.x, b.ty - t.y));
+    const s = sites[0];
+    const key = s.tx + ',' + s.ty;
+    const plan = w.planFor(key);
+    return { tx: s.tx, ty: s.ty, key, puzzle: plan.puzzle, layout: plan.layout, order: plan.order, traps: plan.traps };`);
+  await teleport(ruin13.tx * 32 + 16, (ruin13.ty + 9) * 32 + 16);
+  await sleep(1500);
+  const feats = await evalW7('return w.chunks.features.filter((f) => f.ruin === arg).map((f) => ({ kind: f.kind, fid: f.fid, x: f.x, y: f.y, key: f.key }));', ruin13.key);
+  check('a ruin holds its puzzle pieces and a sealed reliquary (' + ruin13.layout + ', ' + ruin13.puzzle + ')', feats.some((f) => f.kind === 'reliquary') && feats.some((f) => f.kind === (ruin13.puzzle === 'lamps' ? 'lamp' : 'plate')), JSON.stringify(feats.map((f) => f.kind)));
+  const sealed = await evalW7('const r = w.chunks.features.find((f) => f.ruin === arg && f.kind === "reliquary"); w.useFeature(r); return w.openedChests.has("reliquary@" + arg);', ruin13.key);
+  if (ruin13.puzzle === 'lamps') {
+    // A wrong first lamp resets; the order on the glyph stone solves it.
+    const wrong = ruin13.order[1];
+    await evalW7('const f = w.chunks.features.find((x) => x.ruin === arg[0] && x.kind === "lamp" && x.fid === arg[1]); w.useFeature(f);', [ruin13.key, wrong]);
+    const reset = await evalW7('return { prog: (w.lampProgress.get(arg) || []).length, toast: ui.toast.text.text };', ruin13.key);
+    const glyph = await evalW7('const g = w.chunks.features.find((x) => x.ruin === arg && x.kind === "glyph"); w.useFeature(g); return ui.toast.text.text;', ruin13.key);
+    for (const sym of ruin13.order) await evalW7('const f = w.chunks.features.find((x) => x.ruin === arg[0] && x.kind === "lamp" && x.fid === arg[1]); w.useFeature(f);', [ruin13.key, sym]);
+    check('lamps: a wrong order resets; the glyph stone gives the order that solves it', reset.prog === 0 && /order was wrong/.test(reset.toast) && /then/.test(glyph), JSON.stringify({ reset, glyph }));
+  } else {
+    // Step on every plate within the time window.
+    const plates = feats.filter((f) => f.kind === 'plate');
+    for (const p of plates) {
+      await teleport(p.x, p.y + 2);
+      await sleep(260);
+    }
+  }
+  await sleep(200);
+  const solved = await evalW7('return w.found.puzzles.has(arg);', ruin13.key);
+  await page.screenshot({ path: OUT + '/41-ruin-solved.png' });
+  const opened = await evalW7('const r = w.chunks.features.find((f) => f.ruin === arg && f.kind === "reliquary"); w.useFeature(r); return w.openedChests.has("reliquary@" + arg);', ruin13.key);
+  check('solving the puzzle unseals the reliquary (sealed before, opens after)', !sealed && solved && opened, JSON.stringify({ sealed, solved, opened }));
+
+  // Spike traps telegraph, then hurt only while up.
+  const trapRuin = await evalW7(`
+    const t = { x: Math.floor(w.player.x / 32), y: Math.floor(w.player.y / 32) };
+    const s = w.gen.ruinsNear(t.x, t.y, 2500).find((r) => w.planFor(r.tx + ',' + r.ty).traps);
+    return s ? { tx: s.tx, ty: s.ty, key: s.tx + ',' + s.ty } : null;`);
+  if (trapRuin) {
+    await teleport(trapRuin.tx * 32 + 16, (trapRuin.ty + 11) * 32 + 16);
+    await sleep(1500);
+    const trapTest = await evalW7(`
+      const tr = w.chunks.features.find((f) => f.ruin === arg && f.kind === 'trap');
+      if (!tr) return null;
+      w.survival.stats.health = 100;
+      w.player.body.reset(tr.x, tr.y + 2);
+      return { x: tr.x, y: tr.y };`, trapRuin.key);
+    const phases = new Set();
+    let hurt = false;
+    for (let i = 0; i < 24 && trapTest; i++) {
+      await evalW7('w.player.body.reset(arg.x, arg.y + 2);', trapTest);
+      await sleep(150);
+      const s = await evalW7('const tr = w.chunks.features.find((f) => f.kind === "trap" && Math.abs(f.x - arg.x) < 1); return { f: tr.image.frame.name, hp: w.survival.stats.health };', trapTest);
+      phases.add(s.f);
+      if (s.hp < 100) hurt = true;
+    }
+    check('spike traps cycle down → warn (glint) → up, and hurt only while up', !!trapTest && phases.has('trap_warn') && phases.has('trap_up') && phases.has('trap_down') && hurt, JSON.stringify({ phases: [...phases], hurt }));
+    await evalW7('w.survival.stats.health = 100;');
+  } else check('spike traps exist in some ruin nearby', false, 'no trap ruin within range');
+
+  // A hidden cache in loose stones.
+  const secretRuin = await evalW7(`
+    const t = { x: Math.floor(w.player.x / 32), y: Math.floor(w.player.y / 32) };
+    const s = w.gen.ruinsNear(t.x, t.y, 2500).find((r) => w.planFor(r.tx + ',' + r.ty).features.some((f) => f.kind === 'secret'));
+    return s ? { tx: s.tx, ty: s.ty, key: s.tx + ',' + s.ty } : null;`);
+  if (secretRuin) {
+    await teleport(secretRuin.tx * 32 + 16, (secretRuin.ty + 11) * 32 + 16);
+    await sleep(1500);
+    const cache = await evalW7('const f = w.chunks.features.find((x) => x.ruin === arg && x.kind === "secret"); if (!f) return null; const before = w.pickups.activeCount; w.useFeature(f); return { found: w.openedChests.has("secret@" + f.key), loot: w.pickups.activeCount - before, frame: f.image.frame.name };', secretRuin.key);
+    await sleep(100);
+    check('loose stones hide a one-time cache', !!cache && cache.found && cache.loot > 0, JSON.stringify(cache));
+  } else check('a ruin with a hidden cache exists nearby', false, 'none in range');
+
+  // A landmark: walk up to it to discover it.
+  const lm13 = await evalW7(`
+    const t = { x: Math.floor(w.player.x / 32), y: Math.floor(w.player.y / 32) };
+    let best = null;
+    for (let cy = -4; cy <= 4; cy++) for (let cx = -4; cx <= 4; cx++) {
+      const l = w.gen.landmarkInCell(Math.floor(t.x / 128) + cx, Math.floor(t.y / 128) + cy);
+      if (l && (!best || Math.hypot(l.tx - t.x, l.ty - t.y) < Math.hypot(best.tx - t.x, best.ty - t.y))) best = l;
+    }
+    return best;`);
+  await teleport(lm13.tx * 32 + 16, (lm13.ty + 3) * 32 + 16);
+  await sleep(1500);
+  await evalW7('w.nextWeatherAt = 0;');
+  await sleep(700);
+  const lmFound = await evalW7('return { n: w.found.landmarks.size, toast: ui.toast.text.text, live: w.chunks.landmarks.length };');
+  await page.screenshot({ path: OUT + '/42-landmark.png' });
+  check('walking up to a rare landmark discovers it (toast + map)', lmFound.n >= 1 && lmFound.live >= 1, JSON.stringify(lmFound));
+
+  // A river shortcut (stepping stones).
+  const step13 = await evalW7(`
+    const t = { x: Math.floor(w.player.x / 32), y: Math.floor(w.player.y / 32) };
+    for (let r = 0; r < 260; r += 1) for (let ty = t.y - r; ty <= t.y + r; ty += Math.max(1, 2 * r)) for (let tx = t.x - r; tx <= t.x + r; tx++) if (w.gen.steppingAt(tx, ty)) return { tx, ty };
+    return null;`);
+  if (step13) {
+    await teleport(step13.tx * 32 + 16, step13.ty * 32 + 20);
+    await sleep(1200);
+    await evalW7('w.player.body.reset(arg.tx * 32 + 16, arg.ty * 32 + 20); w.nextWeatherAt = 0;', step13);
+    await sleep(700);
+    const sc = await evalW7('return w.found.shortcuts.size;');
+    await page.screenshot({ path: OUT + '/43-stepping-stones.png' });
+    check('crossing hidden stepping stones discovers a river shortcut', sc >= 1, JSON.stringify({ step13, sc }));
+  } else check('a stepping-stone shortcut exists within range', false, 'none found');
+
+  // Trail sign on the map.
+  await evalW7('w.structures.place("trail_sign", w.player.x + 40, w.player.y + 40); w.emitStructures();');
+  const md = await evalW7('return w.mapData();');
+  check('the map lists outposts, ruins, landmarks, shortcuts, trail signs and markers', md.ruins.length >= 1 && md.landmarks.length >= 1 && md.signs.length >= 1 && md.markers.length >= 2, JSON.stringify({ r: md.ruins.length, l: md.landmarks.length, s: md.shortcuts.length, signs: md.signs.length, m: md.markers.length }));
+
+  // Reload preserves discoveries.
+  const ex0 = await evalW7('return JSON.stringify({ e: w.explored.size, r: [...w.found.ruins].sort(), l: [...w.found.landmarks].sort(), s: [...w.found.shortcuts].sort(), p: [...w.found.puzzles].sort(), m: w.markers, rel: w.openedChests.has("reliquary@" + arg) });', ruin13.key);
+  await evalW7('w.save();');
+  await page.reload();
+  await waitScene('Menu', 15000);
+  await sleep(800);
+  await clickGame(640, 500);
+  await waitScene('World');
+  await sleep(900);
+  const ex1 = await evalW7('return JSON.stringify({ e: w.explored.size, r: [...w.found.ruins].sort(), l: [...w.found.landmarks].sort(), s: [...w.found.shortcuts].sort(), p: [...w.found.puzzles].sort(), m: w.markers, rel: w.openedChests.has("reliquary@" + arg) });', ruin13.key);
+  check('reload preserves the explored map, discoveries, solved puzzles, opened reliquaries and markers', ex0 === ex1, ex1.slice(0, 200));
+  await teleport(home13.x, home13.y);
+  await sleep(800);
+
   await page.evaluate(() => localStorage.clear());
 
   check('no console errors', errors.length === 0, errors.slice(0, 5).join(' | '));

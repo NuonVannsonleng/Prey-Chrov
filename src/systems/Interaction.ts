@@ -3,7 +3,7 @@ import { DEPTH, GATHER, TILE_SIZE } from '../config';
 import type { ResourceNode } from '../entities/ResourceNode';
 import { SHALLOW_TILES, TEX, WATER_TILES } from '../textures';
 import type { Structure } from './Structures';
-import type { HeartInstance, RootWall, RuinObject, ShrineInstance } from '../world/ChunkManager';
+import type { HeartInstance, LandmarkObj, RootWall, RuinFeatureObj, RuinObject, ShrineInstance } from '../world/ChunkManager';
 
 export type InteractTarget =
   | { kind: 'node'; node: ResourceNode; x: number; y: number }
@@ -13,6 +13,8 @@ export type InteractTarget =
   | { kind: 'ruin'; ruin: RuinObject; x: number; y: number }
   | { kind: 'heart'; heart: HeartInstance; x: number; y: number }
   | { kind: 'roots'; root: RootWall; x: number; y: number }
+  | { kind: 'feature'; feature: RuinFeatureObj; x: number; y: number }
+  | { kind: 'landmark'; landmark: LandmarkObj; x: number; y: number }
   | { kind: 'none'; x: number; y: number };
 
 /** How strongly facing direction is preferred when choosing between nearby targets (px of distance). */
@@ -30,6 +32,8 @@ export class Interaction {
   private ruinTarget: { kind: 'ruin'; ruin: RuinObject; x: number; y: number } | null = null;
   private heartTarget: { kind: 'heart'; heart: HeartInstance; x: number; y: number } | null = null;
   private rootTarget: { kind: 'roots'; root: RootWall; x: number; y: number } | null = null;
+  private featureTarget: { kind: 'feature'; feature: RuinFeatureObj; x: number; y: number } | null = null;
+  private landmarkTarget: { kind: 'landmark'; landmark: LandmarkObj; x: number; y: number } | null = null;
   private readonly noTarget = { kind: 'none' as const, x: 0, y: 0 };
   private readonly ring: Phaser.GameObjects.Image;
   current: InteractTarget = this.noTarget;
@@ -44,6 +48,8 @@ export class Interaction {
     private readonly ruins: readonly RuinObject[] = [],
     private readonly roots: readonly RootWall[] = [],
     private readonly heart: () => HeartInstance | null = () => null,
+    private readonly features: readonly RuinFeatureObj[] = [],
+    private readonly landmarks: readonly LandmarkObj[] = [],
   ) {
     this.nodeTarget = { kind: 'node', node: null as unknown as ResourceNode, x: 0, y: 0 };
     this.ring = scene.add.image(0, 0, TEX.targetRing).setDepth(DEPTH.targetRing).setVisible(false);
@@ -168,6 +174,41 @@ export class Interaction {
         this.rootTarget.x = r.x;
         this.rootTarget.y = r.y;
         best = this.rootTarget;
+      }
+    }
+
+    // M13: lamps, glyph stones, reliquaries and loose stones (plates and traps are walked on).
+    for (const f of this.features) {
+      if (f.kind === 'plate' || f.kind === 'trap') continue;
+      const dx = f.x - cx;
+      const dy = f.y - 6 - cy;
+      const d = Math.hypot(dx, dy);
+      if (d > GATHER.reach + 10) continue;
+      const facing = d > 0 ? (dx * fx + dy * fy) / d : 1;
+      const score = d - 10 - facing * FACING_BIAS;
+      if (score < bestScore) {
+        bestScore = score;
+        this.featureTarget ??= { kind: 'feature', feature: f, x: 0, y: 0 };
+        this.featureTarget.feature = f;
+        this.featureTarget.x = f.x;
+        this.featureTarget.y = f.y;
+        best = this.featureTarget;
+      }
+    }
+    for (const l of this.landmarks) {
+      const dx = l.x - cx;
+      const dy = l.y - 8 - cy;
+      const d = Math.hypot(dx, dy);
+      if (d > GATHER.reach + 26) continue;
+      const facing = d > 0 ? (dx * fx + dy * fy) / d : 1;
+      const score = d - 22 - facing * FACING_BIAS + 8;
+      if (score < bestScore) {
+        bestScore = score;
+        this.landmarkTarget ??= { kind: 'landmark', landmark: l, x: 0, y: 0 };
+        this.landmarkTarget.landmark = l;
+        this.landmarkTarget.x = l.x;
+        this.landmarkTarget.y = l.y;
+        best = this.landmarkTarget;
       }
     }
 
