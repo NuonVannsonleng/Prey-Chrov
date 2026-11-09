@@ -79,6 +79,8 @@ export interface SaveData {
   openedChests: string[];
   /** Plant identification: resource ids the player has gathered at least once (M9). */
   knownPlants: string[];
+  /** M12: the night index the ambush was last rolled for (one roll per night, across reloads). */
+  ambushNight: number;
   /** M11: skills, one-time awards, daily caps and knowledge. */
   progression: { xp: Record<string, number>; firsts: string[]; daily: { day: number; counts: Record<string, number> }; knowledge: string[] };
   /** M11: worn gear. */
@@ -257,6 +259,7 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
       return remaining > 0 ? [{ id: o['id'], remaining, dps: Math.max(0, finite(o['dps'], 0)), regenPerHour: Math.max(0, finite(o['regenPerHour'], 0)) }] : [];
     }),
     openedChests: (Array.isArray(rec['openedChests']) ? rec['openedChests'] : []).filter((o): o is string => typeof o === 'string'),
+    ambushNight: Math.floor(finite(rec['ambushNight'], -1)),
     knownPlants: (Array.isArray(rec['knownPlants']) ? rec['knownPlants'] : []).filter((o): o is string => typeof o === 'string'),
     progression: ((pr: unknown) => {
       const r = isRec(pr) ? pr : {};

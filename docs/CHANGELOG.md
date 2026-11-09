@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.0 — M12: Stealth, smarter creatures and dynamic encounters (2026-11-09)
+
+### Added
+- Crouch (hold Z), footstep noise, and hiding in bushes, bamboo, ferns and reeds (HIDDEN tag).
+- Creature awareness with investigation ("?") before alert ("!"); being hit always alerts.
+- Wildlife territories, spirit patrol loops, and stuck handling (sidestep, then give up).
+- Elite variants (from day 4) with double loot; night ambushes after a 6 s warning.
+- Spawning scaled by distance from home and by monsoon nights; all tuning in stealth.json.
+
 ## 0.11.0 — M11: Gear, upgrades and progression (2026-11-09)
 
 ### Added

@@ -9,6 +9,8 @@ export interface PlayerKeys {
   left: Phaser.Input.Keyboard.Key;
   right: Phaser.Input.Keyboard.Key;
   sprint: Phaser.Input.Keyboard.Key;
+  /** M12: crouch (hold Z). */
+  crouch?: Phaser.Input.Keyboard.Key;
 }
 
 /** Registers player animations once per game (animations are global). */
@@ -50,6 +52,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private facing: PlayerDir = 'down';
   private animKey = '';
   private actUntil = 0;
+  /** M12: crouching this frame (slower, quieter, harder to see). */
+  crouching = false;
+
+  /** Gathering, attacking or using something makes noise. */
+  isActing(now: number): boolean {
+    return now < this.actUntil;
+  }
   /** Unit vector the player is facing (used for interaction targeting). */
   readonly facingVec: Vec2 = { x: 0, y: 1 };
   sprinting = false;
@@ -76,7 +85,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     inp.down = inputEnabled && keys.down.isDown;
     inp.left = inputEnabled && keys.left.isDown;
     inp.right = inputEnabled && keys.right.isDown;
-    inp.sprint = inputEnabled && sprintAllowed && keys.sprint.isDown;
+    this.crouching = inputEnabled && (keys.crouch?.isDown ?? false);
+    inp.sprint = inputEnabled && sprintAllowed && !this.crouching && keys.sprint.isDown;
 
     targetVelocity(inp, PLAYER, this.target);
     this.target.x *= speedScale;

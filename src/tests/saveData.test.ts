@@ -24,6 +24,7 @@ const full: SaveData = {
   shrines: [{ key: '-1,0:5', lastOffering: 300 }],
   openedChests: ['5,6:12'],
   knownPlants: ['healing_herb'],
+  ambushNight: 3,
   progression: { xp: { crafting: 4 }, firsts: ['craft_first:stone_axe'], daily: { day: 2, counts: { gather: 1 } }, knowledge: ['tanning'] },
   equipment: { body: { item: 'hide_vest', qty: 1 }, feet: null },
   tabletsRead: ['tablet_1'],

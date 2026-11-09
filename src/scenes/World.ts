@@ -20,6 +20,7 @@ import { gameEvents, onSceneEvent, type ClockTick, type PlayerTick, type Surviva
 import { Gathering } from '../systems/Gathering';
 import { FishingSession } from '../systems/Fishing';
 import { Progression } from '../systems/Progression';
+import { playerNoise } from '../systems/Perception';
 import { Interaction } from '../systems/Interaction';
 import { Lighting } from '../systems/Lighting';
 import { Objectives } from '../systems/Objectives';
@@ -130,6 +131,13 @@ export class World extends Phaser.Scene {
   private feetGear: ItemDef['gear'] | undefined;
   private coldWorn: SeasonConfig['cold'] | null = null;
   private lastDayNumber = 0;
+  /** M12 stealth/encounters. */
+  private noise = 0;
+  private hidden = false;
+  private nextCoverAt = 0;
+  private ambushRolledNight = -1;
+  private ambushAt = 0;
+  private readonly encFrame = { playerX: 0, playerY: 0, darkness: 0, day: 1, spiritWard: false, noise: 0, hidden: false, crouching: false, monsoon: false, distTiles: 0 };
   private nextKnowledgeAt = 0;
   private weather: Forecast = { monsoon: false, monsoonDay: 0, daysUntil: 0, flood: 0, label: '' };
   private nextWeatherAt = 0;
@@ -164,7 +172,7 @@ export class World extends Phaser.Scene {
   private openChestUid = -1;
   private lastWearHour = -1;
   private readonly playerRect = new Phaser.Geom.Rectangle();
-  private readonly tick: PlayerTick = { x: 0, y: 0, speed: 0, sprinting: false };
+  private readonly tick: PlayerTick = { x: 0, y: 0, speed: 0, sprinting: false, stealth: '' };
   private readonly survivalTick: SurvivalTick = {
     health: 0,
     hunger: 0,
@@ -219,6 +227,10 @@ export class World extends Phaser.Scene {
     this.equipment.feet = null;
     this.coldWorn = null;
     this.nextKnowledgeAt = 0;
+    this.ambushAt = 0;
+    this.ambushRolledNight = -1;
+    this.noise = 0;
+    this.hidden = false;
 
     this.floating = new FloatingText(this);
     this.interaction = new Interaction(this, this.chunks.nodes, (x, y) => this.chunks.tileAtWorld(x, y), this.structures.list, this.chunks.shrines, this.chunks.ruins, this.chunks.roots, () => this.chunks.heart);
@@ -391,7 +403,7 @@ export class World extends Phaser.Scene {
     const inputOn = !this.modalOpen;
     const cfg = this.gameData.survival;
 
-    p.step(this.keys, dt, this.now, inputOn, this.survival.canSprint, this.terrainSpeed(p.x, p.y));
+    p.step(this.keys, dt, this.now, inputOn, this.survival.canSprint, this.terrainSpeed(p.x, p.y) * (p.crouching ? this.gameData.stealth.crouchSpeed : 1));
     this.clock.advance(dt / 1000);
     this.updateWeather();
     const wm = weatherModifiers(this.weather, this.gameData.season);
@@ -415,13 +427,20 @@ export class World extends Phaser.Scene {
     this.pickups.update(p.x, p.y, dt, this.now);
     this.burnTorch(dt);
     this.updateStations();
-    this.encounters.update(dt, this.now, {
-      playerX: p.x,
-      playerY: p.y,
-      darkness: this.darkness(),
-      day: this.clock.dayNumber,
-      spiritWard: this.effects.has('ward'),
-    });
+    this.updateStealth(p);
+    const ef = this.encFrame;
+    ef.playerX = p.x;
+    ef.playerY = p.y;
+    ef.darkness = this.darkness();
+    ef.day = this.clock.dayNumber;
+    ef.spiritWard = this.effects.has('ward');
+    ef.noise = this.noise;
+    ef.hidden = this.hidden;
+    ef.crouching = p.crouching;
+    ef.monsoon = this.weather.monsoon;
+    ef.distTiles = Math.hypot(p.x - this.spawn.x, p.y - this.spawn.y) / 32;
+    this.encounters.update(dt, this.now, ef);
+    this.updateAmbush(ef);
     this.projectiles.update(dt, this.now);
     this.updateShrines();
     this.updateRuins();
@@ -588,7 +607,10 @@ export class World extends Phaser.Scene {
     this.floating.show(enemy.x, enemy.cy - 20, enemy.def.kind === 'spirit' ? 'The spirit fades' : `${enemy.def.name} down`, '#e6b866');
     if (!table) return;
     const rng = mulberry32(hash2(this.kills, Math.floor(this.now), this.seed));
-    for (const stack of rollLoot(table, rng)) {
+    const drops = rollLoot(table, rng);
+    // Elites drop a second share.
+    if (enemy.elite) drops.push(...rollLoot(table, rng));
+    for (const stack of drops) {
       if (!this.pickups.spawn(stack.item, stack.qty, enemy.x, enemy.y - 4, this.now, 200)) this.inventory.add(stack.item, stack.qty);
     }
   }
@@ -956,6 +978,7 @@ export class World extends Phaser.Scene {
     t.y = p.y;
     t.speed = p.speed;
     t.sprinting = p.sprinting;
+    t.stealth = this.hidden ? 'hidden' : p.crouching ? 'crouch' : '';
     gameEvents.emit('player:tick', t);
 
     const s = this.survival;
@@ -1533,6 +1556,7 @@ export class World extends Phaser.Scene {
         shrines: this.shrineState,
         openedChests: this.openedChests,
         knownPlants: this.knownPlants,
+        ambushNight: this.ambushRolledNight,
         progression: this.progression.serialize(),
         equipment: { body: this.equipment.body ? { item: this.equipment.body.item, qty: 1 } : null, feet: this.equipment.feet ? { item: this.equipment.feet.item, qty: 1 } : null },
         quest: { tabletsRead: this.quest.tabletsRead, heartReached: this.quest.heartReached, restored: this.quest.restored },
@@ -1563,6 +1587,77 @@ export class World extends Phaser.Scene {
     const feet = this.feetGear;
     const slow = (1 - base) * (feet?.terrain ?? 1);
     return (1 - slow) * (this.fx.speed + (feet?.speed ?? 0));
+  }
+
+  // ---------- Stealth and ambushes (M12) ----------
+
+  /** Noise radius from movement and actions; hidden = still or crouching in dense cover. */
+  private updateStealth(p: Player): void {
+    const cfg = this.gameData.stealth;
+    const moving = Math.hypot(p.body.velocity.x, p.body.velocity.y) > 8;
+    this.noise = playerNoise(cfg, moving, p.crouching, p.sprinting, p.isActing(this.now));
+    if (this.now >= this.nextCoverAt) {
+      this.nextCoverAt = this.now + 150;
+      this.hidden = (p.crouching || !moving) && this.inCover(p.x, p.y);
+    }
+    if (!(p.crouching || !moving)) this.hidden = false;
+    const a = this.hidden ? 0.6 : 1;
+    if (p.alpha !== a && !this.tweens.isTweening(p)) p.setAlpha(a);
+    // Crouch reads as a darker tint (scaling would also resize the physics body).
+    const tint = p.crouching ? 0x9fb3ad : 0xffffff;
+    if (p.tintTopLeft !== tint) p.setTint(tint);
+  }
+
+  private inCover(x: number, y: number): boolean {
+    const r = this.gameData.stealth.coverRadius;
+    for (const n of this.chunks.nodes) {
+      const s = n.def.sprite;
+      if ((s !== 'bush' && s !== 'bamboo') || (s === 'bamboo' && n.depleted)) continue;
+      if (Math.abs(n.prop.x - x) < r && Math.abs(n.prop.y - y) < r) return true;
+    }
+    for (const c of this.chunks.cover) if (Math.abs(c.x - x) < r && Math.abs(c.y - y) < r) return true;
+    return false;
+  }
+
+  /**
+   * Night ambushes with fair warning: at most one roll per night (from day minDay), never at an
+   * outpost; the warning (sound + message) comes warningSeconds before anything appears.
+   */
+  private updateAmbush(f: typeof this.encFrame): void {
+    const cfg = this.gameData.stealth.ambush;
+    const night = f.darkness > 0.5;
+    if (this.ambushAt > 0) {
+      if (this.now >= this.ambushAt) {
+        this.ambushAt = 0;
+        if (night && this.ambushAllowed(f.playerX, f.playerY)) {
+          const count = cfg.min + Math.floor(Math.random() * (cfg.max - cfg.min + 1));
+          const n = this.encounters.spawnAmbush(f, this.now, count);
+          if (n > 0) gameEvents.emit('toast', { text: 'They are here. Find light, or slip away quietly.', tone: 'warn' });
+        }
+      }
+      return;
+    }
+    const nightIndex = Math.floor((this.clock.totalSeconds + 12 * this.clock.secondsPerHour) / (24 * this.clock.secondsPerHour));
+    if (!night || !this.encounters.enabled || f.day < cfg.minDay || this.ambushRolledNight === nightIndex) return;
+    this.ambushRolledNight = nightIndex;
+    if (Math.random() >= cfg.chancePerNight || !this.ambushAllowed(f.playerX, f.playerY)) return;
+    this.startAmbushWarning();
+  }
+
+  /** Never at an outpost, in your own light, after the Heart is restored, or in the Heart glade. */
+  private ambushAllowed(x: number, y: number): boolean {
+    if (this.outpostDistance(x, y) <= 600) return false;
+    if (this.lightAt(x, y - 10, 0)) return false;
+    if (this.quest.restored) return false;
+    return !this.gen.inHeartGlade(Math.floor(x / 32), Math.floor(y / 32), 4);
+  }
+
+  /** Fair warning, then the ambush (also used by tests). */
+  private startAmbushWarning(): void {
+    const cfg = this.gameData.stealth.ambush;
+    this.ambushAt = this.now + cfg.warningSeconds * 1000;
+    gameEvents.emit('sfx', 'spirit');
+    gameEvents.emit('toast', { text: `The insects fall silent… something is circling. You have a few moments (${cfg.warningSeconds}s).`, tone: 'warn' });
   }
 
   // ---------- Progression and gear (M11) ----------
@@ -1992,6 +2087,7 @@ export class World extends Phaser.Scene {
     }
     this.objectives = new Objectives(save.objectives);
     for (const k of save.knownPlants) this.knownPlants.add(k);
+    this.ambushRolledNight = save.ambushNight;
     this.progression = new Progression(this.gameData.progression, save.progression);
     for (const slot of ['body', 'feet'] as const) {
       const e = save.equipment[slot];
@@ -2089,6 +2185,8 @@ export class World extends Phaser.Scene {
       left: kb.addKey(K.A),
       right: kb.addKey(K.D),
       sprint: kb.addKey(K.SHIFT),
+      // Z, not Ctrl: Ctrl+W/S/D are browser shortcuts (close tab, save, bookmark).
+      crouch: kb.addKey(K.Z),
       interact: kb.addKey(K.E),
       use: kb.addKey(K.F),
     };

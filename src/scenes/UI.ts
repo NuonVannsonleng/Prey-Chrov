@@ -32,6 +32,7 @@ const HINTS = [
   ['K', 'Character (gear, skills)'],
   ['Q', 'Drop one (Ctrl: stack)'],
   ['R · X', 'Rotate / repair · dismantle'],
+  ['Z (hold)', 'Crouch: quiet; hide in bushes'],
   ['Esc', 'Close / pause'],
   ['H', 'Hide help'],
 ] as const;
@@ -40,6 +41,7 @@ const HINTS = [
 export class UI extends Phaser.Scene {
   private hints!: Phaser.GameObjects.Container;
   private sprintTag!: Phaser.GameObjects.Text;
+  private stealthTag!: Phaser.GameObjects.Text;
   private prompt!: Phaser.GameObjects.Text;
   private debugText!: Phaser.GameObjects.Text;
   private hotbar!: Hotbar;
@@ -101,6 +103,17 @@ export class UI extends Phaser.Scene {
       })
       .setOrigin(0.5, 1)
       .setVisible(false);
+    this.stealthTag = this.add
+      .text(GAME_WIDTH / 2 - 182, GAME_HEIGHT - 42, '', {
+        fontFamily: FONTS.ui,
+        fontSize: '14px',
+        fontStyle: '700',
+        color: CSS.turquoise,
+        backgroundColor: 'rgba(10,18,16,0.75)',
+        padding: { left: 8, right: 8, top: 4, bottom: 4 },
+      })
+      .setOrigin(1, 1)
+      .setVisible(false);
     this.sprintTag = this.add
       .text(GAME_WIDTH / 2 + 200, GAME_HEIGHT - 42, 'SPRINT', {
         fontFamily: FONTS.ui,
@@ -151,6 +164,8 @@ export class UI extends Phaser.Scene {
       if (this.modal) this.questArrow.setVisible(false);
       else this.questArrow.update(t.x, t.y);
       if (this.sprintTag.visible !== t.sprinting) this.sprintTag.setVisible(t.sprinting);
+      const st = t.stealth === 'hidden' ? 'HIDDEN' : t.stealth === 'crouch' ? 'CROUCHING' : '';
+      if (this.stealthTag.text !== st) this.stealthTag.setText(st).setVisible(st !== '');
     });
     onSceneEvent(this, 'debug:toggle', (on) => {
       this.debugOn = on;

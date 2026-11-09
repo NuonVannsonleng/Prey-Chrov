@@ -25,6 +25,7 @@ export interface WorldState {
   shrines: ReadonlyMap<string, number>;
   openedChests: ReadonlySet<string>;
   knownPlants: ReadonlySet<string>;
+  ambushNight: number;
   progression: SaveData['progression'];
   equipment: SaveData['equipment'];
   quest: { tabletsRead: readonly string[]; heartReached: boolean; restored: boolean };
@@ -62,6 +63,7 @@ export function buildSave(w: WorldState): SaveData {
     shrines: [...w.shrines].map(([key, lastOffering]) => ({ key, lastOffering })),
     openedChests: [...w.openedChests],
     knownPlants: [...w.knownPlants],
+    ambushNight: w.ambushNight,
     progression: w.progression,
     equipment: w.equipment,
     tabletsRead: [...w.quest.tabletsRead],

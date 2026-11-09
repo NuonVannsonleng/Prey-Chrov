@@ -3,7 +3,7 @@
 A 2D top-down survival adventure set in a fictional Cambodian jungle, built with **Phaser 3 + TypeScript + Vite**.
 All art is generated in code as replaceable placeholders.
 
-> Status: **Milestone 11**. Grow five skills, learn new recipes, wear gear and craft flint and fang tools. Build walled camps with roofs, storage chests, rain collectors and beds, and mark outposts on your map. Fish, boil water, brew medicine and cook in a pot. Survive days, nights, creatures, Ap/Arak spirits and the monsoon, find the five stone tablets, open the Heart of the Forest's root ring with fire and make the offering to reach the ending, then keep playing. The game autosaves; Settings has volume, reduced motion and reduced flashes. Sound is synthesised in code and starts after your first click or key. Add `?seed=1234` to the URL to pick a world. See [docs/MILESTONES.md](docs/MILESTONES.md).
+> Status: **Milestone 12**. Sneak (hold Z) and hide in bushes; creatures investigate noises before they attack. Grow five skills, learn new recipes, wear gear and craft flint and fang tools. Build walled camps with roofs, storage chests, rain collectors and beds, and mark outposts on your map. Fish, boil water, brew medicine and cook in a pot. Survive days, nights, creatures, Ap/Arak spirits and the monsoon, find the five stone tablets, open the Heart of the Forest's root ring with fire and make the offering to reach the ending, then keep playing. The game autosaves; Settings has volume, reduced motion and reduced flashes. Sound is synthesised in code and starts after your first click or key. Add `?seed=1234` to the URL to pick a world. See [docs/MILESTONES.md](docs/MILESTONES.md).
 
 ## Run
 

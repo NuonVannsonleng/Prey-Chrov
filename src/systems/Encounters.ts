@@ -28,7 +28,16 @@ export interface EncounterFrame {
   darkness: number;
   day: number;
   spiritWard: boolean;
+  /** M12: player noise radius, cover and crouch; monsoon; distance from spawn (tiles). */
+  noise: number;
+  hidden: boolean;
+  crouching: boolean;
+  monsoon: boolean;
+  distTiles: number;
 }
+
+export { distanceDanger, eliteChance } from './Encounters.pure';
+import { distanceDanger, eliteChance } from './Encounters.pure';
 
 const MAX_POOL = 16;
 /** No creature appears within this distance of an outpost flag (wider than the spawn ring). */
@@ -53,7 +62,17 @@ export class Encounters {
   enabled = true;
   /** After the Heart is restored the restless ones grow quiet: night population is halved. */
   calmed = false;
-  private readonly world: EnemyWorld & { now: number; playerX: number; playerY: number; spiritWard: boolean; dawn: boolean };
+  private readonly world: EnemyWorld & {
+    now: number;
+    playerX: number;
+    playerY: number;
+    spiritWard: boolean;
+    dawn: boolean;
+    noise: number;
+    hidden: boolean;
+    crouching: boolean;
+    night: boolean;
+  };
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -74,6 +93,11 @@ export class Encounters {
       blocked: (x, y) => s.isDeepWater(x, y),
       hitPlayer: (e, d) => s.hitPlayer(e, d),
       fireOrb: (e, dx, dy) => s.fireOrb(e, dx, dy),
+      stealth: data.stealth,
+      noise: 0,
+      hidden: false,
+      crouching: false,
+      night: false,
     };
   }
 
@@ -90,6 +114,10 @@ export class Encounters {
     w.playerY = f.playerY - 10;
     w.spiritWard = f.spiritWard;
     w.dawn = f.darkness < DAWN_DARKNESS;
+    w.noise = f.noise;
+    w.hidden = f.hidden;
+    w.crouching = f.crouching;
+    w.night = f.darkness > NIGHT_DARKNESS;
 
     for (const e of this.enemies) {
       if (!e.active) continue;
@@ -117,11 +145,12 @@ export class Encounters {
   /** Population cap: gentle first night, ramping with days survived, scaled by local biome danger. */
   cap(night: boolean, f: EncounterFrame): number {
     const cfg = this.data.encounters;
-    if (!night) return cfg.maxAlive.day;
+    if (!night) return Math.max(1, Math.round(cfg.maxAlive.day * distanceDanger(this.data.stealth.distanceDanger, f.distTiles)));
     const ramp = cfg.firstNightMax + Math.max(0, f.day - 1) * cfg.nightRampPerDay;
     const biome = this.data.biomes.get(this.services.biomeAt(Math.floor(f.playerX / TILE_SIZE), Math.floor(f.playerY / TILE_SIZE)));
     const danger = biome?.nightDanger ?? 1;
-    const cap = Math.max(1, Math.min(cfg.maxAlive.night, Math.round(ramp * danger)));
+    const far = distanceDanger(this.data.stealth.distanceDanger, f.distTiles);
+    const cap = Math.max(1, Math.min(cfg.maxAlive.night, Math.round(ramp * danger * far)));
     return this.calmed ? Math.max(1, Math.round(cap / 2)) : cap;
   }
 
@@ -172,12 +201,14 @@ export class Encounters {
       const tx = Math.floor(x / TILE_SIZE);
       const ty = Math.floor(y / TILE_SIZE);
       if (!this.services.isLoaded(Math.floor(tx / CHUNK_TILES), Math.floor(ty / CHUNK_TILES))) continue;
-      const def = this.pickDef(night, f.day, this.services.biomeAt(tx, ty));
+      const def = this.pickDef(night, f.day, this.services.biomeAt(tx, ty), f.monsoon);
       if (!def) continue;
       if (!this.validSpot(def, x, y)) continue;
       const e = this.obtain();
       if (!e) return;
-      e.spawn(def, x, y, now);
+      const el = this.data.stealth.elite;
+      const elite = Math.random() < eliteChance(el, f.day);
+      e.spawn(def, x, y, now, elite, el.hp, el.damage);
       if (def.kind === 'spirit') gameEvents.emit('sfx', 'spirit');
       return;
     }
@@ -193,17 +224,18 @@ export class Encounters {
     return true;
   }
 
-  private pickDef(night: boolean, day: number, biome: BiomeId): EnemyDef | null {
+  private pickDef(night: boolean, day: number, biome: BiomeId, monsoon = false, lightShy = false): EnemyDef | null {
     const options: Array<[EnemyDef, number]> = [];
     for (const d of this.data.enemies.values()) {
       if (night ? d.active === 'day' : d.active === 'night') continue;
       if (d.spawn.minDay > day) continue;
+      if (lightShy && !d.avoidsLight) continue;
       const bw = d.spawn.biomes[biome] ?? 0;
       if (bw <= 0) continue;
       let alive = 0;
       for (const e of this.enemies) if (e.active && e.def.id === d.id) alive++;
       if (alive >= d.spawn.maxAlive) continue;
-      options.push([d, d.spawn.weight * bw]);
+      options.push([d, d.spawn.weight * bw * (monsoon && d.kind === 'spirit' ? this.data.stealth.monsoonSpiritWeight : 1)]);
     }
     const total = options.reduce((s, [, w]) => s + w, 0);
     if (total <= 0) return null;
@@ -226,12 +258,41 @@ export class Encounters {
     return e;
   }
 
-  /** Test/debug: spawn a specific creature near a point (bypasses spawn rules). */
-  spawnAt(id: string, x: number, y: number, now: number): Enemy | null {
+  /** Test/debug and ambushes: spawn a specific creature at a point (bypasses spawn rules). */
+  spawnAt(id: string, x: number, y: number, now: number, elite = false): Enemy | null {
     const def = this.data.enemies.get(id);
     const e = def ? this.obtain() : null;
     if (!def || !e) return null;
-    e.spawn(def, x, y, now);
+    const el = this.data.stealth.elite;
+    e.spawn(def, x, y, now, elite, el.hp, el.damage);
     return e;
+  }
+
+  /**
+   * Night ambush (after a fair warning): a few night creatures appear on a closer ring around
+   * the player, never in water, solids, firelight, near shrines or outposts. Returns how many came.
+   */
+  spawnAmbush(f: EncounterFrame, now: number, count: number): number {
+    const a = this.data.stealth.ambush;
+    let n = 0;
+    for (let attempt = 0; attempt < count * 10 && n < count; attempt++) {
+      const ang = Math.random() * Math.PI * 2;
+      const r = a.ringMin + Math.random() * (a.ringMax - a.ringMin);
+      const x = f.playerX + Math.cos(ang) * r;
+      const y = f.playerY + Math.sin(ang) * r;
+      const tx = Math.floor(x / TILE_SIZE);
+      const ty = Math.floor(y / TILE_SIZE);
+      if (!this.services.isLoaded(Math.floor(tx / CHUNK_TILES), Math.floor(ty / CHUNK_TILES))) continue;
+      const def = this.pickDef(true, f.day, this.services.biomeAt(tx, ty), f.monsoon, true);
+      if (!def || !this.validSpot(def, x, y)) continue;
+      const e = this.obtain();
+      if (!e) break;
+      e.spawn(def, x, y, now, false);
+      // Ambushers know roughly where you are, but still have to find you.
+      e.alertTo(f.playerX, f.playerY, 0.5);
+      n++;
+    }
+    if (n > 0) gameEvents.emit('sfx', 'spirit');
+    return n;
   }
 }

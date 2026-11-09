@@ -1407,6 +1407,136 @@ try {
   const again = await evalW7('return w.grant("craft_first", "flint_axe") || w.grant("craft_first", "hide_vest");');
   check('one-time XP cannot be earned again after a reload', again === false);
 
+  // ---------- M12: stealth, awareness and dynamic encounters ----------
+  await setClock(7, 11);
+  await evalW7('w.encounters.clear(); w.survival.stats.health = 100; w.inventory.inventory.restore([]); w.inventory.broadcast();');
+  // A bush to hide in, with open ground to its east for the tiger.
+  const hide = await evalW7(`
+    const bushes = w.chunks.nodes.filter((n) => n.def.sprite === 'bush');
+    for (const b of bushes) {
+      const x = b.prop.x, y = b.prop.y + 14;
+      if (w.physics.overlapRect(x - 8, y - 11, 16, 11, false, true).length) continue;
+      if (w.physics.overlapRect(x + 120, y - 30, 60, 40, false, true).length) continue;
+      if (w.chunks.isDeepWater(x + 140, y) || w.chunks.isDeepWater(x + 70, y)) continue;
+      return { x, y };
+    }
+    return null;`);
+  check('found a bush with open ground beside it', !!hide, JSON.stringify(hide));
+  await teleport(hide.x, hide.y);
+  await sleep(400);
+  await page.keyboard.down('KeyZ');
+  await sleep(500);
+  const tigerId = await evalW7('const e = w.encounters.spawnAt("tiger", arg.x + 140, arg.y, w.now); return w.encounters.enemies.indexOf(e);', hide);
+  const tigerState = () => evalW7('const e = w.encounters.enemies[arg]; return { state: e.aiState, aw: Math.round(e.awareness * 100) / 100, d: Math.round(Math.hypot(e.x - w.player.x, e.y - w.player.y)), hidden: w.hidden, noise: w.noise };', tigerId);
+  // Keep the tiger roughly in place (it wanders) so the test measures perception, not luck.
+  const pinTiger = () => evalW7('const e = w.encounters.enemies[arg[0]]; if (e.aiState === "wander") { e.body.reset(arg[1].x + 140, arg[1].y); }', [tigerId, hide]);
+  let maxAw = 0;
+  for (let i = 0; i < 12; i++) {
+    await pinTiger();
+    await sleep(250);
+    const s = await tigerState();
+    maxAw = Math.max(maxAw, s.aw);
+  }
+  const hiddenState = await tigerState();
+  await page.screenshot({ path: OUT + '/38-hidden.png' });
+  check('crouched and still in a bush, a tiger 140 px away never notices you', hiddenState.hidden && maxAw < 1 && hiddenState.state !== 'chase' && hiddenState.state !== 'telegraph', JSON.stringify({ hiddenState, maxAw }));
+  await page.keyboard.up('KeyZ');
+  // Now step out into the open (away from the bush) and walk about: it spots you.
+  await evalW7('const e = w.encounters.enemies[arg]; e.awareness = 0; e.body.reset(arg2.x + 200, arg2.y);'.replace('arg2', 'arg[1]').replace('arg2', 'arg[1]').replace('enemies[arg]', 'enemies[arg[0]]'), [tigerId, hide]);
+  await teleport(hide.x + 60, hide.y);
+  await sleep(200);
+  let spotted = null;
+  for (let i = 0; i < 16 && !spotted; i++) {
+    await hold([i % 2 ? 'KeyW' : 'KeyS'], 200);
+    const s = await tigerState();
+    if (s.state === 'chase' || s.state === 'telegraph' || s.aw >= 1) spotted = s;
+  }
+  check('walking in the open at the same distance gets you spotted ("!")', !!spotted && spotted.hidden === false, JSON.stringify(spotted));
+  await evalW7('w.encounters.clear();');
+  // Noise: sprint > walk > crouch.
+  const noiseOf = async (keys) => {
+    for (const k of keys) await page.keyboard.down(k);
+    await sleep(350);
+    const n = await evalW7('return w.noise;');
+    for (const k of keys) await page.keyboard.up(k);
+    await sleep(200);
+    return n;
+  };
+  const nCrouch = await noiseOf(['KeyZ', 'KeyD']);
+  const nWalk = await noiseOf(['KeyA']);
+  const nSprint = await noiseOf(['ShiftLeft', 'KeyD']);
+  check('footstep noise: crouch < walk < sprint', nCrouch < nWalk && nWalk < nSprint, JSON.stringify({ nCrouch, nWalk, nSprint }));
+  // Investigation: a boar just out of sight hears you working and comes to look ("?").
+  const invId = await evalW7(`
+    const p = w.player;
+    const e = w.encounters.spawnAt('wild_boar', p.x + 165, p.y, w.now);
+    return w.encounters.enemies.indexOf(e);`);
+  let sawInvestigate = false;
+  for (let i = 0; i < 10 && !sawInvestigate; i++) {
+    await evalW7('w.player.swing(w.player.x + 10, w.player.y, w.now, 300); const e = w.encounters.enemies[arg]; if (e.aiState === "wander") e.body.reset(w.player.x + 165, w.player.y);', invId);
+    await sleep(150);
+    sawInvestigate = (await evalW7('return w.encounters.enemies[arg].aiState;', invId)) === 'investigate';
+  }
+  await page.screenshot({ path: OUT + '/39-investigate.png' });
+  check('a creature that only hears you comes to investigate ("?") before attacking', sawInvestigate);
+  await evalW7('w.encounters.clear();');
+  // Not stuck on solid geometry: a boar chasing into a wall either goes around or gives up.
+  const stuck = await evalW7(`
+    const p = w.player;
+    const wx = Math.round((p.x + 60) / 8) * 8;
+    for (const dy of [-48, -16, 16, 48]) w.structures.place('bamboo_wall', wx, Math.round((p.y + dy) / 8) * 8, { rot: 1 });
+    const e = w.encounters.spawnAt('wild_boar', p.x + 110, p.y, w.now);
+    e.awareness = 1; e.aiState = 'chase';
+    return { id: w.encounters.enemies.indexOf(e), x: e.x, y: e.y };`);
+  const track = [];
+  for (let i = 0; i < 14; i++) {
+    await sleep(300);
+    track.push(await evalW7('const e = w.encounters.enemies[arg]; return { x: e.x, y: e.y, s: e.aiState, a: e.active };', stuck.id));
+  }
+  const stuckMoved = Math.max(...track.map((t) => Math.hypot(t.x - stuck.x, t.y - stuck.y)));
+  const states = [...new Set(track.map((t) => t.s))].join(',');
+  check('AI does not stay pinned against solid geometry (goes around or gives up)', stuckMoved > 24 || /wander|return|investigate/.test(states), JSON.stringify({ stuckMoved: Math.round(stuckMoved), states }));
+  await evalW7('w.encounters.clear(); for (const s of w.structures.records.filter((r) => r.def.id === "bamboo_wall" && Math.hypot(r.x - w.player.x, r.y - w.player.y) < 120)) w.structures.remove(s); w.emitStructures();');
+  // Territory: wildlife beyond its territory gives up and heads home.
+  const terr = await evalW7(`
+    const p = w.player;
+    const e = w.encounters.spawnAt('wild_boar', p.x + 100, p.y, w.now);
+    e.homeX = e.x + 900; e.awareness = 1; e.aiState = 'chase';
+    return w.encounters.enemies.indexOf(e);`);
+  await sleep(400);
+  check('wildlife outside its territory gives up and returns home', (await evalW7('return w.encounters.enemies[arg].aiState;', terr)) === 'return');
+  await evalW7('w.encounters.clear();');
+  // Elites.
+  const elite = await evalW7('const e = w.encounters.spawnAt("wild_boar", w.player.x + 300, w.player.y, w.now, true); const r = { hp: e.hp, base: e.def.hp, tint: e.tintTopLeft, scale: e.scaleX }; w.encounters.clear(); return r;');
+  check('elite variants are tougher and visibly marked', elite.hp > elite.base && elite.scale > 1 && elite.tint !== 0xffffff, JSON.stringify(elite));
+  // Night ambush with fair warning; spirits patrol.
+  await setClock(7, 22);
+  await sleep(600);
+  const ambBefore = await evalW7('return w.encounters.aliveCount;');
+  // (This world finished the story earlier; restored Hearts calm the night, so lift that for the test.)
+  await evalW7('w.quest.restored = false;');
+  await evalW7('w.startAmbushWarning();');
+  await sleep(200);
+  const warnText = await evalW7('return ui.toast.text.text;');
+  const ambEarly = await evalW7('return w.encounters.aliveCount;');
+  await evalW7('w.ambushAt = w.now + 50;');
+  await sleep(600);
+  const amb = await evalW7('const p = w.player; const act = w.encounters.enemies.filter((e) => e.active); return { n: w.encounters.aliveCount, minD: Math.min(...act.map((e) => Math.hypot(e.x - p.x, e.y - p.y))), lightShy: act.every((e) => e.def.avoidsLight), d0: act.map((e) => Math.hypot(e.x - p.x, e.y - p.y)) };');
+  await sleep(1500);
+  const ambLater = await evalW7('const p = w.player; return w.encounters.enemies.filter((e) => e.active).map((e) => Math.hypot(e.x - p.x, e.y - p.y));');
+  check('ambushers are light-shy spirits that close in on where you are', amb.lightShy && ambLater.length > 0 && Math.min(...ambLater) < Math.min(...amb.d0), JSON.stringify({ d0: amb.d0.map(Math.round), later: ambLater.map(Math.round) }));
+  const noAmbushAfterHeart = await evalW7('w.quest.restored = true; return w.ambushAllowed(w.player.x, w.player.y);');
+  check('no ambushes once the Heart is restored', noAmbushAfterHeart === false);
+  check('night ambush: a warning first (nothing yet), then creatures on a ring around you', /something is circling/.test(warnText) && ambEarly === ambBefore && amb.n > ambBefore && amb.minD >= 250, JSON.stringify({ warnText, ambBefore, ambEarly, amb }));
+  await evalW7('w.encounters.clear();');
+  const patrol = await evalW7('const e = w.encounters.spawnAt("ap", w.player.x + 400, w.player.y, w.now); return w.encounters.enemies.indexOf(e);');
+  const pa0 = await evalW7('const e = w.encounters.enemies[arg]; return { x: e.x, y: e.y };', patrol);
+  await sleep(2000);
+  const pa1 = await evalW7('const e = w.encounters.enemies[arg]; return { x: e.x, y: e.y, hx: e.homeX, hy: e.homeY, s: e.aiState };', patrol);
+  check('spirits patrol a loop around where they appeared', Math.hypot(pa1.x - pa0.x, pa1.y - pa0.y) > 15 && Math.hypot(pa1.x - pa1.hx, pa1.y - pa1.hy) < 180, JSON.stringify({ pa0, pa1 }));
+  await evalW7('w.encounters.clear();');
+  await setClock(7, 11);
+
   await page.evaluate(() => localStorage.clear());
 
   check('no console errors', errors.length === 0, errors.slice(0, 5).join(' | '));

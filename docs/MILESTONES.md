@@ -15,6 +15,99 @@ Status legend: **Done** · **In progress** · **Not started**
 | M9 | Cooking, fishing, medicine and ecological depth | Done |
 | M10 | Better building and persistent outposts | Done |
 | M11 | Equipment, gear upgrades and meaningful progression | Done |
+| M12 | Advanced AI, stealth and dynamic encounters | Done |
+
+---
+
+## M12 — Advanced AI, stealth and dynamic encounters
+
+### Implemented (playable)
+
+- **Crouch (hold Z):** move at 55% speed with no sprinting, quietly, and be harder to see. A CROUCHING tag shows above the hotbar.
+  - Z is used rather than Ctrl because Ctrl+W, Ctrl+S and Ctrl+D are browser shortcuts (close tab, save page, bookmark).
+- **Footstep noise:** every frame the player makes a noise radius.
+
+  | Activity | Noise radius |
+  | --- | --- |
+  | Standing still | 0 |
+  | Crouch-walking | 40 px |
+  | Walking | 120 px |
+  | Sprinting | 240 px |
+  | Gathering, attacking or other actions | 170 px |
+
+  Each creature hears it scaled by its hearing: vipers hear less, tigers more.
+- **Hiding in dense vegetation:** standing still or crouching within reach of a bush, a standing bamboo clump, ferns or reeds makes you **HIDDEN**. You show slightly translucent, and sight against you drops to 30%. Crouching in the open gives 70%. At night animals see 70% as far, but spirits don't.
+- **Awareness and investigation:** each creature has an awareness meter.
+  - Seeing you raises it fastest, more so when close. Hearing you raises it more slowly. Otherwise it fades.
+  - From 35% it **investigates** the last place it sensed you, with a "?" over it. At 100% it is **alerted**, with a red "!", and only then hunts and attacks.
+  - Lose it (hide, slip away) and it falls back to searching, then gives up.
+  - Hitting a creature always alerts it.
+- **Wildlife territories:** boars (300 px), vipers (120 px) and tigers (420 px) keep to the area where they appeared. Past it they give up the chase and walk home.
+- **Spirit patrols:** Ap and Arak patrol a slow loop around where they appeared, instead of drifting at random.
+- **Not stuck on geometry:**
+  - Every half second a walker that tried to move but barely did sidesteps along a perpendicular.
+  - After about 2.6 s of being blocked it gives up the chase. A creature that can't get home makes its current spot its new home.
+  - Fliers ignore solids.
+- **Elite variants:** from day 4, an 8% chance that grows 1.5% per day up to 30%.
+  - Elites are golden-tinted, slightly larger, with 1.7× health and 1.25× damage.
+  - They drop a second share of loot.
+- **Night ambushes with fair warning:** from day 3, at most one roll per night (35%). The roll is saved, so a reload never re-rolls it. There are no ambushes at an outpost, in your own light, in the Heart glade, or after the Heart is restored.
+  - First comes a warning: a sound and "The insects fall silent… something is circling. You have a few moments (6s)."
+  - Six seconds later 2–3 light-shy spirits appear on a ring 300–380 px away. They are never in light, water, solids, or near shrines or outposts.
+  - Ambushers know roughly where you are but must still find you, so you can still find light or hide.
+- **Smarter spawning:** spawns now depend on distance, biome, time, season and progression.
+  - **Distance:** populations near home are ×0.6, the mid jungle ×1, and beyond 140 tiles ×1.3.
+  - **Biome:** per-biome weights and night danger, as before.
+  - **Time:** day and night tables.
+  - **Season:** monsoon nights weight spirits ×1.5.
+  - **Progression:** the night cap grows with days survived, and the elite chance grows with days.
+  - Common encounters stay fully systemic. The Heart glade and the ruins remain bespoke places with no scripted common spawns.
+- **Data-driven:** all of the above lives in `stealth.json`, plus `hearing`, `territory` and `patrolRadius` in `enemies.json`. The validator enforces fairness: crouch is quieter than walking, which is quieter than sprinting, and the ambush warning is at least 3 s.
+
+### Verification
+
+- `npm run typecheck` and `npm run build` pass.
+- `npm test`: 164 unit tests. New ones cover:
+  - noise ordering
+  - a tiger 140 px away spots a walking player but never one hiding still in cover
+  - sneaking gets closer than walking before being noticed
+  - awareness decay
+  - night sight
+  - the elite chance curve
+  - distance danger
+  - the ambush warning being at least 3 s
+- `npm run smoke`: 192 browser checks. The M12 ones:
+  - crouched and still in a bush, a tiger 140 px away never notices you (HIDDEN shown)
+  - walking in the open at the same distance gets you spotted
+  - noise: crouch < walk < sprint
+  - a creature that only hears you investigates ("?")
+  - a boar chasing into a wall goes around or gives up
+  - wildlife beyond its territory heads home
+  - elites are tougher and marked
+  - a night ambush gives its warning first, then spawns light-shy spirits that close in on you
+  - no ambushes after the Heart is restored
+  - spirits patrol a loop
+- QA stand-in review: build, 164 tests and 190/190 smoke passed, with no Critical findings. Fixed afterwards:
+  - **Warnings:**
+    - ambushers walked toward the world origin, not toward you
+    - "once per night" rolled twice (the day number changes at midnight) and was re-rolled on reload
+    - ambushes ignored your light, the Heart glade and a restored Heart, and could pick tigers
+    - "?" and "!" markers lingered when a spirit was pushed out of light or faded at dawn
+    - stuck detection counted a creature standing still at its search point, and an unreachable home caused an endless walk
+    - creatures heading home ignored being hit
+  - **Suggestions:**
+    - depleted bamboo and tiny herbs no longer count as cover
+    - the max-hp value is kept per spawn
+    - markers are destroyed with their creature
+    - cover cleanup on chunk unload is a single pass
+    - the "open ground" smoke check really leaves the bush
+  - Re-verified with the full smoke run (192/192).
+
+### Known limitations
+
+- Line of sight ignores obstacles; sight is a radius, not a cone, and is reduced by cover, crouching and night.
+- Pathing is local steering (sidestep and give up), not full pathfinding.
+- One crouch binding (hold Z). Rebinding comes with the M16 settings pass.
 
 ---
 

@@ -1,9 +1,12 @@
 import Phaser from 'phaser';
-import type { EnemyDef } from '../data/schema';
+import type { EnemyDef, StealthConfig } from '../data/schema';
+import { perceive, sightRange, type Perceived } from '../systems/Perception';
 import { CREATURE_POSE, TEX } from '../textures';
-import { ySort } from '../config';
+import { DEPTH, FONTS, ySort } from '../config';
 
-export type EnemyState = 'wander' | 'chase' | 'telegraph' | 'attack' | 'recover' | 'flee' | 'fade';
+export type EnemyState = 'wander' | 'investigate' | 'return' | 'chase' | 'telegraph' | 'attack' | 'recover' | 'flee' | 'fade';
+
+const ELITE_TINT = 0xffd27a;
 
 /** World services an enemy needs; implemented by the encounter system (no direct scene access). */
 export interface EnemyWorld {
@@ -21,6 +24,12 @@ export interface EnemyWorld {
   blocked(x: number, y: number): boolean;
   hitPlayer(enemy: Enemy, damage: number): void;
   fireOrb(enemy: Enemy, dirX: number, dirY: number): void;
+  /** M12 stealth: what the player gives away this frame. */
+  readonly stealth: StealthConfig;
+  readonly noise: number;
+  readonly hidden: boolean;
+  readonly crouching: boolean;
+  readonly night: boolean;
 }
 
 const WANDER_SPEED = 0.35;
@@ -42,6 +51,25 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   private dirY = 0;
   private hitThisAttack = false;
   private nextWanderAt = 0;
+  /** M12: 0..1 — how sure it is the player is near (1 = alerted). */
+  awareness = 0;
+  /** Where it last heard or saw the player (investigation target). */
+  private invX = 0;
+  private invY = 0;
+  homeX = 0;
+  homeY = 0;
+  elite = false;
+  private damageMult = 1;
+  private patrolAngle = 0;
+  private lastCheckX = 0;
+  private lastCheckY = 0;
+  private nextCheckAt = 0;
+  private stuckMs = 0;
+  private sideUntil = 0;
+  private sideX = 0;
+  private sideY = 0;
+  private readonly marker: Phaser.GameObjects.Text;
+  private readonly sense: Perceived = { awareness: 0, seen: false, heard: false };
 
   constructor(scene: Phaser.Scene) {
     super(scene, 0, 0, TEX.creatures, 'boar-0');
@@ -50,6 +78,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setOrigin(0.5, 1);
     this.setActive(false).setVisible(false);
     this.body.enable = false;
+    this.marker = scene.add
+      .text(0, 0, '', { fontFamily: FONTS.ui, fontSize: '14px', fontStyle: '700', color: '#e6b866', stroke: '#071210', strokeThickness: 3 })
+      .setOrigin(0.5, 1)
+      .setDepth(DEPTH.floatingText - 6)
+      .setVisible(false);
   }
 
   get isFlying(): boolean {
@@ -61,9 +94,25 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     return this.y - 10;
   }
 
-  spawn(def: EnemyDef, x: number, y: number, now: number): void {
+  spawn(def: EnemyDef, x: number, y: number, now: number, elite = false, eliteHp = 1, eliteDamage = 1): void {
     this.def = def;
-    this.hp = def.hp;
+    this.elite = elite;
+    this.hp = elite ? Math.round(def.hp * eliteHp) : def.hp;
+    this.damageMult = elite ? eliteDamage : 1;
+    this.awareness = 0;
+    this.homeX = x;
+    this.homeY = y;
+    this.invX = x;
+    this.invY = y;
+    this.maxHpAtSpawn = this.hp;
+    this.wantsMove = false;
+    this.patrolAngle = Math.random() * Math.PI * 2;
+    this.lastCheckX = x;
+    this.lastCheckY = y;
+    this.nextCheckAt = 0;
+    this.stuckMs = 0;
+    this.sideUntil = 0;
+    this.marker.setVisible(false);
     this.aiState = 'wander';
     this.stateUntil = 0;
     this.attackReadyAt = now + 800;
@@ -76,9 +125,33 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const w = def.sprite === 'tiger' ? 30 : def.sprite === 'snake' ? 18 : 20;
     this.body.setSize(w, 10, false).setOffset((this.width - w) / 2, this.height - 10);
     if (def.kind === 'spirit') this.scene.tweens.add({ targets: this, alpha: 0.92, duration: 600 });
+    this.setScale(elite ? 1.15 : 1);
+    if (elite) this.setTint(ELITE_TINT);
+  }
+
+  private maxHpAtSpawn = 0;
+  /** Set by move() each frame: the creature is trying to go somewhere (for stuck detection). */
+  private wantsMove = false;
+
+  /** Max hp including the elite bonus. */
+  get maxHp(): number {
+    return this.maxHpAtSpawn;
+  }
+
+  /** Points the creature at a place it should search (ambushes), with a starting awareness. */
+  alertTo(x: number, y: number, awareness: number): void {
+    this.invX = x;
+    this.invY = y;
+    this.awareness = Math.max(this.awareness, awareness);
+  }
+
+  override destroy(fromScene?: boolean): void {
+    this.marker.destroy();
+    super.destroy(fromScene);
   }
 
   despawn(): void {
+    this.marker.setVisible(false);
     this.scene.tweens.killTweensOf(this);
     this.setActive(false).setVisible(false);
     this.body.stop();
@@ -95,7 +168,12 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const d = Math.hypot(dx, dy) || 1;
     this.body.setVelocity((dx / d) * knockback, (dy / d) * knockback);
     this.setTintFill(0xffffff);
-    this.scene.time.delayedCall(70, () => this.clearTint());
+    this.scene.time.delayedCall(70, () => {
+      this.clearTint();
+      if (this.elite) this.setTint(ELITE_TINT);
+    });
+    // A hit always gives you away.
+    this.awareness = 1;
     // Being hit interrupts a wind-up (rewards aggression) and provokes the creature.
     if (this.aiState === 'telegraph' || this.aiState === 'wander' || this.aiState === 'chase') this.setAi('recover', now, 300);
     if (this.wounded) this.setAi('flee', now, 4000);
@@ -114,6 +192,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   /** Spirits dissolve at dawn instead of dying. */
   fadeAway(now: number): void {
     if (this.aiState === 'fade') return;
+    this.marker.setVisible(false);
     this.setAi('fade', now, 1200);
     this.body.setVelocity(0, 0);
     this.scene.tweens.add({ targets: this, alpha: 0, duration: 1100 });
@@ -130,6 +209,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const uy = dy / dist;
 
     if (this.aiState === 'fade') return;
+    this.wantsMove = false;
     if (d.kind === 'spirit' && w.dawn) return this.fadeAway(now);
 
     // Spirits are pushed out of light and never act inside it.
@@ -142,23 +222,90 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         this.move((lx / ld) * d.speed, (ly / ld) * d.speed, w);
         if (this.aiState === 'telegraph' || this.aiState === 'attack') this.setAi('recover', now, 500);
         this.pose(CREATURE_POSE.moveA);
+        if (this.marker.visible) this.marker.setVisible(false);
         return;
       }
     }
 
     const passive = d.kind === 'spirit' && w.spiritWard;
-    const aggro = !passive && dist <= d.aggroRadius;
-    const leashed = dist > d.leashRadius;
+    // M12 perception: sight shrinks when the player hides or crouches (and for animals at night);
+    // noise carries further than sight when the player runs or works.
+    const cfg = w.stealth;
+    const sight = sightRange(cfg, d.aggroRadius, w.hidden, w.crouching, w.night, d.kind === 'wildlife');
+    if (!passive && this.aiState !== 'flee') {
+      const s = perceive(cfg, this.awareness, dist, sight, w.noise, d.hearing ?? 1, dtMs / 1000, this.sense);
+      this.awareness = s.awareness;
+      if (s.seen || s.heard) {
+        this.invX = w.playerX;
+        this.invY = w.playerY + 10;
+      }
+    } else if (passive) this.awareness = 0;
+    const alerted = this.awareness >= 1;
+    const aggro = !passive && alerted;
+    const leashed = dist > d.leashRadius || this.outsideTerritory(1);
 
     switch (this.aiState) {
       case 'wander':
         if (aggro && this.wounded) this.setAi('flee', now, 4000);
         else if (aggro) this.setAi('chase', now);
+        else if (!passive && this.awareness >= cfg.awareness.investigateAt) this.setAi('investigate', now, cfg.investigateSeconds * 1000);
+        else if (d.kind === 'wildlife' && this.outsideTerritory(0.7)) this.setAi('return', now);
         else this.wander(w, dtMs);
         break;
-      case 'chase':
-        if (passive || leashed) {
+      case 'investigate': {
+        if (aggro) {
+          this.setAi(this.wounded ? 'flee' : 'chase', now, this.wounded ? 4000 : 0);
+          break;
+        }
+        const ix = this.invX - this.x;
+        const iy = this.invY - this.y;
+        const id = Math.hypot(ix, iy);
+        if (id > 12 && !this.outsideTerritory(1)) {
+          this.move((ix / id) * d.speed * 0.6, (iy / id) * d.speed * 0.6, w);
+          this.animateMove(now);
+        } else {
+          this.body.setVelocity(0, 0);
+          this.pose(CREATURE_POSE.idle);
+        }
+        if (now >= this.stateUntil || this.awareness <= 0.05 || passive) this.setAi('wander', now);
+        break;
+      }
+      case 'return': {
+        if (aggro && !this.outsideTerritory(1)) {
+          this.setAi(this.wounded ? 'flee' : 'chase', now, this.wounded ? 4000 : 0);
+          break;
+        }
+        if (aggro && this.awareness >= 1 && this.hp < this.maxHpAtSpawn) {
+          // Struck on the way home: turn and fight back briefly.
+          this.homeX = this.x;
+          this.homeY = this.y;
+          this.setAi('chase', now);
+          break;
+        }
+        const hx = this.homeX - this.x;
+        const hy = this.homeY - this.y;
+        const hd = Math.hypot(hx, hy);
+        if (hd < 30) {
           this.setAi('wander', now);
+          break;
+        }
+        this.move((hx / hd) * d.speed * 0.8, (hy / hd) * d.speed * 0.8, w);
+        this.animateMove(now);
+        break;
+      }
+      case 'chase':
+        if (passive) {
+          this.setAi('wander', now);
+          break;
+        }
+        // Lost the player (hidden / out of range): search where it last sensed them.
+        if (this.awareness < cfg.awareness.loseAt) {
+          this.setAi('investigate', now, cfg.investigateSeconds * 1000);
+          break;
+        }
+        if (leashed) {
+          this.awareness = 0.2;
+          this.setAi(d.kind === 'wildlife' ? 'return' : 'wander', now);
           break;
         }
         this.chase(w, dist, ux, uy);
@@ -190,8 +337,67 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         if (now >= this.stateUntil || dist > d.leashRadius) this.setAi('wander', now);
         break;
     }
+    this.checkStuck(w, dtMs);
     this.setDepth(ySort(this.y));
     this.setFlipX(this.body.velocity.x < -5 || (this.aiState === 'telegraph' && ux < 0));
+    this.updateMarker();
+  }
+
+  /** "?" while searching, "!" when it has spotted you — readable warning before any attack. */
+  private updateMarker(): void {
+    const s = this.aiState;
+    const t = s === 'investigate' ? '?' : s === 'chase' || s === 'telegraph' ? '!' : '';
+    if (!t || this.alpha < 0.3) {
+      if (this.marker.visible) this.marker.setVisible(false);
+      return;
+    }
+    if (this.marker.text !== t) this.marker.setText(t).setColor(t === '!' ? '#d9644a' : '#e6b866');
+    this.marker.setVisible(true).setPosition(this.x, this.y - this.displayHeight - 2);
+  }
+
+  /** Wildlife keeps to a territory around where it appeared. */
+  private outsideTerritory(frac: number): boolean {
+    const t = this.def.territory;
+    return t !== undefined && Math.hypot(this.x - this.homeX, this.y - this.homeY) > t * frac;
+  }
+
+  /**
+   * Stuck on solid geometry? Every checkMs, if it tried to move but barely did, sidestep along a
+   * perpendicular for a moment; if that keeps failing, give up the chase/search instead of
+   * pressing into the obstacle forever.
+   */
+  private checkStuck(w: EnemyWorld, dtMs: number): void {
+    if (this.def.flying) return;
+    const cfg = w.stealth.stuck;
+    const trying = this.wantsMove;
+    if (w.now < this.nextCheckAt) return;
+    this.nextCheckAt = w.now + cfg.checkMs;
+    const moved = Math.hypot(this.x - this.lastCheckX, this.y - this.lastCheckY);
+    this.lastCheckX = this.x;
+    this.lastCheckY = this.y;
+    if (!trying || moved >= cfg.minMove) {
+      this.stuckMs = 0;
+      return;
+    }
+    this.stuckMs += cfg.checkMs;
+    const vx = this.body.velocity.x || this.dirX;
+    const vy = this.body.velocity.y || this.dirY;
+    const len = Math.hypot(vx, vy) || 1;
+    const sign = Math.random() < 0.5 ? 1 : -1;
+    this.sideX = (-vy / len) * sign;
+    this.sideY = (vx / len) * sign;
+    this.sideUntil = w.now + 450;
+    if (this.stuckMs >= cfg.giveUpMs) {
+      this.stuckMs = 0;
+      if (this.aiState === 'chase' || this.aiState === 'investigate') this.awareness = Math.min(this.awareness, 0.2);
+      if (this.aiState === 'return') {
+        this.homeX = this.x;
+        this.homeY = this.y;
+      }
+      this.setAi('wander', w.now);
+      this.nextWanderAt = 0;
+    }
+    void dtMs;
   }
 
   private chase(w: EnemyWorld, dist: number, ux: number, uy: number): void {
@@ -275,13 +481,27 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     }
     if (!this.hitThisAttack && d.behavior !== 'caster' && dist <= d.attackRange + (d.charge ? 0 : 10)) {
       this.hitThisAttack = true;
-      w.hitPlayer(this, d.damage);
+      w.hitPlayer(this, Math.round(d.damage * this.damageMult));
       if (d.charge) this.body.setVelocity(-this.dirX * 60, -this.dirY * 60);
     }
   }
 
-  private wander(w: EnemyWorld, _dtMs: number): void {
+  private wander(w: EnemyWorld, dtMs: number): void {
     const now = w.now;
+    const pr = this.def.patrolRadius;
+    if (pr) {
+      // Spirits patrol a slow loop around where they appeared.
+      this.patrolAngle += ((this.def.speed * WANDER_SPEED) / pr) * (dtMs / 1000);
+      const tx = this.homeX + Math.cos(this.patrolAngle) * pr - this.x;
+      const ty = this.homeY + Math.sin(this.patrolAngle) * pr - this.y;
+      const td = Math.hypot(tx, ty) || 1;
+      const sp = Math.min(this.def.speed * 0.5, td * 3);
+      this.dirX = tx / td;
+      this.dirY = ty / td;
+      this.move(this.dirX * sp, this.dirY * sp, w);
+      this.animateMove(now);
+      return;
+    }
     if (now >= this.nextWanderAt) {
       this.nextWanderAt = now + 1500 + Math.random() * 2500;
       const a = Math.random() * Math.PI * 2;
@@ -296,6 +516,12 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
   /** Sets velocity, stopping walkers at deep water (they steer away next wander tick). */
   private move(vx: number, vy: number, w: EnemyWorld): void {
+    if (vx || vy) this.wantsMove = true;
+    if (w.now < this.sideUntil && (vx || vy)) {
+      const sp = Math.hypot(vx, vy);
+      vx = this.sideX * sp;
+      vy = this.sideY * sp;
+    }
     if (!this.def.flying && (vx || vy)) {
       const len = Math.hypot(vx, vy) || 1;
       if (w.blocked(this.x + (vx / len) * 14, this.y + (vy / len) * 10)) {

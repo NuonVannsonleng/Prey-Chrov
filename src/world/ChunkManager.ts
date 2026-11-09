@@ -78,6 +78,7 @@ interface LoadedChunk {
   ruins: RuinObject[];
   roots: RootWall[];
   heart: HeartInstance | null;
+  cover: Array<{ x: number; y: number }>;
   /** Tiles flooded to shallows (with their dry index) for restoring. */
   flooded: Array<[Phaser.Tilemaps.Tile, number]>;
   /** Length of `animated` before flood tiles were appended. */
@@ -97,6 +98,8 @@ export class ChunkManager {
   readonly shrines: ShrineInstance[] = [];
   /** Live list of loaded ruin chests and key tablets (shared with Interaction). */
   readonly ruins: RuinObject[] = [];
+  /** M12: dense vegetation the player can hide in (ferns, reeds). */
+  readonly cover: Array<{ x: number; y: number }> = [];
   /** Live list of loaded root-ring sections around the Heart Tree. */
   readonly roots: RootWall[] = [];
   /** The Heart Tree when its chunk is loaded. */
@@ -203,7 +206,7 @@ export class ChunkManager {
     const collider = this.scene.physics.add.collider(this.player, layer);
     const animated = layer.filterTiles((t: Phaser.Tilemaps.Tile) => t.index === TILE.waterA || t.index === TILE.shallowsA);
 
-    const chunk: LoadedChunk = { key, cx, cy, tilemap, layer, collider, animated, images: [], zones: [], canopies: [], nodes: [], shrines: [], ruins: [], roots: [], heart: null, flooded: [], baseAnimated: animated.length };
+    const chunk: LoadedChunk = { key, cx, cy, tilemap, layer, collider, animated, images: [], zones: [], canopies: [], nodes: [], shrines: [], ruins: [], roots: [], heart: null, cover: [], flooded: [], baseAnimated: animated.length };
     for (const p of data.props) {
       if (p.kind === 'resource') {
         const def = this.data.resources.get(p.id);
@@ -264,6 +267,11 @@ export class ChunkManager {
       if (fp) chunk.zones.push(this.props.addSolid(x, y, fp));
     }
     if (id === 'big_tree') chunk.canopies.push(this.props.addCanopy(x, y, canopyVariant % 3, 1.35, 72));
+    if (id === 'fern' || id === 'reeds') {
+      const pt = { x, y };
+      chunk.cover.push(pt);
+      this.cover.push(pt);
+    }
   }
 
   private unload(c: LoadedChunk): void {
@@ -287,6 +295,12 @@ export class ChunkManager {
     for (const r of c.roots) {
       const i = this.roots.indexOf(r);
       if (i >= 0) this.roots.splice(i, 1);
+    }
+    if (c.cover.length) {
+      const gone = new Set(c.cover);
+      let j = 0;
+      for (const pt of this.cover) if (!gone.has(pt)) this.cover[j++] = pt;
+      this.cover.length = j;
     }
     if (c.heart && this.heart === c.heart) this.heart = null;
     for (const img of c.images) img.destroy();
@@ -405,6 +419,7 @@ export class ChunkManager {
     this.shrines.length = 0;
     this.ruins.length = 0;
     this.roots.length = 0;
+    this.cover.length = 0;
     this.heart = null;
     this.floodQueue.length = 0;
     this.pending.length = 0;

@@ -28,6 +28,8 @@ export interface PlayerTick {
   y: number;
   speed: number;
   sprinting: boolean;
+  /** M12: '' | 'crouch' | 'hidden'. */
+  stealth: string;
 }
 
 export interface InventoryView {
