@@ -25,6 +25,8 @@ export class QuestLog {
     private readonly data: GameData,
     tabletsRead: readonly string[] = [],
     heartReached = false,
+    /** Tablets the world actually holds (normally 5); the quest never asks for more. */
+    private readonly available = Infinity,
   ) {
     for (const id of tabletsRead) if (data.tablets.some((t) => t.id === id)) this.read.add(id);
     this.heartReached = heartReached && this.read.size >= this.required;
@@ -32,7 +34,7 @@ export class QuestLog {
 
   private get required(): number {
     const step = this.data.quests.get(MAIN)?.steps.find((s) => s.kind === 'collect_tablets');
-    return step?.count ?? this.data.tablets.length;
+    return Math.max(1, Math.min(step?.count ?? this.data.tablets.length, this.available));
   }
 
   get tabletsRead(): string[] {

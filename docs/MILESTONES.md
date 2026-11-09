@@ -9,8 +9,74 @@ Status legend: **Done** · **In progress** · **Not started**
 | M3 | Survival, crafting, first night, death | Done |
 | M4 | Seeded procedural world, chunks, biomes, minimap | Done |
 | M5 | Wildlife, night spirits, combat and guardian shrines | Done |
-| M6 | Monsoon, ruins, tablets and core quest | Not started |
+| M6 | Monsoon, ruins, tablets and core quest | Done |
 | M7 | Persistence, performance and MVP polish | Not started |
+
+---
+
+## M6 — Monsoon, ruins, tablets and core quest
+
+### Implemented (playable)
+
+- **Monsoon schedule** (`season.json`): it starts on day 5 and repeats every 5 days for 2 days (days 5–6, 10–11, 15–16…).
+  - A forecast line under the clock reads, for example, "Monsoon in 4 days", "Monsoon tomorrow — prepare…" and "Monsoon — day 1 of 2".
+  - A toast warns when the rain breaks.
+- **Rain:**
+  - Screen-space streaks (pooled particles) with a cool gloom tint.
+  - Rare soft lightning: a single gentle fade every 18–42 s, never a strobe.
+  - Daytime is darker (+0.2), but the clock phase still follows daylight.
+- **Weather effects:**
+  - Thirst drains at ×0.5 (rain is everywhere) and hunger at ×1.4.
+  - **Warmth** drops while you're exposed in the rain, about 6 game hours from full to empty.
+  - It recovers under a bamboo shelter (within 70 px) or by a campfire.
+  - At zero warmth you slowly lose health. A warmth bar with Cold/FREEZING tags appears during the monsoon, and GameOver names cold as a cause.
+- **Floods:**
+  - A deterministic flood mask rises through the monsoon and recedes over the next morning.
+  - River banks (up to about 2.3× the river width) and swamp lowlands turn into **walkable shallows** that slow you.
+  - Floods never create deep water, never touch the spawn clearing or ruin courtyards, and never damage structures, so you can't be trapped.
+- **Ruins:**
+  - Every ruin courtyard has two stone chests.
+  - Each chest opens once; its loot is seeded by the world seed and the chest's key, so it can't be duplicated or re-rolled by reloading.
+  - The **five ruins nearest spawn** each hold a **key stone tablet** before the altar. Those ruins are always reachable (tested), and they show on the minimap as ◆.
+- **Tablets** (`tablets.json`, content-designer stand-in): Khmer and English titles plus 2–3 sentences each. Together they slowly reveal a broken promise to the forest's guardians. Reading one shows a stone-slab view and records it.
+- **Main quest** (`quests.json`): "The Five Tablets":
+  - Read the five tablets in any order; reading is idempotent.
+  - That reveals the way to the **Heart of the Forest**, a deterministic site about 220 tiles from spawn on dry land.
+  - An edge-of-screen arrow, with the target's name and distance, points to the nearest unread tablet, then to the Heart.
+  - Reaching the Heart completes this stage. The Heart's finale is M8, and the game says so honestly.
+- **Journal (J):** quest steps with progress, the tablets read (unread ones show "? ? ?" with a hint), and a lore glossary (Neak Ta, Ap, Arak, prasat, krama) with a clear fiction disclaimer (`lore.json`).
+- **Saves:** warmth, opened chests, tablets read and Heart progress. Old saves default these safely.
+
+### Verification
+
+- `npm run typecheck` and `npm run build` pass.
+- `npm test`: 128 unit tests. New ones cover:
+  - the schedule (5, 6, 10, 11, 15, 16) and forecast countdown
+  - flood rise and recede, and floods never hitting spawn, ruins or water
+  - cold, including a prepared player taking no cold damage
+  - idempotent quest reading and restoring
+  - five tablet ruins and a dry Heart site for several seeds
+  - every tablet prop actually generated
+- `npm run smoke`: 114 browser checks. The M6 ones:
+  - the forecast countdown
+  - the monsoon starting with rain streaks, label and flood
+  - warmth dropping when exposed and recovering under a shelter
+  - flooded tiles never being solid
+  - a chest giving loot once
+  - a tablet showing its text and recording 1/5
+  - the journal showing progress, and Esc closing it without pausing
+  - the arrow pointing to the next tablet, then the Heart
+  - reaching the Heart completing the stage
+  - Continue restoring tablets and opened chests
+  - E reading a tablet and E closing it with no re-open loop
+- QA: a stand-in for `phaser-qa` found 1 Critical (tablet close re-open loop) and 4 Warnings, all fixed. Details in CHANGELOG.
+
+### Known limitations
+
+- The Heart of the Forest is a target location only; its landmark, final interaction and ending are M8.
+- Creatures don't change routes in floods; walkers simply wade.
+- No audio yet for rain or thunder (M7).
+- Tablet titles, quest and lore Khmer need native-speaker review.
 
 ---
 

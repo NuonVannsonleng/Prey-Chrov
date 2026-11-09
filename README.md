@@ -3,7 +3,7 @@
 A 2D top-down survival adventure set in a fictional Cambodian jungle, built with **Phaser 3 + TypeScript + Vite**.
 All art is generated in code as replaceable placeholders.
 
-> Status: **Milestone 5**. The seeded jungle now has wildlife by day (boars, vipers, a rare tiger), Ap and Arak at night (they shun firelight), melee combat, and Neak Ta shrines where you can leave an offering for a blessing. Add `?seed=1234` to the URL to pick a world. See [docs/MILESTONES.md](docs/MILESTONES.md).
+> Status: **Milestone 6**. Survive days and nights, creatures and Ap/Arak spirits, and the monsoon (days 5–6, 10–11…). Then explore ancient ruins for the five stone tablets, which reveal the way to the Heart of the Forest. Add `?seed=1234` to the URL to pick a world. See [docs/MILESTONES.md](docs/MILESTONES.md).
 
 ## Run
 
@@ -31,6 +31,7 @@ npm run dev        # http://localhost:5173
 | Space / Left click near a creature | Attack (held spear/tool damage; spear reaches further) |
 | F | Eat the held food, or place the held campfire / shelter kit (click or F to build, right-click / Esc to cancel) |
 | C | Crafting panel |
+| J | Journal: main quest, stone tablets read, lore glossary |
 | 1–6 / Mouse wheel | Select hotbar slot |
 | I | Inventory panel (drag to move, Shift+click to split, drag outside to drop) |
 | Q / Ctrl+Q | Drop one / the whole selected stack (rare items ask first) |

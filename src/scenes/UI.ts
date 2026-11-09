@@ -48,6 +48,7 @@ export class UI extends Phaser.Scene {
   private weather!: WeatherOverlay;
   private hurtFlash!: Phaser.GameObjects.Rectangle;
   private placing = false;
+  private closeTabletNextFrame = false;
   private toast!: Toast;
   private dialog: ConfirmDialog | null = null;
   private view: InventoryView | null = null;
@@ -190,6 +191,10 @@ export class UI extends Phaser.Scene {
   }
 
   override update(time: number): void {
+    if (this.closeTabletNextFrame) {
+      this.closeTabletNextFrame = false;
+      this.closeTablet();
+    }
     this.weather.update(time);
     if (this.tabletView.isOpen !== this.modal && this.tabletView.isOpen) this.syncModal();
     if (!this.tabletView.isOpen && this.modal && !this.panel.isOpen && !this.crafting.isOpen && !this.journal.isOpen && !this.dialog) this.syncModal();
@@ -222,7 +227,8 @@ export class UI extends Phaser.Scene {
     }
     if (this.dialog) return;
     if (this.tabletView.isOpen) {
-      if (event.code === 'KeyE' || event.code === 'Enter' || event.code === 'Space') this.closeTablet();
+      // Close on the next frame so the same key press can't reach the world.
+      if (event.code === 'KeyE' || event.code === 'Enter' || event.code === 'Space') this.closeTabletNextFrame = true;
       return;
     }
     if (event.code === 'KeyJ') {

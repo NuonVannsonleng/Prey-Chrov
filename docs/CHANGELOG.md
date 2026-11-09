@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.6.0 — M6: Monsoon, ruins, tablets and core quest (2026-11-09)
+
+### Added
+- Monsoon every 5th day for 2 days, with a forecast, rain overlay, soft lightning, gloom and rain-adjusted hunger and thirst.
+- Warmth and cold exposure: shelter and campfires keep you warm, and zero warmth slowly costs health.
+- Deterministic, walkable-only flooding that rises through the monsoon and recedes after.
+- Ruin chests (each opens once, with seeded loot) and five key stone tablets in the five ruins nearest spawn.
+- Main quest "The Five Tablets" leading to the Heart of the Forest, with an edge arrow and distance.
+- Journal (J) with quest, tablets and a lore glossary with a fiction disclaimer.
+- The M5 data was reviewed by the content-designer stand-in: tiger spawns are rarer, and the Ap/Arak descriptions now say they are hostile fictional interpretations.
+
+### QA
+- Run by a stand-in for `phaser-qa`: **1 Critical, 4 Warnings**. All five are fixed:
+  - **Critical:** pressing E to close a tablet re-opened it, and Space swung a weapon. Gameplay keys are now ignored while any panel is open, and the tablet closes on the next frame. A smoke test covers it.
+  1. Re-flooding hitched. It is now queued, one chunk per frame.
+  2. Floods popped in and out. They now ramp smoothly.
+  3. The quest could be unwinnable if fewer than five tablet ruins existed. The required count now follows the tablets that actually exist.
+  4. Flooded shallows did not animate.
+- Suggestion applied: no "monsoon breaks" toast when loading mid-monsoon.
+
+
 ## 0.5.0 — M5: Wildlife, night spirits, combat and guardian shrines (2026-11-09)
 
 ### Added

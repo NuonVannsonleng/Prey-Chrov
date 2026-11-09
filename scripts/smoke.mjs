@@ -603,7 +603,13 @@ try {
     await page.screenshot({ path: OUT + '/23-tablet.png' });
     check('reading a tablet shows its text and records it', read.open && read.km.length > 0 && read.read === 1 && read.modal, JSON.stringify(read));
     await page.keyboard.press('Escape');
-    await sleep(200);
+    await sleep(300);
+    await page.keyboard.press('KeyE');
+    await sleep(400);
+    const reopened = await evalW('return ui.tabletView.isOpen;');
+    await page.keyboard.press('KeyE');
+    await sleep(600);
+    check('E reads a tablet and E closes it (no re-open loop)', reopened && !(await evalW('return ui.tabletView.isOpen || w.modalOpen;')));
     await page.keyboard.press('KeyJ');
     await sleep(300);
     const journal = await evalW('return { open: ui.journal.isOpen, quest: ui.journal.questText.text, t1: ui.journal.tabletTitles[0].text };');

@@ -56,6 +56,8 @@ interface LoadedChunk {
   ruins: RuinObject[];
   /** Tiles flooded to shallows (with their dry index) for restoring. */
   flooded: Array<[Phaser.Tilemaps.Tile, number]>;
+  /** Length of `animated` before flood tiles were appended. */
+  baseAnimated: number;
 }
 
 /**
@@ -73,6 +75,8 @@ export class ChunkManager {
   readonly ruins: RuinObject[] = [];
   private floodLevel = 0;
   private floodWidth = 1;
+  /** Loaded chunks waiting to be re-flooded at the current level (one per frame). */
+  private readonly floodQueue: LoadedChunk[] = [];
   private readonly loaded = new Map<string, LoadedChunk>();
   private readonly states = new Map<string, NodeState>();
   private readonly pending: Array<[number, number]> = [];
@@ -171,7 +175,7 @@ export class ChunkManager {
     const collider = this.scene.physics.add.collider(this.player, layer);
     const animated = layer.filterTiles((t: Phaser.Tilemaps.Tile) => t.index === TILE.waterA || t.index === TILE.shallowsA);
 
-    const chunk: LoadedChunk = { key, cx, cy, tilemap, layer, collider, animated, images: [], zones: [], canopies: [], nodes: [], shrines: [], ruins: [], flooded: [] };
+    const chunk: LoadedChunk = { key, cx, cy, tilemap, layer, collider, animated, images: [], zones: [], canopies: [], nodes: [], shrines: [], ruins: [], flooded: [], baseAnimated: animated.length };
     for (const p of data.props) {
       if (p.kind === 'resource') {
         const def = this.data.resources.get(p.id);
@@ -268,7 +272,15 @@ export class ChunkManager {
     if (q === this.floodLevel && riverWidthMultiplier === this.floodWidth) return;
     this.floodLevel = q;
     this.floodWidth = riverWidthMultiplier;
-    for (const c of this.loaded.values()) this.floodChunk(c);
+    // Spread the work: the player's surroundings re-flood over the next frames.
+    this.floodQueue.length = 0;
+    for (const c of this.loaded.values()) this.floodQueue.push(c);
+  }
+
+  /** Re-floods at most one queued chunk; call once per frame. */
+  processFlood(): void {
+    const c = this.floodQueue.shift();
+    if (c && this.loaded.get(c.key) === c) this.floodChunk(c);
   }
 
   get flood(): number {
@@ -278,6 +290,7 @@ export class ChunkManager {
   private floodChunk(c: LoadedChunk): void {
     for (const [tile, dry] of c.flooded) tile.index = dry;
     c.flooded.length = 0;
+    c.animated.length = c.baseAnimated;
     if (this.floodLevel <= 0) return;
     const N = CHUNK_TILES;
     for (let ly = 0; ly < N; ly++) {
@@ -287,6 +300,7 @@ export class ChunkManager {
         if (!this.gen.floodAt(c.cx * N + lx, c.cy * N + ly, this.floodLevel, this.floodWidth)) continue;
         c.flooded.push([tile, tile.index]);
         tile.index = TILE.shallowsA;
+        c.animated.push(tile);
       }
     }
   }
@@ -343,6 +357,7 @@ export class ChunkManager {
     this.nodes.length = 0;
     this.shrines.length = 0;
     this.ruins.length = 0;
+    this.floodQueue.length = 0;
     this.pending.length = 0;
   }
 

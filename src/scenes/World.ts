@@ -118,7 +118,8 @@ export class World extends Phaser.Scene {
   private pendingUse = false;
   private pendingInteract = false;
   private readonly pressHandler = oncePerKeyEvent((e: KeyboardEvent) => {
-    if (e.repeat) return;
+    // Keys pressed to close a panel must never act in the world.
+    if (e.repeat || this.modalOpen) return;
     if (e.code === 'KeyF') this.pendingUse = true;
     else if (e.code === 'Space') this.pendingAttack = true;
     else if (e.code === 'KeyE') this.pendingInteract = true;
@@ -173,7 +174,7 @@ export class World extends Phaser.Scene {
 
     this.floating = new FloatingText(this);
     this.interaction = new Interaction(this, this.chunks.nodes, (x, y) => this.chunks.tileAtWorld(x, y), this.structures.list, this.chunks.shrines, this.chunks.ruins);
-    this.quest = new QuestLog(this.gameData);
+    this.quest = new QuestLog(this.gameData, [], false, this.gen.tabletSites().length);
     this.openedChests.clear();
     this.nextWeatherAt = 0;
     this.nextQuestTargetAt = 0;
@@ -294,6 +295,7 @@ export class World extends Phaser.Scene {
     const p = this.player;
     this.animateWater(dt);
     this.chunks.update(p.x, p.y, this.now);
+    this.chunks.processFlood();
     if (this.busy) {
       this.pendingUse = false;
       this.pendingInteract = false;
@@ -508,7 +510,7 @@ export class World extends Phaser.Scene {
     this.chunks.setFlood(this.weather.flood, this.gameData.season.floodRiverWidth);
     const key = `${this.weather.label}|${this.weather.monsoon}|${this.chunks.flood}`;
     if (key === this.weatherKey) return;
-    const started = this.weather.monsoon && !this.weatherKey.includes('|true|');
+    const started = this.weather.monsoon && this.weatherKey !== '' && !this.weatherKey.includes('|true|');
     this.weatherKey = key;
     gameEvents.emit('weather:changed', { raining: this.weather.monsoon, label: this.weather.label, flood: this.chunks.flood });
     if (started) gameEvents.emit('toast', { text: 'The monsoon breaks. Stay near fire or shelter to keep warm.', tone: 'warn' });
@@ -1025,7 +1027,7 @@ export class World extends Phaser.Scene {
     this.effects.restore(save.effects.map((e) => ({ ...e, id: e.id as EffectId })));
     for (const s of save.shrines) this.shrineState.set(s.key, s.lastOffering);
     for (const k of save.openedChests) this.openedChests.add(k);
-    this.quest = new QuestLog(this.gameData, save.tabletsRead, save.heartReached);
+    this.quest = new QuestLog(this.gameData, save.tabletsRead, save.heartReached, this.gen.tabletSites().length);
   }
 
   /**
