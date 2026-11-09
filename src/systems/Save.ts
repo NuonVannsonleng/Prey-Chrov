@@ -70,6 +70,8 @@ export interface SaveData {
   shrines: Array<{ key: string; lastOffering: number }>;
   /** Ruin chest keys already opened (no duplicate loot). */
   openedChests: string[];
+  /** Plant identification: resource ids the player has gathered at least once (M9). */
+  knownPlants: string[];
   /** Key tablet ids read. */
   tabletsRead: string[];
   /** Main quest: the Heart of the Forest has been reached. */
@@ -225,6 +227,7 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
       return remaining > 0 ? [{ id: o['id'], remaining, dps: Math.max(0, finite(o['dps'], 0)), regenPerHour: Math.max(0, finite(o['regenPerHour'], 0)) }] : [];
     }),
     openedChests: (Array.isArray(rec['openedChests']) ? rec['openedChests'] : []).filter((o): o is string => typeof o === 'string'),
+    knownPlants: (Array.isArray(rec['knownPlants']) ? rec['knownPlants'] : []).filter((o): o is string => typeof o === 'string'),
     tabletsRead: (Array.isArray(rec['tabletsRead']) ? rec['tabletsRead'] : []).filter((o): o is string => typeof o === 'string'),
     heartReached: rec['heartReached'] === true,
     restored: rec['restored'] === true,

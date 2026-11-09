@@ -17,6 +17,7 @@ export type SfxId =
   | 'chest'
   | 'thunder'
   | 'spirit'
+  | 'splash'
   | 'ui';
 
 export interface AmbienceLevels {
@@ -231,6 +232,10 @@ class AudioEngine {
         break;
       case 'thunder':
         this.noiseBurst(t, 'lowpass', 160, 0.7, 0.5, 2.2);
+        break;
+      case 'splash':
+        this.noiseBurst(t, 'bandpass', 1100, 1.2, 0.22, 0.25, true);
+        this.tone(t + 0.02, 'sine', 420, 220, 0.05, 0.18);
         break;
       case 'spirit':
         this.tone(t, 'sine', 520, 330, 0.08, 0.9);

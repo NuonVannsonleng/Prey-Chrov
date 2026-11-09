@@ -7,6 +7,8 @@ export interface ButtonOptions {
   width?: number;
   height?: number;
   enabled?: boolean;
+  /** Label size in px (default 24). */
+  fontSize?: number;
   onActivate: () => void;
 }
 
@@ -42,7 +44,7 @@ export class Button extends Phaser.GameObjects.Container {
 
     this.bg = scene.add.graphics();
     this.text = scene.add
-      .text(0, 0, opts.label, { fontFamily: FONTS.ui, fontSize: '24px', fontStyle: '600', color: COLORS.text })
+      .text(0, 0, opts.label, { fontFamily: FONTS.ui, fontSize: `${opts.fontSize ?? 24}px`, fontStyle: '600', color: COLORS.text })
       .setOrigin(0.5);
     this.add([this.bg, this.text]);
     this.setSize(this.btnW, this.btnH);

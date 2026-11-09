@@ -660,7 +660,7 @@ try {
   const hasItem = (id) => evalW('return w.inventory.inventory.count(arg);', id);
   const setHour = (h) => evalW('const c = w.clock; c.totalSeconds = (c.dayNumber - 1) * 480 + arg * 20;', h);
   const craftRowButton = (recipeId) =>
-    evalW('const r = ui.crafting.rows.find((x) => x.recipe.id === arg); return { x: r.button.x, y: r.button.y };', recipeId);
+    evalW('ui.crafting.showRecipe(arg); const r = ui.crafting.rows.find((x) => x.recipe.id === arg); return { x: r.button.x, y: r.button.y };', recipeId);
 
   await teleport(16, 30);
   await evalW('w.inventory.inventory.restore([]); w.inventory.selected = 0; w.inventory.broadcast();');
@@ -1045,6 +1045,141 @@ try {
   await sleep(300);
   const duckedResumed = await page.evaluate(() => window.__preyAudio.ducked === true);
   check('pause silences the ambience; resume restores it', duckedPaused && !duckedResumed, JSON.stringify({ duckedPaused, duckedResumed }));
+
+  // ---------- M9: cooking, fishing, medicine and ecological depth ----------
+  await setClock(4, 10);
+  await evalW7('w.encounters.clear(); w.survival.stats.health = 60; w.survival.stats.hunger = 50; w.survival.stats.thirst = 50;');
+  // Find a deep-water tile near spawn with walkable land just south of it.
+  const shore = await evalW7(`
+    const c = w.chunks; const s = w.spawn;
+    for (let r = 2; r < 30; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+      const tx = Math.floor(s.x / 32) + dx, ty = Math.floor(s.y / 32) + dy;
+      const wx = tx * 32 + 16, wy = ty * 32 + 16;
+      if (!c.isDeepWater(wx, wy)) continue;
+      if (c.isDeepWater(wx, wy + 32) || c.isShallow(wx, wy + 32)) continue;
+      const lx = wx, ly = ty * 32 + 32 + 12;
+      if (w.physics.overlapRect(lx - 8, ly - 11, 16, 11, false, true).length) continue;
+      return { x: lx, y: ly };
+    }
+    return null;`);
+  check('a fishable shore exists near spawn', !!shore, JSON.stringify(shore));
+  await evalW7(
+    'const inv = w.inventory.inventory; const s = inv.snapshot().map(() => null); s[0] = { item: "fishing_rod", qty: 1, durability: 40 }; s[1] = { item: "bamboo_tube", qty: 2 }; s[2] = { item: "bitter_root", qty: 4 }; s[3] = { item: "healing_leaf", qty: 3 }; s[4] = { item: "plant_fiber", qty: 4 }; s[6] = { item: "campfire_kit", qty: 1 }; s[7] = { item: "cooking_pot_kit", qty: 1 }; inv.restore(s); w.inventory.selected = 0; w.inventory.broadcast();',
+  );
+  await teleport(shore.x, shore.y);
+  await sleep(400);
+  await hold(['KeyW'], 120);
+  await sleep(150);
+  const castPrompt = await evalW7('return ui.prompt.text;');
+  check('holding a rod at deep water offers to cast', /Cast your line/.test(castPrompt), castPrompt);
+  await page.keyboard.press('KeyE');
+  await sleep(200);
+  check('E casts the line and waits for a bite', (await evalW7('return w.fishing.phase;')) === 'waiting');
+  await evalW7('w.fishing.biteAt = w.now;');
+  await sleep(250);
+  await page.screenshot({ path: OUT + '/31-fishing-bite.png' });
+  const fish0 = await evalW7('return w.inventory.inventory.count("raw_fish");');
+  // Put the marker on the zone centre, then pull in the same tick.
+  await page.evaluate(() => {
+    const w = window.__preyChrov.scene.getScene('World');
+    const f = w.fishing;
+    const cps = w.gameData.fishing.markerCyclesPerSecond;
+    f.biteStart = w.now - (f.zoneCenter / 2 / cps) * 1000;
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', key: 'e' }));
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyE', key: 'e' }));
+  });
+  await sleep(900);
+  const caught = await evalW7('const r = w.inventory.inventory.get(0); return { fish: w.inventory.inventory.count("raw_fish"), phase: w.fishing.phase, rod: r && r.durability };');
+  check('pulling while the marker is in the green catches a fish (rod wears by 1)', caught.fish > fish0 && caught.phase === 'idle' && caught.rod === 39, JSON.stringify({ fish0, caught }));
+  await page.keyboard.press('KeyE');
+  await sleep(150);
+  await page.keyboard.press('KeyE');
+  await sleep(300);
+  const early = await evalW7('const r = w.inventory.inventory.get(0); return { phase: w.fishing.phase, fish: w.inventory.inventory.count("raw_fish"), rod: r && r.durability };');
+  check('pulling before a bite fails fairly (no fish, no rod wear, session ends)', early.phase === 'idle' && early.fish === caught.fish && early.rod === 39, JSON.stringify(early));
+  // Mouse players: a left click pulls the line.
+  await sleep(600);
+  await page.keyboard.press('KeyE');
+  await sleep(200);
+  await evalW7('w.fishing.biteAt = w.now;');
+  await sleep(150);
+  const clickPt = await page.evaluate(() => {
+    const w = window.__preyChrov.scene.getScene('World');
+    const f = w.fishing;
+    f.biteStart = w.now - (f.zoneCenter / 2 / w.gameData.fishing.markerCyclesPerSecond) * 1000;
+    return true;
+  });
+  await clickGame(640, 200);
+  await sleep(900);
+  const clicked = await evalW7('return { fish: w.inventory.inventory.count("raw_fish"), phase: w.fishing.phase };');
+  check('a mouse click pulls the line too', clickPt && clicked.fish > early.fish && clicked.phase === 'idle', JSON.stringify(clicked));
+
+  // Water container.
+  await evalW7('w.inventory.selected = 1; w.inventory.broadcast(); w.nextActAt = 0;');
+  await sleep(700);
+  const fillPrompt = await evalW7('return ui.prompt.text;');
+  await page.keyboard.press('KeyE');
+  await sleep(300);
+  const tubes = await evalW7('const i = w.inventory.inventory; return { empty: i.count("bamboo_tube"), water: i.count("water_tube") };');
+  check('a held bamboo tube fills at water', /Fill/.test(fillPrompt) && tubes.empty === 1 && tubes.water === 1, JSON.stringify({ fillPrompt, tubes }));
+
+  // Campfire + cooking pot: stations, boiling, cooking, medicine.
+  await evalW7('const p = w.player; w.structures.place("campfire", p.x - 40, p.y + 70); w.structures.place("cooking_pot", p.x + 40, p.y + 70); w.emitStructures();');
+  await teleport(shore.x, shore.y + 60);
+  await sleep(500);
+  const st9 = await evalW7('return [...w.stations].sort().join(",");');
+  check('a cooking pot is a crafting station next to the campfire', st9 === 'campfire,pot', st9);
+  const craft = (id) => evalW7('ui.crafting.showRecipe(arg); ui.crafting.rows.find((r) => r.recipe.id === arg).button.activate();', id);
+  await page.keyboard.press('KeyC');
+  await sleep(200);
+  await craft('boiled_water');
+  await craft('cooked_fish');
+  await sleep(100);
+  await evalW7('ui.crafting.showRecipe("antidote");');
+  await sleep(150);
+  await page.screenshot({ path: OUT + '/32-crafting-medicine.png' });
+  await craft('antidote');
+  await craft('bandage');
+  await sleep(150);
+  const made = await evalW7('const i = w.inventory.inventory; return { boiled: i.count("boiled_water"), fish: i.count("cooked_fish"), antidote: i.count("antidote"), bandage: i.count("bandage"), tab: ui.crafting.activeTab };');
+  check('boil water and grill fish at the campfire; brew an antidote at the pot; bind a bandage', made.fish >= 1 && made.antidote === 1 && made.bandage === 1, JSON.stringify(made));
+  check('crafting is split into category tabs', made.tab === 'medicine');
+  await page.keyboard.press('Escape');
+  await sleep(200);
+
+  // Antidote cures poison and gives the tube back; bandage heals.
+  const slotOf = (id) => evalW7('return w.inventory.inventory.snapshot().findIndex((s) => s && s.item === arg);', id);
+  await evalW7('w.effects.apply("poison", 60, { dps: 0.05 }); w.nextEffectsEmitAt = 0;');
+  const aSlot = await slotOf('antidote');
+  await evalW7('w.inventory.inventory.move(arg, 5); w.inventory.selected = 5; w.inventory.broadcast();', aSlot);
+  const tubesBefore = await evalW7('return w.inventory.inventory.count("bamboo_tube");');
+  await page.keyboard.press('KeyF');
+  await sleep(250);
+  const cured = await evalW7('return { poisoned: w.effects.has("poison"), tubes: w.inventory.inventory.count("bamboo_tube") };');
+  check('the antidote cures poison and returns the bamboo tube', !cured.poisoned && cured.tubes === tubesBefore + 1, JSON.stringify(cured));
+  const bSlot = await slotOf('bandage');
+  await evalW7('w.inventory.inventory.move(arg, 5); w.inventory.selected = 5; w.inventory.broadcast();', bSlot);
+  const hp0 = await evalW7('return w.survival.stats.health;');
+  await page.keyboard.press('KeyF');
+  await sleep(250);
+  const hp1 = await evalW7('return w.survival.stats.health;');
+  check('a bandage heals', hp1 >= hp0 + 20, JSON.stringify({ hp0, hp1 }));
+
+  // Plant identification.
+  const herb = await evalW7(`
+    const list = w.chunks.nodes.filter((n) => n.def.id === 'healing_herb' && !n.depleted);
+    if (list.length < 2) return null;
+    const before = w.nodeLabel(list[0]);
+    w.knownPlants.delete('healing_herb');
+    const unknown = w.nodeLabel(list[0]);
+    w.nextActAt = 0;
+    w.gather(list[0]);
+    return { before, unknown, known: w.knownPlants.has('healing_herb'), after: w.nodeLabel(list[1]), toast: ui.toast.text.text };`);
+  check('unknown herbs are identified by gathering one', !!herb && /Unknown herb/.test(herb.unknown) && herb.known && /Healing Leaf/.test(herb.after) && /Identified/.test(herb.toast), JSON.stringify(herb));
+  await evalW7('w.save();');
+  const savedPlants = await page.evaluate(() => JSON.parse(localStorage.getItem('preychrov.save')).knownPlants);
+  check('identified plants are saved', Array.isArray(savedPlants) && savedPlants.includes('healing_herb'), JSON.stringify(savedPlants));
 
   await page.evaluate(() => localStorage.clear());
 

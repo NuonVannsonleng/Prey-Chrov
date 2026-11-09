@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.9.0 — M9: Cooking, fishing, medicine and ecology (2026-11-09)
+
+### Added
+- Fishing with a bamboo rod: a fair timing minigame at deep water (E, Space or click to pull).
+- Bamboo tubes: fill at water, boil at the campfire, and get the tube back after use.
+- Cooking pot station: jungle stew, fish and leaf soup, bitter root brew (antidote).
+- Medicine: leaf bandage (+25 health) and the antidote (cures poison).
+- Healing leaf and bitter root herbs, identified on first harvest (saved).
+- Harvest seasons: the monsoon brings more shoots and herbs and fewer berries.
+- Crafting tabs (Tools & light, Building, Food & water, Medicine) with Tab / Shift+Tab.
+
+### Fixed
+- A cooking pot no longer counts as a campfire for the first-day checklist or the minimap.
+- Tubes are never lost when the inventory is full.
+
 ## 0.8.0 — M8: The Heart of the Forest and the first ending (2026-11-09)
 
 ### Added

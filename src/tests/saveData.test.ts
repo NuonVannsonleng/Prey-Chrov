@@ -23,6 +23,7 @@ const full: SaveData = {
   effects: [{ id: 'poison', remaining: 4, dps: 1.2, regenPerHour: 0 }],
   shrines: [{ key: '-1,0:5', lastOffering: 300 }],
   openedChests: ['5,6:12'],
+  knownPlants: ['healing_herb'],
   tabletsRead: ['tablet_1'],
   heartReached: false,
   restored: false,

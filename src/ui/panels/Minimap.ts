@@ -146,7 +146,7 @@ export class Minimap {
     for (const s of this.structures) {
       const [x, y] = toScreen(s.x / TILE_SIZE, s.y / TILE_SIZE);
       if (!inside(x, y)) continue;
-      g.fillStyle(s.kind === 'cook' ? 0xe8893a : 0x8ec26a, 1).fillRect(x - 2, y - 2, 4, 4);
+      g.fillStyle(s.kind === 'fire' ? 0xe8893a : s.kind === 'cook' ? 0xc89a6a : 0x8ec26a, 1).fillRect(x - 2, y - 2, 4, 4);
     }
     const [px, py] = toScreen(ptx, pty);
     g.fillStyle(0xffffff, 1).fillCircle(px, py, 3);

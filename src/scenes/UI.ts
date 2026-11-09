@@ -170,7 +170,10 @@ export class UI extends Phaser.Scene {
     onSceneEvent(this, 'objectives:changed', (list) => this.status.updateObjectives(list));
     onSceneEvent(this, 'craft:stations', (s) => this.crafting.setStations(s));
     onSceneEvent(this, 'ui:open-crafting', () => {
-      if (!this.dialog && !this.panel.isOpen) this.setCrafting(true);
+      if (!this.dialog && !this.panel.isOpen) {
+        this.setCrafting(true);
+        this.crafting.open('food');
+      }
     });
     onSceneEvent(this, 'placement:mode', (on) => {
       this.placing = on;
@@ -255,6 +258,11 @@ export class UI extends Phaser.Scene {
     if (event.code === 'KeyI') {
       if (this.crafting.isOpen) this.setCrafting(false);
       this.setPanel(!this.panel.isOpen);
+      return;
+    }
+    if (event.code === 'Tab' && this.crafting.isOpen) {
+      event.preventDefault();
+      this.crafting.nextTab(event.shiftKey ? -1 : 1);
       return;
     }
     if (event.code === 'KeyC') {

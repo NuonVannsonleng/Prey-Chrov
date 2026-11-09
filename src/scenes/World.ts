@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { CAMERA, DEBUG_HOOKS, DEPTH, GATHER, PICKUP, SCENES, WATER, WORLD_GEN } from '../config';
 import { getGameData, itemDef } from '../data/gameData';
-import type { GameData, Station, ToolKind } from '../data/schema';
+import type { GameData, ItemDef, Station, ToolKind } from '../data/schema';
 import { Player, type PlayerKeys } from '../entities/Player';
 import type { ResourceNode } from '../entities/ResourceNode';
 import { Building } from '../systems/Building';
@@ -17,6 +17,7 @@ import { rollLoot } from '../systems/Loot';
 import { GameClock, darknessAt, inHourWindow, phaseOf } from '../systems/Clock';
 import { gameEvents, onSceneEvent, type ClockTick, type PlayerTick, type SurvivalTick } from '../systems/GameEvents';
 import { Gathering } from '../systems/Gathering';
+import { FishingSession } from '../systems/Fishing';
 import { Interaction } from '../systems/Interaction';
 import { Lighting } from '../systems/Lighting';
 import { Objectives } from '../systems/Objectives';
@@ -95,7 +96,7 @@ export class World extends Phaser.Scene {
   private lastHurtAt = -Infinity;
   private wasHungry = false;
   private wasThirsty = false;
-  private stationsKey = '';
+  private stationsKey = -1;
   private readonly stations = new Set<Station>();
   private readonly debugHandler = oncePerKeyEvent(() => this.toggleDebug());
   private encounters!: Encounters;
@@ -111,6 +112,13 @@ export class World extends Phaser.Scene {
   private readonly lightHit = { x: 0, y: 0, radius: 0 };
   private quest!: QuestLog;
   private readonly openedChests = new Set<string>();
+  /** Plant identification: resource ids gathered at least once (saved). */
+  private readonly knownPlants = new Set<string>();
+  private fishing!: FishingSession;
+  private fishBar!: Phaser.GameObjects.Graphics;
+  /** Where the player stood when casting, and where the bobber floats. */
+  private readonly fishAt = { x: 0, y: 0, spotX: 0, spotY: 0 };
+  private fishTipShown = false;
   private weather: Forecast = { monsoon: false, monsoonDay: 0, daysUntil: 0, flood: 0, label: '' };
   private nextWeatherAt = 0;
   private nextQuestTargetAt = 0;
@@ -181,7 +189,11 @@ export class World extends Phaser.Scene {
     this.structures.keepClear = this.spawn;
     this.chunks.onLoad = (cx, cy) => this.structures.loadChunk(cx, cy);
     this.chunks.onUnload = (cx, cy) => this.structures.unloadChunk(cx, cy);
-    this.gathering = new Gathering(this, this.chunks.nodes, this.gameData, this.seed);
+    this.gathering = new Gathering(this, this.chunks.nodes, this.gameData, this.seed, () => (this.weather.monsoon ? 'monsoon' : 'dry'));
+    this.fishing = new FishingSession(this.gameData.fishing);
+    this.fishBar = this.add.graphics().setDepth(DEPTH.floatingText - 3).setVisible(false);
+    this.knownPlants.clear();
+    this.fishTipShown = false;
 
     this.floating = new FloatingText(this);
     this.interaction = new Interaction(this, this.chunks.nodes, (x, y) => this.chunks.tileAtWorld(x, y), this.structures.list, this.chunks.shrines, this.chunks.ruins, this.chunks.roots, () => this.chunks.heart);
@@ -294,7 +306,7 @@ export class World extends Phaser.Scene {
     this.torchBurn = 0;
     this.lastPrompt = '';
     this.lastHurtAt = -Infinity;
-    this.stationsKey = '';
+    this.stationsKey = -1;
     this.stations.clear();
     this.pendingUse = false;
     this.pendingInteract = false;
@@ -376,14 +388,22 @@ export class World extends Phaser.Scene {
     if (!this.input.activePointer.isDown) this.pointerHeld = false;
     if (inputOn) {
       const target = this.interaction.update(p.x, p.y, p.facingVec.x, p.facingVec.y);
-      this.setPrompt(this.promptFor(target.kind === 'structure' ? target.structure.def.interaction : target.kind, target));
-      const pressed = this.pendingInteract;
-      if (this.pendingAttack) this.attack(p.x + p.facingVec.x * 20, p.y - 10 + p.facingVec.y * 20);
-      if (this.pendingUse) this.useHeld();
-      if (this.keys.interact.isDown || this.pointerHeld || pressed) this.act(null, pressed);
+      if (this.fishing.phase !== 'idle') {
+        this.updateFishing(this.pendingInteract || this.pendingAttack);
+      } else {
+        this.setPrompt(this.promptFor(target.kind === 'structure' ? target.structure.def.interaction : target.kind, target));
+        const pressed = this.pendingInteract;
+        if (this.pendingAttack) this.attack(p.x + p.facingVec.x * 20, p.y - 10 + p.facingVec.y * 20);
+        if (this.pendingUse) this.useHeld();
+        if (this.keys.interact.isDown || this.pointerHeld || pressed) this.act(null, pressed);
+      }
     } else {
       this.interaction.hideRing();
       this.setPrompt('');
+      if (this.fishing.phase !== 'idle') {
+        this.stopFishing();
+        this.floating.show(p.x, p.y - 34, 'You reel in your line', '#c8d8dc');
+      }
     }
 
     this.pendingUse = false;
@@ -447,7 +467,7 @@ export class World extends Phaser.Scene {
     const hits = this.encounters.attack(ox, oy, dx / len, dy / len, reach, damage, this.now);
     gameEvents.emit('sfx', hits.length > 0 ? 'enemy_hit' : 'swing');
     for (const e of hits) this.floating.show(e.x, e.cy - 14, `-${damage}`, '#ffffff');
-    if (hits.length > 0 && tool) {
+    if (hits.length > 0 && tool && tool.kind !== 'rod') {
       if (this.inventory.inventory.wear(this.inventory.selected, 1) === 'broke') {
         gameEvents.emit('toast', { text: `Your ${itemDef(held?.item ?? '').name} broke`, tone: 'warn' });
       }
@@ -554,7 +574,7 @@ export class World extends Phaser.Scene {
     const started = this.weather.monsoon && this.weatherKey !== '' && !this.weatherKey.includes('|true|');
     this.weatherKey = key;
     gameEvents.emit('weather:changed', { raining: this.weather.monsoon, label: this.weather.label, flood: this.chunks.flood });
-    if (started) gameEvents.emit('toast', { text: 'The monsoon breaks. Stay near fire or shelter to keep warm.', tone: 'warn' });
+    if (started) gameEvents.emit('toast', { text: 'The monsoon breaks. Stay near fire or shelter to keep warm. Shoots and herbs grow fast in the rain; berries are scarce.', tone: 'warn' });
   }
 
   /** Under a shelter's roof or by a campfire's warmth. */
@@ -866,7 +886,7 @@ export class World extends Phaser.Scene {
 
   private updateStations(): void {
     this.structures.stationsNear(this.player.x, this.player.y, this.stations);
-    const key = this.stations.has('campfire') ? 'campfire' : '';
+    const key = (this.stations.has('campfire') ? 1 : 0) + (this.stations.has('pot') ? 2 : 0);
     if (key === this.stationsKey) return;
     this.stationsKey = key;
     gameEvents.emit('craft:stations', [...this.stations]);
@@ -877,11 +897,16 @@ export class World extends Phaser.Scene {
   private promptFor(kind: string | null, target: typeof this.interaction.current): string {
     switch (kind) {
       case 'node':
-        return target.kind === 'node' ? `E — ${target.node.label}` : '';
-      case 'water':
+        return target.kind === 'node' ? `E — ${this.nodeLabel(target.node)}` : '';
+      case 'water': {
+        const held = this.inventory.held;
+        const def = held ? itemDef(held.item) : null;
+        if (def?.tool?.kind === 'rod') return 'E — Cast your line';
+        if (def?.fillsTo) return `E — Fill the ${def.name}`;
         return 'E — Drink water';
+      }
       case 'cook':
-        return 'E — Cook at the campfire';
+        return target.kind === 'structure' ? `E — Cook at the ${target.structure.def.name.toLowerCase()}` : 'E — Cook';
       case 'sleep': {
         const sl = this.gameData.survival.sleep;
         return inHourWindow(this.clock.hour, sl.fromHour, sl.untilHour)
@@ -917,6 +942,15 @@ export class World extends Phaser.Scene {
       return;
     }
     if (target.kind === 'water') {
+      const held = this.inventory.held;
+      const hdef = held ? itemDef(held.item) : null;
+      // A rod or a container in hand turns E at water into fishing / filling (never drinking).
+      if (hdef?.tool?.kind === 'rod' || hdef?.fillsTo) {
+        if (!pressed) return;
+        if (hdef.fillsTo) this.fillContainer(hdef.fillsTo, target.x, target.y);
+        else this.castLine(target.x, target.y);
+        return;
+      }
       p.swing(target.x, target.y + 8, this.now, GATHER.swingMs * 2);
       this.nextActAt = this.now + WATER.drinkCooldownMs;
       this.survival.drink();
@@ -972,7 +1006,7 @@ export class World extends Phaser.Scene {
     }
     const { result, loot } = this.gathering.hit(node, kind, this.now, p.x, base);
     if (result === 'hit' || result === 'depleted') {
-      gameEvents.emit('sfx', node.def.sprite === 'rock' ? 'stone' : node.def.sprite === 'bush' ? 'leaf' : 'chop');
+      gameEvents.emit('sfx', node.def.sprite === 'rock' ? 'stone' : node.def.sprite === 'tree' || node.def.sprite === 'bamboo' ? 'chop' : 'leaf');
     }
     if (result === 'needs-tool') this.floating.show(node.targetX, node.targetY - 20, 'Needs a tool', '#e6b866');
     if (kind !== 'hand' && (result === 'hit' || result === 'depleted')) {
@@ -980,6 +1014,11 @@ export class World extends Phaser.Scene {
         gameEvents.emit('toast', { text: `Your ${itemDef(held?.item ?? '').name} broke`, tone: 'warn' });
       }
       this.inventory.broadcast();
+    }
+    if (result === 'depleted' && node.def.unknownName && !this.knownPlants.has(node.def.id)) {
+      this.knownPlants.add(node.def.id);
+      const first = loot[0] ? itemDef(loot[0].item) : null;
+      gameEvents.emit('toast', { text: `Identified: ${node.def.name}${first ? ` — ${first.description}` : ''}`, tone: 'info' });
     }
     for (const stack of loot) {
       if (this.pickups.spawn(stack.item, stack.qty, node.prop.x, node.prop.y - 4, this.now, 250)) {
@@ -1005,6 +1044,10 @@ export class World extends Phaser.Scene {
       else this.building.start(this.inventory.selected, def.places);
       return;
     }
+    if (def.medicine) {
+      this.useMedicine(def);
+      return;
+    }
     if (def.food) {
       const st = this.survival.stats;
       const cfgS = this.gameData.survival;
@@ -1013,12 +1056,13 @@ export class World extends Phaser.Scene {
         (def.food.thirst > 0 && st.thirst < cfgS.maxThirst - 1) ||
         (def.food.health > 0 && st.health < cfgS.maxHealth - 1);
       if (!helps) {
-        gameEvents.emit('toast', { text: `You're not hungry — save the ${def.name} for later`, tone: 'info' });
+        gameEvents.emit('toast', { text: `You're not ${def.food.thirst > def.food.hunger ? 'thirsty' : 'hungry'} — save the ${def.name} for later`, tone: 'info' });
         return;
       }
       this.survival.eat(def.food);
-      gameEvents.emit('sfx', 'eat');
+      gameEvents.emit('sfx', def.food.thirst > def.food.hunger ? 'drink' : 'eat');
       this.inventory.inventory.takeFromSlot(this.inventory.selected, 1);
+      if (def.returns) this.giveBack(def.returns);
       this.inventory.broadcast();
       this.player.swing(this.player.x, this.player.y - 20, this.now, GATHER.swingMs * 2);
       const parts = [`+${def.food.hunger} food`];
@@ -1027,7 +1071,11 @@ export class World extends Phaser.Scene {
       this.floating.show(this.player.x, this.player.y - 34, parts.join('  '), def.food.health < 0 ? '#e6b866' : '#8ec26a');
       return;
     }
-    const msg = def.tool
+    const msg = def.fillsTo
+      ? `Stand at water and press E to fill the ${def.name}`
+      : def.tool?.kind === 'rod'
+        ? 'Stand at the edge of deep water and press E to cast your line'
+        : def.tool
       ? def.tool.kind === 'spear'
         ? 'Swing the spear with Space, or click a creature — it reaches further than your hands'
         : `Hold E or click a ${def.tool.kind === 'axe' ? 'tree or bamboo' : 'boulder'} to use your ${def.name}`
@@ -1035,6 +1083,195 @@ export class World extends Phaser.Scene {
         ? 'Torches light up automatically in the dark while held'
         : `${def.name} is a crafting material — open crafting with C`;
     gameEvents.emit('toast', { text: msg, tone: 'info' });
+  }
+
+  /** Unknown plants show a generic name until the player has gathered one (plant identification). */
+  private nodeLabel(node: ResourceNode): string {
+    const d = node.def;
+    return d.unknownName && !this.knownPlants.has(d.id) ? `${d.verb} ${d.unknownName}` : node.label;
+  }
+
+  /** Puts an item back in the inventory (e.g. the empty tube), dropping it if there is no room. */
+  private giveBack(item: string): void {
+    const left = this.inventory.inventory.add(item, 1);
+    if (left > 0 && !this.dropInFront(item, left)) this.pickups.spawn(item, left, this.player.x, this.player.y + 6, this.now, 0, 0, false);
+  }
+
+  /** Room for one more of an item (inventory or a free ground slot)? */
+  private hasRoomFor(item: string): boolean {
+    return this.inventory.capacityFor(item) > 0 || this.pickups.freeSlots > 0;
+  }
+
+  private useMedicine(def: ItemDef): void {
+    const med = def.medicine;
+    if (!med) return;
+    const st = this.survival.stats;
+    const cures = med.cures.includes('poison') && this.effects.has('poison');
+    const heals = med.heal > 0 && st.health < this.gameData.survival.maxHealth - 1;
+    if (!cures && !heals) {
+      gameEvents.emit('toast', { text: `You don't need the ${def.name} right now`, tone: 'info' });
+      return;
+    }
+    if (cures) {
+      this.effects.clear('poison');
+      this.nextEffectsEmitAt = 0;
+    }
+    if (med.heal > 0) this.survival.heal(med.heal);
+    this.inventory.inventory.takeFromSlot(this.inventory.selected, 1);
+    if (def.returns) this.giveBack(def.returns);
+    this.inventory.broadcast();
+    gameEvents.emit('sfx', 'eat');
+    this.player.swing(this.player.x, this.player.y - 20, this.now, GATHER.swingMs * 2);
+    const parts: string[] = [];
+    if (cures) parts.push('Poison cured');
+    if (med.heal > 0) parts.push(`+${med.heal} health`);
+    this.floating.show(this.player.x, this.player.y - 34, parts.join('  '), '#8ec26a');
+  }
+
+  // ---------- Water containers and fishing (M9) ----------
+
+  private fillContainer(fillsTo: string, tx: number, ty: number): void {
+    const slot = this.inventory.selected;
+    const held = this.inventory.inventory.get(slot);
+    // Filling the last tube frees its slot; otherwise there must be room for the filled one.
+    if (!held || (held.qty > 1 && !this.hasRoomFor(fillsTo))) {
+      gameEvents.emit('toast', { text: 'No room for a filled tube — make space first', tone: 'warn' });
+      this.nextActAt = this.now + 600;
+      return;
+    }
+    if (!this.inventory.inventory.takeFromSlot(slot, 1)) return;
+    const left = this.inventory.inventory.add(fillsTo, 1);
+    if (left > 0) this.giveBack(fillsTo);
+    this.inventory.broadcast();
+    this.player.swing(tx, ty + 8, this.now, GATHER.swingMs * 2);
+    this.nextActAt = this.now + WATER.drinkCooldownMs;
+    gameEvents.emit('sfx', 'drink');
+    this.floating.show(this.player.x, this.player.y - 34, `+1 ${itemDef(fillsTo).name}`, '#4fc2b4');
+  }
+
+  /** Deep water within a short reach of the water edge the player faces. */
+  private deepWaterNear(x: number, y: number): { x: number; y: number } | null {
+    // Prefer a spot a little way out so the bobber floats on open water.
+    for (const r of [28, 44, 16, 60, 0]) {
+      for (const [dx, dy] of [
+        [0, 0],
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const) {
+        const px = x + dx * r;
+        const py = y + dy * r;
+        if (this.chunks.isDeepWater(px, py)) return { x: px, y: py };
+      }
+    }
+    return null;
+  }
+
+  private castLine(tx: number, ty: number): void {
+    const t = this.gameData.fishing.text;
+    const spot = this.deepWaterNear(tx, ty);
+    if (!spot) {
+      gameEvents.emit('toast', { text: t.needDeep, tone: 'info' });
+      this.nextActAt = this.now + 600;
+      return;
+    }
+    const p = this.player;
+    this.fishing.cast(this.now, Math.random);
+    this.fishAt.x = p.x;
+    this.fishAt.y = p.y;
+    this.fishAt.spotX = spot.x;
+    this.fishAt.spotY = spot.y;
+    p.swing(spot.x, spot.y, this.now, GATHER.swingMs * 2);
+    gameEvents.emit('sfx', 'swing');
+    this.floating.show(p.x, p.y - 34, 'Casting…', '#c8d8dc');
+    if (!this.fishTipShown) gameEvents.emit('toast', { text: t.cast, tone: 'info' });
+  }
+
+  private stopFishing(): void {
+    this.fishing.cancel();
+    this.fishBar.clear().setVisible(false);
+  }
+
+  /** One frame of an active fishing session. `pull` = E or Space pressed this frame. */
+  private updateFishing(pull: boolean): void {
+    const f = this.fishing;
+    const cfg = this.gameData.fishing;
+    const p = this.player;
+    const held = this.inventory.held;
+    // Walking away or putting the rod down ends the session.
+    if (Math.hypot(p.x - this.fishAt.x, p.y - this.fishAt.y) > 10 || !held || itemDef(held.item).tool?.kind !== 'rod') {
+      this.stopFishing();
+      this.floating.show(p.x, p.y - 34, 'You reel in your line', '#c8d8dc');
+      return;
+    }
+    const ev = f.update(this.now);
+    if (ev === 'bite') {
+      gameEvents.emit('sfx', 'splash');
+      this.floating.show(this.fishAt.spotX, this.fishAt.spotY - 18, '!', '#e6b866');
+      if (!this.fishTipShown) {
+        this.fishTipShown = true;
+        gameEvents.emit('toast', { text: cfg.text.bite, tone: 'info' });
+      }
+    } else if (ev === 'escaped') {
+      this.finishFishing(cfg.text.escaped, false);
+      return;
+    }
+    if (pull) {
+      const r = f.press(this.now);
+      if (r === 'caught') {
+        this.finishFishing(cfg.text.caught, true);
+        return;
+      }
+      if (r === 'missed' || r === 'early') {
+        this.finishFishing(r === 'missed' ? cfg.text.missed : cfg.text.early, false, r === 'missed');
+        return;
+      }
+    }
+    this.setPrompt(f.phase === 'bite' ? 'E / Space — Pull the line!' : 'Fishing… wait for a bite (move to stop)');
+    this.drawFishing();
+  }
+
+  private finishFishing(text: string, caught: boolean, wear = true): void {
+    const cfg = this.gameData.fishing;
+    const p = this.player;
+    this.stopFishing();
+    this.nextActAt = this.now + 500;
+    this.pendingInteract = false;
+    if ((caught || wear) && this.inventory.inventory.wear(this.inventory.selected, cfg.rodWear) === 'broke') {
+      gameEvents.emit('toast', { text: 'Your fishing rod broke', tone: 'warn' });
+    }
+    if (caught) {
+      const table = this.gameData.loot.get(cfg.lootTable);
+      for (const stack of table ? rollLoot(table, Math.random) : []) {
+        this.stats.gathered += stack.qty;
+        if (!this.pickups.spawn(stack.item, stack.qty, p.x, p.y - 6, this.now, 0, 4)) {
+          const left = this.inventory.add(stack.item, stack.qty);
+          if (left > 0) this.dropInFront(stack.item, left);
+        }
+      }
+      gameEvents.emit('sfx', 'splash');
+    }
+    this.inventory.broadcast();
+    this.floating.show(p.x, p.y - 36, text, caught ? '#8ec26a' : '#e6b866');
+  }
+
+  /** Bobber on the water; during a bite, the timing bar above the player. */
+  private drawFishing(): void {
+    const g = this.fishBar.clear().setVisible(true);
+    const f = this.fishing;
+    const bob = Math.sin(this.now / (f.phase === 'bite' ? 60 : 300)) * (f.phase === 'bite' ? 2.5 : 1);
+    g.lineStyle(1, 0xe6e6dc, 0.6).lineBetween(this.player.x + 6, this.player.y - 22, this.fishAt.spotX, this.fishAt.spotY + bob);
+    g.fillStyle(0xd9644a, 1).fillCircle(this.fishAt.spotX, this.fishAt.spotY + bob, 2);
+    if (f.phase !== 'bite') return;
+    const w = 80;
+    const x0 = this.player.x - w / 2;
+    const y0 = this.player.y - 66;
+    const zw = this.gameData.fishing.zoneWidth * w;
+    g.fillStyle(0x08110f, 0.85).fillRoundedRect(x0 - 2, y0 - 2, w + 4, 12, 3);
+    g.fillStyle(0x4f9a46, 1).fillRect(x0 + f.zoneCenter * w - zw / 2, y0, zw, 8);
+    const mx = x0 + f.marker(this.now) * w;
+    g.fillStyle(f.inZone(this.now) ? 0xffffff : 0xe6b866, 1).fillRect(mx - 1, y0 - 2, 2, 12);
   }
 
   private updateBuilding(): void {
@@ -1071,7 +1308,7 @@ export class World extends Phaser.Scene {
     this.emitStructures();
     gameEvents.emit('sfx', 'build');
     this.floating.show(b.x, b.y - 30, `Built ${placed.def.name}`, '#8ec26a');
-    if (placed.def.interaction === 'cook') this.completeObjective('campfire');
+    if (placed.def.station === 'campfire') this.completeObjective('campfire');
     if (placed.def.interaction === 'sleep') this.completeObjective('shelter');
     if (!this.inventory.inventory.get(b.slot)) b.cancel();
   }
@@ -1130,6 +1367,7 @@ export class World extends Phaser.Scene {
         effects: this.effects,
         shrines: this.shrineState,
         openedChests: this.openedChests,
+        knownPlants: this.knownPlants,
         quest: { tabletsRead: this.quest.tabletsRead, heartReached: this.quest.heartReached, restored: this.quest.restored },
         stats: this.stats,
         now: this.now,
@@ -1162,7 +1400,7 @@ export class World extends Phaser.Scene {
   private emitStructures(): void {
     gameEvents.emit(
       'structures:changed',
-      this.structures.records.map((s) => ({ x: s.x, y: s.y, kind: s.def.interaction ?? 'other' })),
+      this.structures.records.map((s) => ({ x: s.x, y: s.y, kind: s.def.station === 'campfire' ? 'fire' : (s.def.interaction ?? 'other') })),
     );
   }
 
@@ -1221,6 +1459,7 @@ export class World extends Phaser.Scene {
       this.time.delayedCall(800, () => gameEvents.emit('toast', { text: msg.trim(), tone: lost > 0 ? 'warn' : 'info' }));
     }
     this.objectives = new Objectives(save.objectives);
+    for (const k of save.knownPlants) this.knownPlants.add(k);
     this.effects.restore(save.effects.map((e) => ({ ...e, id: e.id as EffectId })));
     for (const s of save.shrines) this.shrineState.set(s.key, s.lastOffering);
     for (const k of save.openedChests) this.openedChests.add(k);
@@ -1250,6 +1489,7 @@ export class World extends Phaser.Scene {
   private die(): void {
     if (this.busy) return;
     this.busy = true;
+    this.stopFishing();
     this.building.cancel();
     this.player.halt();
     this.encounters.clear();
@@ -1324,6 +1564,10 @@ export class World extends Phaser.Scene {
       return;
     }
     if (!pointer.leftButtonDown()) return;
+    if (this.fishing.phase !== 'idle') {
+      this.pendingInteract = true;
+      return;
+    }
     const c = this.gameData.combat;
     const near = this.encounters.nearest(this.player.x, this.player.y - 10, c.baseReach + c.spearBonusReach + 30);
     const nodeUnder = this.interaction.nodeAt(pointer.worldX, pointer.worldY, this.player.x, this.player.y);

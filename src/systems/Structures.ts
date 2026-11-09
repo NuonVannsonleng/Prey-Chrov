@@ -140,7 +140,7 @@ export class Structures {
   stationsNear(px: number, py: number, out: Set<Station>): Set<Station> {
     out.clear();
     for (const s of this.list) {
-      if (s.def.interaction === 'cook' && Math.hypot(s.x - px, s.y - py) <= STATION_REACH) out.add('campfire');
+      if (s.def.station && Math.hypot(s.x - px, s.y - py) <= STATION_REACH) out.add(s.def.station);
     }
     return out;
   }

@@ -12,6 +12,90 @@ Status legend: **Done** · **In progress** · **Not started**
 | M6 | Monsoon, ruins, tablets and core quest | Done |
 | M7 | Persistence, performance and MVP polish | Done |
 | M8 | Complete the first main story and ending | Done |
+| M9 | Cooking, fishing, medicine and ecological depth | Done |
+
+---
+
+## M9 — Cooking, fishing, medicine and ecological depth
+
+### Implemented (playable)
+
+- **Fishing:**
+  - Craft a **bamboo fishing rod** (2 bamboo, 3 plant fibre, 1 stick). Hold it and press **E** at the edge of deep water (any pond or river) to cast.
+  - A bobber floats on the water; after 1.5–4 s a fish bites ("!", a splash and a hint).
+  - A timing bar appears above you: press **E or Space** while the sweeping marker is inside the green zone.
+  - Fair by design: the zone is 30% of the bar and the marker passes through it at least twice in the 2.6 s window. `fishing.json` refuses unfair tuning.
+  - Pulling too early or outside the zone, or waiting too long, loses the fish with a clear message. Walking away or putting the rod down stops fishing.
+  - A catch or a miss wears the rod by 1 (40 uses). Pulling early costs nothing.
+- **Water containers and boiling:**
+  - **Bamboo tubes** (2 bamboo → 2 tubes): hold one and press E at any water to fill it.
+  - River water can be drunk anywhere (F). Boiling it at a campfire gives **boiled water**, which quenches more thirst, heals a little, and is the base for soups and medicine.
+  - Drinking or eating from a tube gives the empty tube back.
+- **Cooking pot:** a new placeable station (5 stone, 2 wood, 2 fibre). E opens crafting on the food tab.
+  - **Jungle stew:** bamboo shoot, berries, boiled water.
+  - **Fish and leaf soup:** fish, healing leaf, boiled water.
+  - **Bitter root brew** (antidote).
+  - The campfire still roasts shoots and meat, grills fish and boils water.
+- **Medicine:**
+  - **Leaf bandage** (2 healing leaves, 2 fibre): +25 health.
+  - **Bitter root brew** (2 bitter root, boiled water, at the pot): cures poison (viper bites), +5 health, and gives the tube back.
+  - Using medicine you don't need is refused, so nothing is wasted.
+- **Plant identification:** two new herbs grow across the biomes and near spawn:
+  - **healing leaf:** broad, pale-veined leaves
+  - **bitter root:** purple stems over a knobbly root
+
+  Both show as "Unknown herb" until you gather one. The first harvest identifies the plant and explains its use, and identifications are saved.
+- **Harvest seasons:**
+  - During the monsoon, bamboo clumps yield twice the shoots, healing herbs yield more, and berry bushes yield half. The monsoon announcement says so.
+  - This is data-driven (`seasonal` in resources.json).
+- **Wildlife:** boars and tigers still provide meat and hide. There is no graphic violence: creatures fade or fall with a simple message.
+- **Crafting panel tabs:** Tools & light · Building · Food & water · Medicine. Click a tab or press Tab / Shift+Tab. Locked recipes say which station they need ("needs a cooking pot nearby").
+- **Food spoilage:** intentionally not added. It wasn't clearly fun at this scale, and the roadmap makes it optional.
+
+### Verification
+
+- `npm run typecheck` and `npm run build` pass.
+- `npm test`: 141 unit tests. New ones cover:
+  - the fishing state machine (timings, early, miss and catch)
+  - **fairness for any zone position**
+  - rejecting unfair tuning
+  - seasonal yields
+  - reachability of every new item
+  - a **sustainability budget**: a day needs at most 4 grilled fish and 4 boiled-water tubes, and a rod lasts 3 or more days of that
+  - every catch yields a fish
+- `npm run smoke`: 153 browser checks. The M9 ones:
+  - a fishable shore exists near spawn
+  - the rod prompt, casting and waiting
+  - pulling in the green catches a fish and wears the rod by 1
+  - pulling early fails without a fish or rod wear
+  - a mouse click pulls the line
+  - a tube fills at water
+  - the pot is a station next to the campfire
+  - boiling, grilling, brewing the antidote and binding a bandage
+  - the tabs
+  - the antidote cures poison and returns the tube
+  - the bandage heals
+  - an unknown herb is identified by gathering one, and the identification is saved
+- QA stand-in review: build, 141 tests and 152/152 smoke passed, with no Critical findings. Fixed afterwards:
+  - **Near-critical:** placing a cooking pot ticked off the "build a campfire" objective, and the minimap coloured pots as fires.
+  - **Warnings:**
+    - mouse players could not pull the line, and a click mid-session could attack instead
+    - an early pull cost rod wear
+    - the station key allocated every frame
+    - a returned or filled tube could be lost when both the inventory and the ground pool were full
+    - in the dry season, about half of bamboo clumps gave no shoot, and seasons were not explained
+    - drinks at full thirst said "not hungry"
+  - **Suggestions:**
+    - attacking with a rod no longer wears it
+    - "You reel in your line" now shows when fishing is cancelled
+    - the fishing bar is hidden during the death fade
+  - Re-verified with the full smoke run (153/153).
+
+### Known limitations
+
+- No food spoilage: it is left out on purpose because the roadmap allows it only if fun.
+- The fishing timing is fixed; an "easier timing" accessibility option is planned for the M16 settings pass.
+- New Khmer text (ត្រីអាំង, "grilled fish") needs native-speaker review like the rest.
 
 ---
 

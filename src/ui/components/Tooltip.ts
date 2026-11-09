@@ -37,6 +37,14 @@ export class Tooltip extends Phaser.GameObjects.Container {
     if (def.tool && stack.durability !== undefined) extra.push(`Durability ${Math.ceil(stack.durability)} / ${def.tool.durability}`);
     if (def.light && stack.durability !== undefined) extra.push(`Burns ${Math.ceil(stack.durability)}s more in the dark`);
     if (def.places) extra.push('F to place');
+    if (def.medicine) {
+      const m = def.medicine;
+      const bits = [m.heal ? `+${m.heal} health` : '', m.cures.includes('poison') ? 'cures poison' : ''].filter(Boolean);
+      extra.push(`Use (F): ${bits.join(' · ')}`);
+    }
+    if (def.fillsTo) extra.push('Hold it and press E at water to fill');
+    if (def.returns) extra.push(`Gives back a ${itemDef(def.returns).name} when used`);
+    if (def.tool?.kind === 'rod') extra.push('Hold it and press E at deep water to fish');
     const tail = extra.length ? `\n${extra.join('\n')}` : '';
     this.bodyText.setText(`${def.description}\n\n${rarity}${stack.qty} / ${def.stackSize} in stack${tail}`);
     const h = this.bodyText.y + this.bodyText.height + 12;
