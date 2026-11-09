@@ -1,0 +1,26 @@
+{
+  "offeringCategory": "food",
+  "spiritDust": 2,
+  "text": {
+    "prompt": "Make an offering at the Heart Tree",
+    "rootsBlock": "The ancient roots are too thick to pass. They seem to shrink from fire.",
+    "rootsWither": "The roots draw back from your light, and a path opens.",
+    "needTablets": "The great tree does not answer yet. You have not read all five tablets.",
+    "needOffering": "Hold food as an offering, and bring two spirit dust from the restless ones.",
+    "restored": "You lay down your offering with both hands. The old promise is spoken again."
+  },
+  "epilogue": [
+    "The Heart Tree stirs. A warm wind passes through the branches, and the old promise is renewed.",
+    "Far along the forest paths, the Neak Ta return to their shrines, and the offerings left for them are honoured once more.",
+    "The Ap and Arak grow quiet. The wound that called them begins to close, and the restless ones fade into the dark.",
+    "The roots loosen their grip, and the forest opens a little, as if to let you breathe.",
+    "The jungle is still deep, still alive, and still wild. You may stay, and keep walking its paths with care."
+  ],
+  "credits": [
+    "Prey Chrov (ព្រៃជ្រៅ) — a work of fiction",
+    "Code, art and sound generated for this prototype",
+    "Folklore-inspired creatures and places are creative interpretations, not authoritative descriptions of Khmer religion or culture",
+    "To be reviewed with Khmer speakers and cultural advisors",
+    "Thank you for playing"
+  ]
+}

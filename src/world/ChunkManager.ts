@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { CHUNKS, CHUNK_TILES, DEPTH, TILE_SIZE } from '../config';
+import { CHUNKS, CHUNK_TILES, DEPTH, TILE_SIZE, ySort } from '../config';
 import type { GameData } from '../data/schema';
 import { ResourceNode } from '../entities/ResourceNode';
 import { SCENERY_FOOTPRINT } from '../art/world';
@@ -29,6 +29,28 @@ const SHRINE_FOOTPRINT = { w: 20, h: 10 };
 const CHEST_FOOTPRINT = { w: 24, h: 10 };
 const TABLET_FOOTPRINT = { w: 16, h: 8 };
 
+// Tall enough that diagonal ring steps leave no gap a player can slip through.
+const ROOT_FOOTPRINT = { w: 34, h: 28 };
+const HEART_FOOTPRINT = { w: 64, h: 18 };
+
+/** One section of the ancient root ring around the Heart Tree. */
+export interface RootWall {
+  key: string;
+  x: number;
+  y: number;
+  image: Phaser.GameObjects.Image;
+  zone: Phaser.GameObjects.Zone;
+  withered: boolean;
+  /** Game time (ms) the root last stood in light. */
+  litAt: number;
+}
+
+export interface HeartInstance {
+  x: number;
+  y: number;
+  image: Phaser.GameObjects.Image;
+}
+
 /** Ruin chest or key tablet (state — opened/read — is owned by the World). */
 export interface RuinObject {
   key: string;
@@ -54,6 +76,8 @@ interface LoadedChunk {
   nodes: ResourceNode[];
   shrines: ShrineInstance[];
   ruins: RuinObject[];
+  roots: RootWall[];
+  heart: HeartInstance | null;
   /** Tiles flooded to shallows (with their dry index) for restoring. */
   flooded: Array<[Phaser.Tilemaps.Tile, number]>;
   /** Length of `animated` before flood tiles were appended. */
@@ -73,6 +97,10 @@ export class ChunkManager {
   readonly shrines: ShrineInstance[] = [];
   /** Live list of loaded ruin chests and key tablets (shared with Interaction). */
   readonly ruins: RuinObject[] = [];
+  /** Live list of loaded root-ring sections around the Heart Tree. */
+  readonly roots: RootWall[] = [];
+  /** The Heart Tree when its chunk is loaded. */
+  heart: HeartInstance | null = null;
   private floodLevel = 0;
   private floodWidth = 1;
   /** Loaded chunks waiting to be re-flooded at the current level (one per frame). */
@@ -175,7 +203,7 @@ export class ChunkManager {
     const collider = this.scene.physics.add.collider(this.player, layer);
     const animated = layer.filterTiles((t: Phaser.Tilemaps.Tile) => t.index === TILE.waterA || t.index === TILE.shallowsA);
 
-    const chunk: LoadedChunk = { key, cx, cy, tilemap, layer, collider, animated, images: [], zones: [], canopies: [], nodes: [], shrines: [], ruins: [], flooded: [], baseAnimated: animated.length };
+    const chunk: LoadedChunk = { key, cx, cy, tilemap, layer, collider, animated, images: [], zones: [], canopies: [], nodes: [], shrines: [], ruins: [], roots: [], heart: null, flooded: [], baseAnimated: animated.length };
     for (const p of data.props) {
       if (p.kind === 'resource') {
         const def = this.data.resources.get(p.id);
@@ -189,16 +217,30 @@ export class ChunkManager {
         }
         chunk.nodes.push(node);
         this.nodes.push(node);
+      } else if (p.kind === 'root') {
+        const image = this.scene.add.image(p.x, p.y + 2, TEX.roots, 0).setOrigin(0.5, 1).setDepth(ySort(p.y));
+        chunk.images.push(image);
+        const zone = this.props.addSolid(p.x, p.y, ROOT_FOOTPRINT);
+        chunk.zones.push(zone);
+        const root: RootWall = { key: p.key, x: p.x, y: p.y, image, zone, withered: false, litAt: -Infinity };
+        chunk.roots.push(root);
+        this.roots.push(root);
+      } else if (p.kind === 'heart') {
+        const image = this.scene.add.image(p.x, p.y, TEX.heartTree, 0).setOrigin(0.5, 1).setDepth(ySort(p.y));
+        chunk.images.push(image);
+        chunk.zones.push(this.props.addSolid(p.x, p.y, HEART_FOOTPRINT));
+        chunk.heart = { x: p.x, y: p.y, image };
+        this.heart = chunk.heart;
       } else if (p.kind === 'chest' || p.kind === 'tablet') {
         const tex = p.kind === 'chest' ? TEX.chest : TEX.tablet;
-        const image = this.scene.add.image(p.x, p.y, tex, 0).setOrigin(0.5, 1).setDepth(p.y);
+        const image = this.scene.add.image(p.x, p.y, tex, 0).setOrigin(0.5, 1).setDepth(ySort(p.y));
         chunk.images.push(image);
         chunk.zones.push(this.props.addSolid(p.x, p.y, p.kind === 'chest' ? CHEST_FOOTPRINT : TABLET_FOOTPRINT));
         const obj: RuinObject = { key: p.key, kind: p.kind, id: p.id, x: p.x, y: p.y, image };
         chunk.ruins.push(obj);
         this.ruins.push(obj);
       } else if (p.kind === 'shrine') {
-        const image = this.scene.add.image(p.x, p.y, TEX.shrine, 0).setOrigin(0.5, 1).setDepth(p.y);
+        const image = this.scene.add.image(p.x, p.y, TEX.shrine, 0).setOrigin(0.5, 1).setDepth(ySort(p.y));
         chunk.images.push(image);
         chunk.zones.push(this.props.addSolid(p.x, p.y, SHRINE_FOOTPRINT));
         const shrine = { key: p.key, x: p.x, y: p.y, image };
@@ -215,7 +257,7 @@ export class ChunkManager {
 
   private addScenery(chunk: LoadedChunk, id: ScenerySprite, x: number, y: number, variant: number, canopyVariant: number): void {
     const flip = variant % 2 === 1;
-    const img = this.scene.add.image(x, y, TEX.scenery, id).setOrigin(0.5, 1).setDepth(y).setFlipX(flip && !id.startsWith('ruin'));
+    const img = this.scene.add.image(x, y, TEX.scenery, id).setOrigin(0.5, 1).setDepth(ySort(y)).setFlipX(flip && !id.startsWith('ruin'));
     chunk.images.push(img);
     if (SOLID_SCENERY.has(id)) {
       const fp = SCENERY_FOOTPRINT[id];
@@ -242,6 +284,11 @@ export class ChunkManager {
       const i = this.ruins.indexOf(r);
       if (i >= 0) this.ruins.splice(i, 1);
     }
+    for (const r of c.roots) {
+      const i = this.roots.indexOf(r);
+      if (i >= 0) this.roots.splice(i, 1);
+    }
+    if (c.heart && this.heart === c.heart) this.heart = null;
     for (const img of c.images) img.destroy();
     for (const z of c.zones) this.props.removeSolid(z);
     for (const cp of c.canopies) this.props.removeCanopy(cp);
@@ -357,6 +404,8 @@ export class ChunkManager {
     this.nodes.length = 0;
     this.shrines.length = 0;
     this.ruins.length = 0;
+    this.roots.length = 0;
+    this.heart = null;
     this.floodQueue.length = 0;
     this.pending.length = 0;
   }

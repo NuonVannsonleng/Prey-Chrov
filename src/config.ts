@@ -184,6 +184,10 @@ export const WORLD_GEN = {
   ruinRadius: 10,
   /** Distance (tiles) from spawn to the Heart of the Forest. */
   heartDistance: 220,
+  /** Radius (tiles) of the Heart glade: dry, no random props. */
+  heartGladeRadius: 9,
+  /** Radius (tiles) of the closed ring of ancient roots around the Heart Tree. */
+  heartRootRadius: 6,
 } as const;
 
 export const MINIMAP = {

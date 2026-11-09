@@ -96,7 +96,10 @@ describe('main quest', () => {
     expect(q.stage).toBe('heart');
     expect(q.view().steps[0]?.progress).toBe('5/5');
     expect(q.reachHeart()).toBe(true);
+    expect(q.stage).toBe('restore');
+    expect(q.restore()).toBe(true);
     expect(q.stage).toBe('done');
+    expect(q.view().steps.every((st) => st.done)).toBe(true);
   });
 
   it('restores from a save and ignores unknown ids', () => {

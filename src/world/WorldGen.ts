@@ -9,7 +9,7 @@ const WATER_MINIMAP = { deep: '#1d4a52', shallow: '#2c6a6a' } as const;
 export interface GenProp {
   /** Stable id: "cx,cy:index" — chunk diffs and saves key on it. */
   key: string;
-  kind: 'resource' | 'scenery' | 'shrine' | 'chest' | 'tablet';
+  kind: 'resource' | 'scenery' | 'shrine' | 'chest' | 'tablet' | 'heart' | 'root';
   /** resources.json id (resource) or a SCENERY_SPRITES key (scenery). */
   id: string;
   x: number;
@@ -58,6 +58,7 @@ export class WorldGen {
   private readonly ruinCache = new Map<number, RuinSite | null>();
   private tabletSiteCache: RuinSite[] | null = null;
   private heartCache: { tx: number; ty: number } | null = null;
+  private heartSearching = false;
 
   constructor(
     seed: number,
@@ -148,6 +149,7 @@ export class WorldGen {
     if (pd <= 1) return pd <= 0.7 ? 'deep' : 'shallow';
     if (d <= WORLD_GEN.spawnSafeRadius + 2) return null;
     if (this.ruinAt(tx, ty)) return null;
+    if (this.inHeartGlade(tx, ty, 2)) return null;
 
     const r = Math.abs(this.river(tx / WORLD_GEN.riverScale, ty / WORLD_GEN.riverScale));
     if (r < WORLD_GEN.riverWidth) {
@@ -181,6 +183,7 @@ export class WorldGen {
     if (water === 'deep') return TILE.waterA;
     if (water === 'shallow') return TILE.shallowsA;
     if (shore) return TILE.shore;
+    if (this.inHeartGlade(tx, ty, 0)) return hash2(tx, ty, this.seed) % 3 === 0 ? TILE.leafLitter : TILE.moss;
     const ruin = this.ruinAt(tx, ty);
     if (ruin) {
       const rd = Math.hypot(tx - ruin.tx, ty - ruin.ty);
@@ -281,6 +284,7 @@ export class WorldGen {
 
     // Ruin architecture first so vegetation doesn't fill the courtyard.
     this.placeRuins(cx, cy, tiles, occupied, add);
+    this.placeHeart(cx, cy, occupied, add);
 
     // Solid props stay off chunk edge tiles so neighbouring chunks can never wall each other off.
     const solidOk = (lx: number, ly: number) =>
@@ -419,7 +423,13 @@ export class WorldGen {
    * nudged to dry, non-ruin land so the quest target is always reachable.
    */
   heartSite(): { tx: number; ty: number } {
+    return this.heartSiteRaw();
+  }
+
+  private heartSiteRaw(): { tx: number; ty: number } {
     if (this.heartCache) return this.heartCache;
+    if (this.heartSearching) return { tx: 1e9, ty: 1e9 };
+    this.heartSearching = true;
     const ang = ((hash2(17, 23, this.seed) % 3600) / 3600) * Math.PI * 2;
     const baseX = Math.round(Math.cos(ang) * WORLD_GEN.heartDistance);
     const baseY = Math.round(Math.sin(ang) * WORLD_GEN.heartDistance);
@@ -427,14 +437,52 @@ export class WorldGen {
       for (let a = 0; a < 16; a++) {
         const tx = baseX + Math.round(Math.cos((a / 16) * Math.PI * 2) * r);
         const ty = baseY + Math.round(Math.sin((a / 16) * Math.PI * 2) * r);
-        if (!this.waterAt(tx, ty) && !this.ruinAt(tx, ty)) {
+        if (!this.waterAt(tx, ty) && !this.ruinAt(tx, ty) && !this.ruinsNear(tx, ty, WORLD_GEN.heartGladeRadius + WORLD_GEN.ruinRadius + 2).length) {
           this.heartCache = { tx, ty };
+          this.heartSearching = false;
           return this.heartCache;
         }
       }
     }
     this.heartCache = { tx: baseX, ty: baseY };
+    this.heartSearching = false;
     return this.heartCache;
+  }
+
+  /** Inside the Heart glade (+margin tiles)? Heart site is computed lazily and cached. */
+  inHeartGlade(tx: number, ty: number, margin: number): boolean {
+    // Cheap reject before touching the cached site: the Heart is ~heartDistance tiles out.
+    const r = Math.hypot(tx, ty);
+    if (Math.abs(r - WORLD_GEN.heartDistance) > 80) return false;
+    const h = this.heartSiteRaw();
+    return Math.hypot(tx - h.tx, ty - h.ty) <= WORLD_GEN.heartGladeRadius + margin;
+  }
+
+  /** Heart Tree at the centre; a closed ring of ancient roots around it; the glade otherwise empty. */
+  private placeHeart(
+    cx: number,
+    cy: number,
+    occupied: Set<number>,
+    add: (kind: GenProp['kind'], id: string, lx: number, ly: number, solid: boolean, jitter?: number) => void,
+  ): void {
+    const N = CHUNK_TILES;
+    const tx0 = cx * N;
+    const ty0 = cy * N;
+    const h = this.heartSite();
+    const R = WORLD_GEN.heartGladeRadius;
+    if (h.tx + R < tx0 || h.tx - R >= tx0 + N || h.ty + R < ty0 || h.ty - R >= ty0 + N) return;
+    for (let ly = 0; ly < N; ly++) {
+      for (let lx = 0; lx < N; lx++) {
+        const d = Math.hypot(tx0 + lx - h.tx, ty0 + ly - h.ty);
+        if (d > R) continue;
+        if (Math.abs(d - WORLD_GEN.heartRootRadius) <= 0.55) add('root', 'heart_root', lx, ly, true, 0);
+        // Reserve the whole glade so no random props spawn in it.
+        occupied.add(ly * N + lx);
+      }
+    }
+    const clx = h.tx - tx0;
+    const cly = h.ty - ty0;
+    if (clx >= 0 && cly >= 0 && clx < N && cly < N) add('heart', 'heart_tree', clx, cly, true, 0);
   }
 
   /**

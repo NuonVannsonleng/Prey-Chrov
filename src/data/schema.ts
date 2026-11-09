@@ -185,6 +185,7 @@ export interface GameData {
   tablets: readonly TabletDef[];
   quests: ReadonlyMap<string, QuestDef>;
   lore: LoreConfig;
+  ending: EndingConfig;
 }
 
 export interface RawGameData {
@@ -203,6 +204,7 @@ export interface RawGameData {
   tablets: unknown;
   quests: unknown;
   lore: unknown;
+  ending: unknown;
 }
 
 // ---------- Validation ----------
@@ -571,7 +573,7 @@ function validateM6(p: string[], raw: RawGameData, tablets: Rec[], quests: Rec[]
     else
       steps.forEach((st: unknown, i) => {
         if (!isRec(st) || !isStr(st['id']) || !isStr(st['text'])) return void p.push(`${w} steps[${i}]: id and text required`);
-        if (st['kind'] !== 'collect_tablets' && st['kind'] !== 'reach_heart') p.push(`${w} steps[${i}]: unknown kind`);
+        if (st['kind'] !== 'collect_tablets' && st['kind'] !== 'reach_heart' && st['kind'] !== 'restore_heart') p.push(`${w} steps[${i}]: unknown kind`);
         if (st['kind'] === 'collect_tablets' && (!isInt(st['count']) || num(st['count']) < 1 || num(st['count']) > tablets.length))
           p.push(`${w} steps[${i}]: count must be 1..${tablets.length} (no dead-end quest)`);
       });
@@ -580,6 +582,20 @@ function validateM6(p: string[], raw: RawGameData, tablets: Rec[], quests: Rec[]
   const lore = raw.lore;
   if (!isRec(lore) || !isStr(lore['disclaimer']) || !Array.isArray(lore['entries'])) p.push('lore.json needs disclaimer and entries');
   if (!lootIds.has('ruin_chest')) p.push('loot.json: "ruin_chest" table required for ruin chests');
+  const e = raw.ending;
+  if (!isRec(e)) p.push('ending.json: must be an object');
+  else {
+    if (!ITEM_CATEGORIES.includes(e['offeringCategory'] as ItemCategory)) p.push('ending.offeringCategory unknown');
+    if (!isInt(e['spiritDust']) || num(e['spiritDust']) < 0 || num(e['spiritDust']) > 10) p.push('ending.spiritDust must be an integer 0..10');
+    const t = e['text'];
+    if (!isRec(t) || !['prompt', 'rootsBlock', 'rootsWither', 'needTablets', 'needOffering', 'restored'].every((k) => isStr(t[k]))) p.push('ending.text incomplete');
+    const ep = e['epilogue'];
+    if (!Array.isArray(ep) || ep.length < 3 || ep.length > 8 || !ep.every(isStr)) p.push('ending.epilogue needs 3–8 lines');
+    if (!Array.isArray(e['credits']) || !(e['credits'] as unknown[]).every(isStr)) p.push('ending.credits must be strings');
+  }
+  const main = quests.find((q) => q['id'] === 'the_five_tablets');
+  const steps = main && Array.isArray(main['steps']) ? (main['steps'] as Rec[]) : [];
+  if (!steps.some((st) => st['kind'] === 'restore_heart')) p.push('quests.json: main quest needs a final "restore_heart" step (a real conclusion)');
 }
 
 /** Validates raw JSON and returns typed lookup maps. Throws DataValidationError listing every problem. */
@@ -626,6 +642,7 @@ export function validateGameData(raw: RawGameData): GameData {
     tablets: (tablets as unknown as TabletDef[]).slice().sort((a, b) => a.order - b.order),
     quests: new Map((quests as unknown as QuestDef[]).map((q) => [q.id, q])),
     lore: raw.lore as LoreConfig,
+    ending: raw.ending as EndingConfig,
   };
 
   // Reachability: every item must be gatherable or craftable from gatherable items.
@@ -837,11 +854,32 @@ export interface QuestDef {
   titleKm?: string;
   description: string;
   mandatory: boolean;
-  steps: Array<{ id: string; text: string; kind: 'collect_tablets' | 'reach_heart'; count?: number }>;
+  steps: Array<{ id: string; text: string; kind: 'collect_tablets' | 'reach_heart' | 'restore_heart'; count?: number }>;
 }
 
 /** lore.json: glossary with a clear fiction disclaimer (single object). */
 export interface LoreConfig {
   disclaimer: string;
   entries: Array<{ term: string; termKm?: string; text: string }>;
+}
+
+// ---------- Ending (M8) ----------
+
+/** ending.json: the Heart of the Forest finale (single object). */
+export interface EndingConfig {
+  /** Item category accepted as the offering at the Heart Tree. */
+  offeringCategory: ItemCategory;
+  /** Spirit dust (from Ap/Arak) also needed: the restless spirits' share returned. 0 = none. */
+  spiritDust: number;
+  text: {
+    prompt: string;
+    rootsBlock: string;
+    rootsWither: string;
+    needTablets: string;
+    needOffering: string;
+    restored: string;
+  };
+  /** Ending sequence lines shown one after another (3–8). */
+  epilogue: string[];
+  credits: string[];
 }

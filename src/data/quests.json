@@ -7,7 +7,8 @@
     "mandatory": true,
     "steps": [
       { "id": "find_tablets", "kind": "collect_tablets", "count": 5, "text": "Find the five stone tablets hidden in the ruins." },
-      { "id": "seek_heart", "kind": "reach_heart", "text": "Seek the Heart of the Forest." }
+      { "id": "seek_heart", "kind": "reach_heart", "text": "Seek the Heart of the Forest." },
+      { "id": "renew_promise", "kind": "restore_heart", "text": "Make an offering at the Heart Tree." }
     ]
   }
 ]

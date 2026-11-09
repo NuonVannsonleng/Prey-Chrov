@@ -26,6 +26,8 @@ export const TEX = {
   tablet: 'tex-tablet',
   rain: 'tex-rain',
   arrow: 'tex-arrow',
+  heartTree: 'tex-heart-tree',
+  roots: 'tex-roots',
   minimap: 'tex-minimap',
   vignette: 'tex-vignette',
   menuBg: 'tex-menu-bg',

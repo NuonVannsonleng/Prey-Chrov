@@ -11,6 +11,7 @@ import season from './season.json';
 import tablets from './tablets.json';
 import quests from './quests.json';
 import lore from './lore.json';
+import ending from './ending.json';
 import structures from './structures.json';
 import survival from './survival.json';
 import { validateGameData, type GameData, type ItemDef } from './schema';
@@ -32,6 +33,7 @@ export const RAW_GAME_DATA = {
   tablets,
   quests,
   lore,
+  ending,
 };
 
 let cached: GameData | null = null;
