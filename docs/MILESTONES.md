@@ -87,7 +87,7 @@ Status legend: **Done** · **In progress** · **Not started**
     - the chest panel had a fixed size
     - the chest panel stayed open after being knocked away or dying
     - removed chest items were not counted in the old-save notice
-    -  was not validated
+    - `collectItem` was not validated
     - the roof ghost was drawn at the wrong depth
   - **Suggestion:** walls now snap to an 8 px grid for cleaner corners.
   - Re-verified with the full smoke run (171/171).
