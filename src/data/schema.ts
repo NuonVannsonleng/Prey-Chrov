@@ -1,4 +1,5 @@
 import {
+  CREATURE_SPRITES,
   GROUND_TILE_KEYS,
   ICON_KEYS,
   RESOURCE_SPRITES,
@@ -7,6 +8,7 @@ import {
   type GroundTileKey,
   type IconKey,
   type ResourceSprite,
+  type CreatureSprite,
   type StructureSprite,
 } from '../textures';
 
@@ -175,6 +177,10 @@ export interface GameData {
   structures: ReadonlyMap<string, StructureDef>;
   survival: SurvivalConfig;
   biomes: ReadonlyMap<BiomeId, BiomeDef>;
+  enemies: ReadonlyMap<string, EnemyDef>;
+  encounters: EncounterConfig;
+  combat: CombatConfig;
+  shrines: ShrineConfig;
 }
 
 export interface RawGameData {
@@ -185,6 +191,10 @@ export interface RawGameData {
   structures: unknown;
   survival: unknown;
   biomes: unknown;
+  enemies: unknown;
+  encounters: unknown;
+  combat: unknown;
+  shrines: unknown;
 }
 
 // ---------- Validation ----------
@@ -447,6 +457,83 @@ function validateBiomes(p: string[], biomes: Rec[], resourceIds: Set<string>): v
   }
 }
 
+function requireNumbers(p: string[], where: string, rec: unknown, keys: string[], min: number, max = Infinity): void {
+  if (!isRec(rec)) return void p.push(`${where}: must be an object`);
+  for (const k of keys) {
+    const v = rec[k];
+    if (!isNum(v) || v < min || v > max) p.push(`${where}.${k} must be a number in ${min}..${max}`);
+  }
+}
+
+function validateEnemies(p: string[], enemies: Rec[], lootIds: Set<string>): void {
+  for (const e of enemies) {
+    const w = `enemy "${String(e['id'])}"`;
+    if (!isStr(e['name'])) p.push(`${w}: name required`);
+    if (!isStr(e['description'])) p.push(`${w}: description required`);
+    if (e['kind'] !== 'wildlife' && e['kind'] !== 'spirit') p.push(`${w}: kind must be wildlife or spirit`);
+    if (!CREATURE_SPRITES.includes(e['sprite'] as CreatureSprite)) p.push(`${w}: unknown sprite ${String(e['sprite'])}`);
+    if (!['day', 'night', 'any'].includes(e['active'] as string)) p.push(`${w}: active must be day, night or any`);
+    if (!ENEMY_BEHAVIORS.includes(e['behavior'] as EnemyBehavior)) p.push(`${w}: unknown behavior ${String(e['behavior'])}`);
+    requireNumbers(p, w, e, ['hp', 'speed', 'attackRange', 'attackCooldownMs', 'aggroRadius', 'leashRadius'], 1);
+    requireNumbers(p, w, e, ['damage', 'telegraphMs'], 0);
+    requireNumbers(p, w, e, ['fleeBelowHp'], 0, 1);
+    if (isNum(e['telegraphMs']) && num(e['telegraphMs']) < 200) p.push(`${w}: telegraphMs must be >= 200 (fair warning)`);
+    if (isNum(e['leashRadius']) && isNum(e['aggroRadius']) && num(e['leashRadius']) < num(e['aggroRadius']))
+      p.push(`${w}: leashRadius must be >= aggroRadius`);
+    if (!lootIds.has(e['lootTable'] as string)) p.push(`${w}: unknown lootTable ${String(e['lootTable'])}`);
+    if (typeof e['avoidsLight'] !== 'boolean') p.push(`${w}: avoidsLight must be boolean`);
+    if (typeof e['flying'] !== 'boolean') p.push(`${w}: flying must be boolean`);
+    if (e['kind'] === 'spirit' && e['active'] !== 'night') p.push(`${w}: spirits must be night-only`);
+    if (e['kind'] === 'spirit' && e['avoidsLight'] !== true) p.push(`${w}: spirits must avoid light (the torch/fire promise)`);
+    const spawn = e['spawn'];
+    if (!isRec(spawn)) p.push(`${w}: spawn required`);
+    else {
+      requireNumbers(p, `${w} spawn`, spawn, ['weight', 'minDay', 'maxAlive'], 0);
+      const b = spawn['biomes'];
+      if (!isRec(b) || Object.keys(b).length === 0) p.push(`${w} spawn.biomes must list at least one biome`);
+      else for (const [k, v] of Object.entries(b)) {
+        if (!BIOME_IDS.includes(k as BiomeId)) p.push(`${w} spawn.biomes: unknown biome ${k}`);
+        if (!isNum(v) || v < 0) p.push(`${w} spawn.biomes.${k} must be >= 0`);
+      }
+    }
+    const behavior = e['behavior'];
+    if ((behavior === 'charger' || behavior === 'stalker' || behavior === 'flier') && !isRec(e['charge'])) p.push(`${w}: ${String(behavior)} needs charge`);
+    if (e['charge'] !== undefined) requireNumbers(p, `${w} charge`, e['charge'], ['speed', 'durationMs'], 1);
+    if (behavior === 'caster' && !isRec(e['projectile'])) p.push(`${w}: caster needs projectile`);
+    if (e['projectile'] !== undefined) requireNumbers(p, `${w} projectile`, e['projectile'], ['speed', 'damage', 'range'], 1);
+    if (e['poison'] !== undefined) requireNumbers(p, `${w} poison`, e['poison'], ['damagePerSecond', 'seconds'], 0.01);
+  }
+}
+
+function validateM5Configs(p: string[], raw: RawGameData): void {
+  const enc = raw.encounters;
+  if (!isRec(enc)) p.push('encounters.json: must be an object');
+  else {
+    requireNumbers(p, 'encounters.maxAlive', enc['maxAlive'], ['day', 'night'], 0, 40);
+    requireNumbers(p, 'encounters.spawnIntervalSeconds', enc['spawnIntervalSeconds'], ['day', 'night'], 0.5);
+    requireNumbers(p, 'encounters.spawnRing', enc['spawnRing'], ['min', 'max'], 200);
+    requireNumbers(p, 'encounters', enc, ['despawnDistance'], 400);
+    requireNumbers(p, 'encounters', enc, ['nightRampPerDay', 'firstNightMax'], 0);
+  }
+  requireNumbers(
+    p,
+    'combat',
+    raw.combat,
+    ['playerIFramesMs', 'playerKnockback', 'enemyIFramesMs', 'enemyKnockback', 'attackCooldownMs', 'attackArcDegrees', 'baseReach', 'spearBonusReach', 'handDamage'],
+    0,
+  );
+  const sh = raw.shrines;
+  if (!isRec(sh)) p.push('shrines.json: must be an object');
+  else {
+    requireNumbers(p, 'shrines', sh, ['chancePerClearingChunk'], 0, 1);
+    requireNumbers(p, 'shrines', sh, ['cooldownHours'], 0);
+    if (!ITEM_CATEGORIES.includes(sh['offeringCategory'] as ItemCategory)) p.push('shrines.offeringCategory unknown');
+    requireNumbers(p, 'shrines.blessing', sh['blessing'], ['durationHours', 'regenPerHour'], 0);
+    const text = sh['text'];
+    if (!isRec(text) || !['offered', 'resting', 'needOffering', 'prompt'].every((k) => isStr(text[k]))) p.push('shrines.text needs offered, resting, needOffering, prompt');
+  }
+}
+
 /** Validates raw JSON and returns typed lookup maps. Throws DataValidationError listing every problem. */
 export function validateGameData(raw: RawGameData): GameData {
   const p: string[] = [];
@@ -456,6 +543,7 @@ export function validateGameData(raw: RawGameData): GameData {
   const recipes = collectIds(p, 'recipes.json', raw.recipes);
   const structures = collectIds(p, 'structures.json', raw.structures);
   const biomes = collectIds(p, 'biomes.json', raw.biomes);
+  const enemies = collectIds(p, 'enemies.json', raw.enemies);
   const ids = (list: Rec[]) => new Set(list.map((i) => i['id']).filter(isStr));
   const itemIds = ids(items);
 
@@ -466,6 +554,8 @@ export function validateGameData(raw: RawGameData): GameData {
   validateStructures(p, structures);
   validateSurvival(p, raw.survival);
   validateBiomes(p, biomes, ids(resources));
+  validateEnemies(p, enemies, ids(loot));
+  validateM5Configs(p, raw);
 
   if (p.length) throw new DataValidationError(p);
 
@@ -477,6 +567,10 @@ export function validateGameData(raw: RawGameData): GameData {
     structures: new Map((structures as unknown as StructureDef[]).map((s) => [s.id, s])),
     survival: raw.survival as SurvivalConfig,
     biomes: new Map((biomes as unknown as BiomeDef[]).map((b) => [b.id, b])),
+    enemies: new Map((enemies as unknown as EnemyDef[]).map((e) => [e.id, e])),
+    encounters: raw.encounters as EncounterConfig,
+    combat: raw.combat as CombatConfig,
+    shrines: raw.shrines as ShrineConfig,
   };
 
   // Reachability: every item must be gatherable or craftable from gatherable items.
@@ -487,10 +581,11 @@ export function validateGameData(raw: RawGameData): GameData {
 }
 
 /** Items that some resource node can actually drop (directly obtainable in the world). */
-export function obtainableItems(data: Pick<GameData, 'resources' | 'loot'>): Set<string> {
+export function obtainableItems(data: Pick<GameData, 'resources' | 'loot'> & Partial<Pick<GameData, 'enemies'>>): Set<string> {
   const out = new Set<string>();
-  for (const res of data.resources.values()) {
-    const table = data.loot.get(res.lootTable);
+  const tables = [...data.resources.values()].map((r) => r.lootTable).concat([...(data.enemies?.values() ?? [])].map((e) => e.lootTable));
+  for (const id of tables) {
+    const table = data.loot.get(id);
     if (!table) continue;
     for (const g of table.guaranteed) out.add(g.item);
     if (table.rolls.max > 0) for (const e of table.entries) out.add(e.item);
@@ -502,7 +597,7 @@ export function obtainableItems(data: Pick<GameData, 'resources' | 'loot'>): Set
  * Fixed-point closure: gatherable items, plus outputs of recipes whose ingredients are all
  * reachable. Campfire-station recipes count only once the campfire item itself is reachable.
  */
-export function reachableItems(data: Pick<GameData, 'resources' | 'loot' | 'recipes' | 'items'>): Set<string> {
+export function reachableItems(data: Pick<GameData, 'resources' | 'loot' | 'recipes' | 'items'> & Partial<Pick<GameData, 'enemies'>>): Set<string> {
   const have = obtainableItems(data);
   const campfireItems = [...data.items.values()].filter((i) => i.places === 'campfire').map((i) => i.id);
   let changed = true;
@@ -547,4 +642,94 @@ export interface BiomeDef {
   ambience: string;
   /** Multiplier for night threat spawns (M5). 1 = normal. */
   nightDanger: number;
+}
+
+// ---------- Creatures, encounters, combat, shrines (M5) ----------
+
+export const ENEMY_BEHAVIORS = ['charger', 'striker', 'stalker', 'flier', 'caster'] as const;
+export type EnemyBehavior = (typeof ENEMY_BEHAVIORS)[number];
+
+/** enemies.json: array of EnemyDef. Neak Ta are never enemies (shrines.json). */
+export interface EnemyDef {
+  id: string;
+  name: string;
+  nameKm?: string;
+  description: string;
+  kind: 'wildlife' | 'spirit';
+  sprite: CreatureSprite;
+  /** When it may spawn. Spirits are night-only and fade at dawn. */
+  active: 'day' | 'night' | 'any';
+  behavior: EnemyBehavior;
+  hp: number;
+  /** Movement speed, px/s. */
+  speed: number;
+  /** Damage per hit (melee) — projectile damage is in `projectile`. */
+  damage: number;
+  /** Melee reach in px (centre to centre). */
+  attackRange: number;
+  attackCooldownMs: number;
+  /** Visible wind-up before an attack lands (fair warning). */
+  telegraphMs: number;
+  aggroRadius: number;
+  /** Gives up the chase beyond this distance. */
+  leashRadius: number;
+  /** Flees when hp fraction drops below this (0 = never flees). */
+  fleeBelowHp: number;
+  lootTable: string;
+  /** Spirits keep out of light (campfires, held torches). */
+  avoidsLight: boolean;
+  /** Fliers ignore trees/rocks/water. */
+  flying: boolean;
+  spawn: {
+    weight: number;
+    /** First day number it can appear on. */
+    minDay: number;
+    maxAlive: number;
+    /** Relative weight per biome; missing biome = never there. */
+    biomes: Partial<Record<BiomeId, number>>;
+  };
+  charge?: { speed: number; durationMs: number };
+  poison?: { damagePerSecond: number; seconds: number };
+  projectile?: { speed: number; damage: number; range: number };
+}
+
+/** encounters.json: population and pacing (single object). */
+export interface EncounterConfig {
+  maxAlive: { day: number; night: number };
+  /** Seconds between spawn attempts. */
+  spawnIntervalSeconds: { day: number; night: number };
+  /** Spawn distance band from the player (px), outside the camera view. */
+  spawnRing: { min: number; max: number };
+  despawnDistance: number;
+  /** Extra night population per day survived (fractional ok), capped by maxAlive.night. */
+  nightRampPerDay: number;
+  /** Night 1 cap (gentle first night). */
+  firstNightMax: number;
+}
+
+/** combat.json: player combat tuning (single object). */
+export interface CombatConfig {
+  playerIFramesMs: number;
+  playerKnockback: number;
+  enemyIFramesMs: number;
+  enemyKnockback: number;
+  attackCooldownMs: number;
+  /** Total swing arc in degrees. */
+  attackArcDegrees: number;
+  /** Bare-hand / short-tool reach in px. */
+  baseReach: number;
+  /** Extra reach when holding a spear. */
+  spearBonusReach: number;
+  handDamage: number;
+}
+
+/** shrines.json: Neak Ta guardian shrines (single object). Never hostile, never lootable. */
+export interface ShrineConfig {
+  /** Chance a clearing chunk holds a shrine. */
+  chancePerClearingChunk: number;
+  /** Item category accepted as an offering. */
+  offeringCategory: ItemCategory;
+  cooldownHours: number;
+  blessing: { durationHours: number; regenPerHour: number; spiritWard: boolean };
+  text: { offered: string; resting: string; needOffering: string; prompt: string };
 }

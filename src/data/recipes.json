@@ -137,5 +137,18 @@
     ],
     "station": "campfire",
     "category": "food"
+  },
+  {
+    "id": "cooked_meat",
+    "output": "cooked_meat",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "raw_meat",
+        "qty": 1
+      }
+    ],
+    "station": "campfire",
+    "category": "food"
   }
 ]

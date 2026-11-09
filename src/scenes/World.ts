@@ -624,19 +624,33 @@ export class World extends Phaser.Scene {
       if (!this.structures.place(st.type, st.x, st.y)) refundTypes.push(st.type);
     }
     this.placePlayer(ps.x, ps.y);
+    // Refunds go to the inventory first, then the ground at the player's feet; anything that
+    // still can't be placed is counted and reported, never silently dropped.
     let refunded = 0;
+    let lost = 0;
+    const give = (item: string, qty: number) => {
+      const left = this.inventory.add(item, qty);
+      if (left > 0 && !this.pickups.spawn(item, left, this.player.x, this.player.y + 10, 0, 0, 6)) lost += left;
+    };
     for (const type of refundTypes) {
       const kit = [...this.gameData.items.values()].find((i) => i.places === type);
       if (!kit) continue;
       refunded++;
-      // A full inventory never loses the kit: it lands on the ground at the player's feet.
-      if (this.inventory.add(kit.id, 1) > 0) this.pickups.spawn(kit.id, 1, this.player.x, this.player.y + 10, 0, 0, 6);
+      give(kit.id, 1);
     }
-    if (refunded > 0) {
-      this.time.delayedCall(800, () => gameEvents.emit('toast', { text: `${refunded} structure(s) could not be rebuilt and were returned as kits`, tone: 'info' }));
+    for (const r of save.refundItems) {
+      if (!this.gameData.items.has(r.item)) continue;
+      refunded++;
+      give(r.item, r.qty);
     }
     for (const pk of save.pickups) {
-      if (this.gameData.items.has(pk.item)) this.pickups.spawn(pk.item, pk.qty, pk.x, pk.y, 0, 0, 0, false, pk.durability);
+      if (this.gameData.items.has(pk.item) && !this.pickups.spawn(pk.item, pk.qty, pk.x, pk.y, 0, 0, 0, false, pk.durability)) lost += pk.qty;
+    }
+    if (refunded > 0 || lost > 0) {
+      const msg =
+        (refunded > 0 ? `${refunded} structure(s)/item stack(s) from an older save were returned to you. ` : '') +
+        (lost > 0 ? `${lost} ground item(s) could not be restored (too many on the ground).` : '');
+      this.time.delayedCall(800, () => gameEvents.emit('toast', { text: msg.trim(), tone: lost > 0 ? 'warn' : 'info' }));
     }
     this.objectives = new Objectives(save.objectives);
   }

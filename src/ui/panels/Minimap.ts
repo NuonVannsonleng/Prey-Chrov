@@ -113,11 +113,16 @@ export class Minimap {
       const ty = oy + j * tpp;
       const cy = Math.floor(ty / CHUNK_TILES);
       const ly = (ty - cy * CHUNK_TILES) / tpp;
+      let runCx = Number.NaN;
+      let cell: Uint8ClampedArray = new Uint8ClampedArray(0);
       for (let i = 0; i < size; i++) {
         const tx = ox + i * tpp;
         const cx = Math.floor(tx / CHUNK_TILES);
         const lx = (tx - cx * CHUNK_TILES) / tpp;
-        const cell = this.cellColors(gen, cx, cy);
+        if (cx !== runCx) {
+          runCx = cx;
+          cell = this.cellColors(gen, cx, cy);
+        }
         const s = (ly * n + lx) * 3;
         const o = (j * size + i) * 4;
         d[o] = cell[s] ?? 0;

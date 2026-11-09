@@ -8,6 +8,8 @@ import { SHALLOW_TILES, TEX, TILE, WATER_TILES, type ScenerySprite } from '../te
 import type { Canopy, PropLayer } from './PropLayer';
 import { SOLID_SCENERY, chunkKey, chunkOf, type WorldGen } from './WorldGen';
 
+const MAX_STATES = 3000;
+
 /** Persistent per-node state kept while its chunk is unloaded (compact diff). */
 interface NodeState {
   hp: number;
@@ -175,6 +177,7 @@ export class ChunkManager {
       const fresh = !n.depleted && n.hp >= n.def.hp && n.harvestCount === 0;
       if (fresh) this.states.delete(n.prop.key);
       else this.states.set(n.prop.key, { hp: n.hp, depleted: n.depleted, respawnAt: n.respawnAt, harvests: n.harvestCount });
+      this.capStates();
       n.destroy();
       const i = this.nodes.indexOf(n);
       if (i >= 0) this.nodes.splice(i, 1);
@@ -186,6 +189,18 @@ export class ChunkManager {
     c.tilemap.destroy();
     this.loaded.delete(c.key);
     this.onUnload?.(c.cx, c.cy);
+  }
+
+  /**
+   * Keeps saves bounded on very long games: beyond MAX_STATES, the oldest entries for nodes that
+   * have fully regrown are dropped (only their loot-seed history is lost; never a depleted state).
+   */
+  private capStates(): void {
+    if (this.states.size <= MAX_STATES) return;
+    for (const [key, s] of this.states) {
+      if (this.states.size <= MAX_STATES) break;
+      if (!s.depleted) this.states.delete(key);
+    }
   }
 
   /** Two-frame water/shallows animation for loaded chunks (index swap keeps collision flags). */

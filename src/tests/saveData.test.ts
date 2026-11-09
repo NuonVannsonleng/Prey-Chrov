@@ -19,6 +19,7 @@ const full: SaveData = {
   pickups: [{ item: 'stick', qty: 2, x: 950, y: 610 }],
   objectives: ['gather', 'craft_axe'],
   refundStructures: [],
+  refundItems: [],
 };
 
 describe('parseSave', () => {
@@ -95,6 +96,7 @@ describe('migration v1 → v2', () => {
     expect(r.data.refundStructures).toEqual(['campfire', 'bamboo_shelter']);
     expect(r.data.nodes).toEqual([]);
     expect(r.data.pickups).toEqual([]);
+    expect(r.data.refundItems).toEqual([{ item: 'stick', qty: 1 }]);
     expect(Number.isFinite(r.data.seed)).toBe(true);
   });
 });

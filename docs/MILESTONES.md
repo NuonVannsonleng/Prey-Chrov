@@ -7,10 +7,71 @@ Status legend: **Done** · **In progress** · **Not started**
 | M1 | Game shell, menus, movement, test world | Done |
 | M2 | Gathering, pickup and inventory | Done |
 | M3 | Survival, crafting, first night, death | Done |
-| M4 | Seeded procedural world, chunks, biomes, minimap | Not started |
+| M4 | Seeded procedural world, chunks, biomes, minimap | Done |
 | M5 | Wildlife, night spirits, combat and guardian shrines | Not started |
 | M6 | Monsoon, ruins, tablets and core quest | Not started |
 | M7 | Persistence, performance and MVP polish | Not started |
+
+---
+
+## M4 — Seeded procedural world, chunks, biomes, minimap
+
+### Implemented (playable)
+
+- **Endless seeded world** (`world/WorldGen.ts`). Every tile and prop is a pure function of (seed, tile coordinates), so revisiting or regenerating a chunk gives the same result, with negative coordinates included.
+  - **Noise fields:** moisture, vegetation, rivers, fords and swamp ponds.
+  - **Biomes:** five, defined in `biomes.json` by the content-designer stand-in, each with ground mixes, prop densities, a minimap colour, ambience and a night-danger factor (used in M5):
+    - Forest Clearing: open, berries, the start biome.
+    - Deep Jungle: dense trees, ancient big trees, dark floor.
+    - Bamboo Grove.
+    - River & Swamp: mud, reeds, ponds.
+    - Ancient Ruins: rare.
+  - **Rivers** have walkable shallow fords, so they never wall off the world. Shallows slow you to 60% and you can drink from them; mud slows you to 85%.
+  - **Ancient ruins:** at most one per 5×5-chunk cell. Each is a stone courtyard with a broken ring wall that always has four gateways, corner pillars and a central altar.
+- **Safe spawn:** tile (0,0) is always a clearing with no rivers, a starter pond 8 tiles away, and guaranteed trees, boulders, berry bushes and bamboo within about 10 tiles, so no seed can be unwinnable.
+- **Streaming** (`world/ChunkManager.ts`):
+  - 32×32-tile chunks; the 3×3 around the player stay loaded, and chunks unload beyond a radius of 2 (hysteresis).
+  - Your own chunk builds immediately; the rest build one per frame.
+  - Each chunk has its own tilemap layer and exactly one player collider.
+  - Unloading destroys the tilemap, collider, scenery, solids, canopies and nodes.
+  - **Node diffs** (HP, depleted, respawn time, harvest count) persist while a chunk is unloaded, and are saved.
+- **Placement rules:** solid props never sit on chunk edge tiles (ruins excepted) and always leave a free 3×3 neighbourhood, so neighbouring chunks can't trap the player.
+- **Structures** persist as records and only exist as objects while their chunk is loaded.
+- **Minimap** (top right):
+  - Biome colours come from the same generator, cached per chunk.
+  - Markers: the player, your campfires and shelters, and ruin landmarks (purple diamonds), which help you find rare ruins.
+  - The current biome's name (and Khmer name) shows below it.
+- **Seed:** each new journey gets a random seed, `?seed=N` picks one, and the pause menu shows the current seed.
+- **Save v2:** stores the seed and string node keys. v1 saves (from the old fixed test grove) migrate: stats, inventory, clock and objectives are kept, placed structures come back as kits, and you start at the new world's spawn.
+
+### Verification
+
+- `npm run typecheck` and `npm run build` pass.
+- `npm test`: 107 unit tests, including the world-generation suite:
+  - determinism for positive and negative chunks
+  - different seeds giving different worlds
+  - safe spawn with every material and water, for 5 seeds
+  - no solids on chunk edges or water, no adjacent solids
+  - a flood fill from spawn over 224×224 tiles reaching at least 95% of dry land, including every ruin courtyard
+  - at least 4 biomes within a radius of 300 tiles
+  - the v1 → v2 save migration
+- `npm run smoke`: 79 browser checks. The M4 ones:
+  - the URL seed is used, and the minimap shows the biome name
+  - a far walk of 14 jumps × 900 px keeps loaded chunks ≤ 25 and bodies, colliders and display objects bounded
+  - several biomes are crossed
+  - a harvested bush near spawn is still harvested after its chunk unloads and reloads
+  - object counts don't accumulate
+  - negative coordinates stream in
+  - the same chunk signature for the seed, also after reload and Continue
+- QA: a stand-in for `phaser-qa` found 0 Critical and 3 Warnings, all fixed (chunk generation 8.6 → 0.95 ms). Details in CHANGELOG.
+
+### Known limitations
+
+- No full map yet (M13); the minimap covers about 300×300 tiles around you with no fog of war.
+- Ground ruins exist as landmarks only. Chests, tablets and quests arrive in M6.
+- Ground items (pickups) are global, not chunked. They're capped at 400 and kept when far away.
+- Biome transitions are noise-based patches without blended edge tiles.
+- Khmer biome names need native-speaker review.
 
 ---
 

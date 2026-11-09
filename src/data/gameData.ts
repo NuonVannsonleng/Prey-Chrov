@@ -1,14 +1,18 @@
 import biomes from './biomes.json';
+import combat from './combat.json';
+import encounters from './encounters.json';
+import enemies from './enemies.json';
 import items from './items.json';
 import loot from './loot.json';
 import recipes from './recipes.json';
 import resources from './resources.json';
+import shrines from './shrines.json';
 import structures from './structures.json';
 import survival from './survival.json';
 import { validateGameData, type GameData, type ItemDef } from './schema';
 
 /** Raw JSON bundle (also used by tests). */
-export const RAW_GAME_DATA = { items, loot, resources, recipes, structures, survival, biomes };
+export const RAW_GAME_DATA = { items, loot, resources, recipes, structures, survival, biomes, enemies, encounters, combat, shrines };
 
 let cached: GameData | null = null;
 

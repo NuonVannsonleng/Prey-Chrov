@@ -1,0 +1,11 @@
+{
+  "playerIFramesMs": 700,
+  "playerKnockback": 220,
+  "enemyIFramesMs": 200,
+  "enemyKnockback": 200,
+  "attackCooldownMs": 420,
+  "attackArcDegrees": 110,
+  "baseReach": 30,
+  "spearBonusReach": 16,
+  "handDamage": 1
+}

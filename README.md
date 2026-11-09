@@ -3,7 +3,7 @@
 A 2D top-down survival adventure set in a fictional Cambodian jungle, built with **Phaser 3 + TypeScript + Vite**.
 All art is generated in code as replaceable placeholders.
 
-> Status: **Milestone 3** — survive the first day and night: gather, craft, build a campfire and shelter, sleep (saves), Continue. See [docs/MILESTONES.md](docs/MILESTONES.md).
+> Status: **Milestone 4** — an endless seeded jungle: five biomes, rivers with fords, rare ancient ruins, chunk streaming and a minimap, on top of the full first-day survival loop. Add `?seed=1234` to the URL to pick a world. See [docs/MILESTONES.md](docs/MILESTONES.md).
 
 ## Run
 
@@ -50,7 +50,7 @@ src/
   scenes/            Boot, Preload, Menu, World, UI, Pause
   entities/          Player, ResourceNode
   systems/           Movement, GameEvents, Save, Inventory, PlayerInventory, Loot, Gathering, Pickups, Interaction
-  world/             TestMap (fixed test grove), PropLayer (scenery, colliders, canopy fade)
+  world/             WorldGen (seeded noise world), ChunkManager (streaming), PropLayer (colliders, canopy fade)
   ui/                FloatingText, components/ (Button, ItemSlot, Tooltip, Toast, ConfirmDialog), panels/ (Hotbar, InventoryPanel)
   utils/random.ts    Seeded PRNG + coordinate hash
   tests/             Vitest unit tests

@@ -95,6 +95,46 @@ export const SURVIVAL_ICON_DRAW = {
     px(ctx, ox + 7, 7, 2, 1, hex(0x5a3a1a));
     px(ctx, ox + 9, 9, 1, 1, hex(0xe6b866));
   },
+  meat_raw: (ctx: Ctx, ox: number) => {
+    ellipse(ctx, ox + 8, 9, 6, 4.5, hex(0xb2433a));
+    ellipse(ctx, ox + 7, 8, 3, 2, hex(0xd9786a));
+    px(ctx, ox + 11, 11, 4, 2, hex(0xe8e0cc));
+  },
+  meat_cooked: (ctx: Ctx, ox: number) => {
+    ellipse(ctx, ox + 8, 9, 6, 4.5, hex(0x7a4a2a));
+    ellipse(ctx, ox + 7, 8, 3, 2, hex(0xa86a3a));
+    px(ctx, ox + 11, 11, 4, 2, hex(0xe8e0cc));
+    px(ctx, ox + 5, 6, 1, 1, hex(0xe6b866));
+  },
+  hide: (ctx: Ctx, ox: number) => {
+    ctx.fillStyle = hex(0x6b5048);
+    ctx.beginPath();
+    ctx.moveTo(ox + 2, 4);
+    ctx.lineTo(ox + 14, 3);
+    ctx.lineTo(ox + 13, 13);
+    ctx.lineTo(ox + 3, 14);
+    ctx.closePath();
+    ctx.fill();
+    for (let i = 0; i < 6; i++) px(ctx, ox + 4 + i * 1.5, 5 + (i % 3) * 3, 1, 2, hex(0x4a3a30));
+  },
+  fang: (ctx: Ctx, ox: number) => {
+    ctx.fillStyle = hex(0xe8e0cc);
+    ctx.beginPath();
+    ctx.moveTo(ox + 5, 2);
+    ctx.quadraticCurveTo(ox + 13, 6, ox + 9, 14);
+    ctx.quadraticCurveTo(ox + 9, 7, ox + 5, 2);
+    ctx.fill();
+    px(ctx, ox + 5, 2, 3, 2, hex(0x8a7a5a));
+  },
+  spirit_dust: (ctx: Ctx, ox: number) => {
+    for (const [x, y, r] of [
+      [8, 8, 4],
+      [4, 5, 1.6],
+      [12, 4, 1.4],
+      [11, 12, 1.8],
+    ] as const) ellipse(ctx, ox + x, y, r, r, 'rgba(197,139,224,0.85)');
+    ellipse(ctx, ox + 8, 8, 1.5, 1.5, hex(0xffffff));
+  },
 } as const;
 
 // ---------- Structures ----------

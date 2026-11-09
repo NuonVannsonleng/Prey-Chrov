@@ -62,6 +62,8 @@ export interface SaveData {
    * they are returned to the player as kits on load.
    */
   refundStructures: string[];
+  /** Items to return to the player on load (e.g. ground items from a pre-procedural save). */
+  refundItems: Array<{ item: string; qty: number }>;
 }
 
 function defaultStorage(): KeyValueStorage | null {
@@ -91,6 +93,9 @@ const MIGRATIONS: Record<number, (old: Rec) => Rec> = {
     seed: (typeof old['savedAt'] === 'number' ? old['savedAt'] : 1) >>> 0,
     refundStructures: (Array.isArray(old['structures']) ? old['structures'] : []).flatMap((s: unknown) =>
       isRec(s) && typeof s['type'] === 'string' ? [s['type']] : [],
+    ),
+    refundItems: (Array.isArray(old['pickups']) ? old['pickups'] : []).flatMap((p: unknown) =>
+      isRec(p) && typeof p['item'] === 'string' && typeof p['qty'] === 'number' && p['qty'] > 0 ? [{ item: p['item'], qty: Math.floor(p['qty']) }] : [],
     ),
     structures: [],
     nodes: [],
@@ -199,6 +204,12 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
     refundStructures: (Array.isArray(rec['refundStructures']) ? rec['refundStructures'] : []).filter(
       (o): o is string => typeof o === 'string',
     ),
+    refundItems: (Array.isArray(rec['refundItems']) ? rec['refundItems'] : []).flatMap((o: unknown) => {
+      if (!isRec(o)) return [];
+      const item = str(o['item']);
+      const qty = Math.floor(finite(o['qty'], 0));
+      return item && qty > 0 ? [{ item, qty }] : [];
+    }),
   };
   return { data };
 }

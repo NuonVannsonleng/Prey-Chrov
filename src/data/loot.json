@@ -133,5 +133,99 @@
         "max": 1
       }
     ]
+  },
+  {
+    "id": "boar_loot",
+    "guaranteed": [
+      {
+        "item": "raw_meat",
+        "min": 2,
+        "max": 3
+      }
+    ],
+    "rolls": {
+      "min": 0,
+      "max": 1
+    },
+    "entries": [
+      {
+        "item": "hide",
+        "weight": 3,
+        "min": 1,
+        "max": 1
+      }
+    ]
+  },
+  {
+    "id": "viper_loot",
+    "guaranteed": [
+      {
+        "item": "raw_meat",
+        "min": 1,
+        "max": 1
+      }
+    ],
+    "rolls": {
+      "min": 0,
+      "max": 0
+    },
+    "entries": []
+  },
+  {
+    "id": "tiger_loot",
+    "guaranteed": [
+      {
+        "item": "raw_meat",
+        "min": 3,
+        "max": 4
+      },
+      {
+        "item": "hide",
+        "min": 1,
+        "max": 2
+      }
+    ],
+    "rolls": {
+      "min": 1,
+      "max": 1
+    },
+    "entries": [
+      {
+        "item": "tiger_fang",
+        "weight": 1,
+        "min": 1,
+        "max": 1
+      }
+    ]
+  },
+  {
+    "id": "ap_loot",
+    "guaranteed": [
+      {
+        "item": "spirit_dust",
+        "min": 1,
+        "max": 1
+      }
+    ],
+    "rolls": {
+      "min": 0,
+      "max": 0
+    },
+    "entries": []
+  },
+  {
+    "id": "arak_loot",
+    "guaranteed": [
+      {
+        "item": "spirit_dust",
+        "min": 1,
+        "max": 2
+      }
+    ],
+    "rolls": {
+      "min": 0,
+      "max": 0
+    },
+    "entries": []
   }
 ]

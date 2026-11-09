@@ -1,0 +1,12 @@
+{
+  "chancePerClearingChunk": 0.12,
+  "offeringCategory": "food",
+  "cooldownHours": 20,
+  "blessing": { "durationHours": 7, "regenPerHour": 4, "spiritWard": true },
+  "text": {
+    "offered": "You leave your offering at the Neak Ta shrine and bow. The forest feels watchful, and kind.",
+    "resting": "Fresh flowers still rest here. Let the guardian be — return another day.",
+    "needOffering": "Hold some food to leave as an offering.",
+    "prompt": "Offer food at the Neak Ta shrine"
+  }
+}

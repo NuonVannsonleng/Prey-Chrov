@@ -47,6 +47,7 @@ export function buildSave(w: WorldState): SaveData {
     pickups: w.pickups.serialize(),
     objectives: w.objectives.serialize(),
     refundStructures: [],
+    refundItems: [],
   };
 }
 

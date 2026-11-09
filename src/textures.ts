@@ -18,6 +18,10 @@ export const TEX = {
   light: 'tex-light',
   flame: 'tex-flame',
   scenery: 'tex-scenery',
+  creatures: 'tex-creatures',
+  shrine: 'tex-shrine',
+  orb: 'tex-orb',
+  status: 'tex-status',
   minimap: 'tex-minimap',
   vignette: 'tex-vignette',
   menuBg: 'tex-menu-bg',
@@ -115,6 +119,11 @@ export const ICON_KEYS = [
   'shelter',
   'bamboo_shoot',
   'roasted_shoot',
+  'meat_raw',
+  'meat_cooked',
+  'hide',
+  'fang',
+  'spirit_dust',
 ] as const;
 export type IconKey = (typeof ICON_KEYS)[number];
 
@@ -126,6 +135,13 @@ export const STRUCTURE_FRAME: Record<StructureSprite, { x: number; w: number; h:
   shelter: { x: 32, w: 72, h: 60 },
 };
 export const LIGHT_TEXTURE_SIZE = 256;
+
+/** Creature visuals (enemies.json `sprite`); frames "<sprite>-<0..4>" inside TEX.creatures. */
+export const CREATURE_SPRITES = ['boar', 'snake', 'tiger', 'ap', 'arak'] as const;
+export type CreatureSprite = (typeof CREATURE_SPRITES)[number];
+/** 0 idle, 1 move A, 2 move B, 3 telegraph, 4 attack. */
+export const CREATURE_FRAMES = 5;
+export const CREATURE_POSE = { idle: 0, moveA: 1, moveB: 2, telegraph: 3, attack: 4 } as const;
 
 export function playerFrameName(dir: PlayerDir, pose: PlayerPose): string {
   return `${dir}-${pose}`;

@@ -1,0 +1,8 @@
+{
+  "maxAlive": { "day": 3, "night": 6 },
+  "spawnIntervalSeconds": { "day": 9, "night": 5 },
+  "spawnRing": { "min": 430, "max": 560 },
+  "despawnDistance": 900,
+  "nightRampPerDay": 1.5,
+  "firstNightMax": 2
+}

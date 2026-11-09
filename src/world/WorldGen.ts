@@ -4,6 +4,8 @@ import { CHUNK_TILES, TILE_SIZE, WORLD_GEN } from '../config';
 import { GROUND_TILE, TILE, type GroundTileKey } from '../textures';
 import { hash2, mulberry32 } from '../utils/random';
 
+const WATER_MINIMAP = { deep: '#1d4a52', shallow: '#2c6a6a' } as const;
+
 export interface GenProp {
   /** Stable id: "cx,cy:index" — chunk diffs and saves key on it. */
   key: string;
@@ -53,7 +55,7 @@ export class WorldGen {
   private readonly ford: NoiseFunction2D;
   private readonly pond: NoiseFunction2D;
   private readonly detail: NoiseFunction2D;
-  private readonly ruinCache = new Map<string, RuinSite | null>();
+  private readonly ruinCache = new Map<number, RuinSite | null>();
 
   constructor(
     seed: number,
@@ -83,7 +85,7 @@ export class WorldGen {
 
   /** Rare ruin sites: at most one per RUIN_CELL×RUIN_CELL chunk cell, never near spawn. */
   ruinSiteInCell(cellX: number, cellY: number): RuinSite | null {
-    const key = `${cellX},${cellY}`;
+    const key = cellX * 4194304 + cellY;
     const cached = this.ruinCache.get(key);
     if (cached !== undefined) return cached;
     const h = hash2(cellX, cellY, this.seed ^ 0x5eed);
@@ -101,15 +103,9 @@ export class WorldGen {
 
   ruinAt(tx: number, ty: number): RuinSite | null {
     const span = WORLD_GEN.ruinCellChunks * CHUNK_TILES;
-    const cx = Math.floor(tx / span);
-    const cy = Math.floor(ty / span);
-    for (let oy = -1; oy <= 1; oy++) {
-      for (let ox = -1; ox <= 1; ox++) {
-        const s = this.ruinSiteInCell(cx + ox, cy + oy);
-        if (s && Math.hypot(tx - s.tx, ty - s.ty) <= s.radius) return s;
-      }
-    }
-    return null;
+    // Sites sit ≥16 tiles inside their cell with radius 10, so only the tile's own cell can hold one.
+    const s = this.ruinSiteInCell(Math.floor(tx / span), Math.floor(ty / span));
+    return s && Math.hypot(tx - s.tx, ty - s.ty) <= s.radius ? s : null;
   }
 
   /** Ruin sites whose centre lies within `radiusTiles` of a tile (for maps and landmarks). */
@@ -169,11 +165,18 @@ export class WorldGen {
 
   tileAt(tx: number, ty: number): number {
     const water = this.waterAt(tx, ty);
+    let shore = false;
+    if (!water) {
+      for (let oy = -1; oy <= 1 && !shore; oy++) for (let ox = -1; ox <= 1; ox++) if ((ox || oy) && this.waterAt(tx + ox, ty + oy) === 'deep') shore = true;
+    }
+    return this.tileFrom(tx, ty, water, shore);
+  }
+
+  /** Tile index from precomputed water info (shared by tileAt and the chunk grid). */
+  private tileFrom(tx: number, ty: number, water: 'deep' | 'shallow' | null, shore: boolean): number {
     if (water === 'deep') return TILE.waterA;
     if (water === 'shallow') return TILE.shallowsA;
-    // Shore ring around deep water.
-    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) if ((ox || oy) && this.waterAt(tx + ox, ty + oy) === 'deep') return TILE.shore;
-
+    if (shore) return TILE.shore;
     const ruin = this.ruinAt(tx, ty);
     if (ruin) {
       const rd = Math.hypot(tx - ruin.tx, ty - ruin.ty);
@@ -201,8 +204,8 @@ export class WorldGen {
 
   minimapColor(tx: number, ty: number): string {
     const w = this.waterAt(tx, ty);
-    if (w === 'deep') return '#1d4a52';
-    if (w === 'shallow') return '#2c6a6a';
+    if (w === 'deep') return WATER_MINIMAP.deep;
+    if (w === 'shallow') return WATER_MINIMAP.shallow;
     return this.biome(this.biomeAt(tx, ty)).minimapColor;
   }
 
@@ -212,10 +215,20 @@ export class WorldGen {
     const N = CHUNK_TILES;
     const tx0 = cx * N;
     const ty0 = cy * N;
+    const G = N + 2;
+    const water: Array<'deep' | 'shallow' | null> = new Array(G * G);
+    for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) water[y * G + x] = this.waterAt(tx0 + x - 1, ty0 + y - 1);
     const tiles: number[][] = [];
     for (let y = 0; y < N; y++) {
       const row: number[] = [];
-      for (let x = 0; x < N; x++) row.push(this.tileAt(tx0 + x, ty0 + y));
+      for (let x = 0; x < N; x++) {
+        const w = water[(y + 1) * G + x + 1] ?? null;
+        let shore = false;
+        if (!w) {
+          for (let oy = 0; oy <= 2 && !shore; oy++) for (let ox = 0; ox <= 2; ox++) if (water[(y + oy) * G + x + ox] === 'deep') shore = true;
+        }
+        row.push(this.tileFrom(tx0 + x, ty0 + y, w, shore));
+      }
       tiles.push(row);
     }
 
@@ -290,16 +303,22 @@ export class WorldGen {
     );
     if (!site) return;
     const wallR = site.radius - 2;
-    for (let ly = 1; ly < N - 1; ly++) {
-      for (let lx = 1; lx < N - 1; lx++) {
+    const gateAngles = [0, Math.PI / 2, Math.PI, -Math.PI / 2, -Math.PI];
+    for (let ly = 0; ly < N; ly++) {
+      for (let lx = 0; lx < N; lx++) {
         const tx = tx0 + lx;
         const ty = ty0 + ly;
         const d = Math.hypot(tx - site.tx, ty - site.ty);
-        if (Math.abs(d - wallR) > 0.5) continue;
-        // Four wide gateways (N/E/S/W) guarantee the courtyard is always reachable.
         const ang = Math.atan2(ty - site.ty, tx - site.tx);
-        const toGate = Math.min(...[0, Math.PI / 2, Math.PI, -Math.PI / 2, -Math.PI].map((g) => Math.abs(ang - g)));
-        if (toGate < 0.38) continue;
+        let toGate = Infinity;
+        for (const g of gateAngles) toGate = Math.min(toGate, Math.abs(ang - g));
+        // Four wide gateways (N/E/S/W) guarantee the courtyard is always reachable:
+        // reserve them (and the path just inside/outside) so random props can't block them.
+        if (toGate < 0.38 && Math.abs(d - wallR) <= 2.5) {
+          occupied.add(ly * N + lx);
+          continue;
+        }
+        if (Math.abs(d - wallR) > 0.5) continue;
         if (hash2(tx, ty, this.seed ^ 0x77) % 5 === 0) continue;
         const t = tiles[ly]?.[lx];
         if (t === TILE.waterA || occupied.has(ly * N + lx)) continue;

@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.4.0 — M4: Seeded procedural world, chunks, biomes, minimap (2026-11-09)
+
+### Added
+- An endless seeded world built from simplex noise. It has five data-driven biomes, rivers with shallow fords, swamp ponds, and rare ancient ruins with gated walls.
+- The spawn area is safe and always has a starter pond and every basic material. `?seed=N` picks a world, and the pause menu shows the seed.
+- Chunk streaming:
+  - 32×32-tile chunks; radius 1 is loaded and radius 2 unloaded, with one build per frame.
+  - One collider per chunk, and everything is released on unload.
+  - Node diffs persist across unloads and saves.
+- New tiles (mud, stone floor, animated walkable shallows, jungle floor) and scenery (big trees, reeds, ruin pieces).
+- Minimap with biome colours, plus player, structure and ruin markers and the biome name.
+- Save v2 with the seed and node keys. v1 saves migrate (structures and ground items are returned to the player).
+
+### QA
+- Run by a stand-in for `phaser-qa`: **0 Critical, 3 Warnings**. All three are fixed:
+  1. Chunk generation could hitch frames (8.6 ms per chunk). A water grid is now computed once per chunk, the ruin lookup checks a single cell, and the cache key is numeric. A chunk now takes 0.95 ms.
+  2. v1 saves lost ground items. They now come back through `refundItems`.
+  3. Refunded kits and saved pickups could be lost when the ground pool was full. They now go to the inventory first, then the ground, and any loss is counted and reported.
+- Suggestions applied:
+  - Ruin walls continue across chunk seams.
+  - Ruin gateways are reserved so props can't block them.
+  - Minimap lookups happen once per chunk run instead of per pixel.
+  - Node diffs are capped at 3000; depleted states are never dropped.
+  - Water minimap colours live in one place.
+- Deferred: moving `starterProps` and the scenery solid/footprint data into JSON.
+
+
 ## 0.3.0 — M3: Survival, crafting, first night, death (2026-11-09)
 
 ### Added
