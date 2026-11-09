@@ -7,13 +7,16 @@ import { ButtonList } from '../ui/components/ButtonList';
 export interface GameOverData {
   day: number;
   time: string;
-  cause: 'starvation' | 'dehydration' | 'injury';
+  cause: 'starvation' | 'dehydration' | 'injury' | 'wildlife' | 'spirit' | 'poison';
 }
 
 const CAUSE_TEXT: Record<GameOverData['cause'], string> = {
   starvation: 'Hunger took you. Berries and roasted bamboo shoots keep you fed.',
   dehydration: 'Thirst took you. Drink at the water often — it is always free.',
   injury: 'Your wounds were too much. Raw food can hurt; cook it at a campfire.',
+  wildlife: 'An animal of the forest took you. Watch for the wind-up, then sidestep — or simply keep your distance.',
+  spirit: 'The night took you. Spirits will not enter firelight: carry a torch and stay near your campfire.',
+  poison: 'Venom took you. Poison wears off with time — rest and keep your distance from vipers.',
 };
 
 /** Short death summary with restart options. Never deletes the save. */

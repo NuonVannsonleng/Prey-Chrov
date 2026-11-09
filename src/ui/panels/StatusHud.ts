@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { CSS, FONTS, GAME_WIDTH } from '../../config';
 import type { ClockTick, ObjectiveView, SurvivalTick } from '../../systems/GameEvents';
+import { TEX } from '../../textures';
 
 interface Bar {
   key: keyof Pick<SurvivalTick, 'health' | 'hunger' | 'thirst' | 'stamina'>;
@@ -26,6 +27,8 @@ export class StatusHud {
   private readonly objectiveLines: Phaser.GameObjects.Text[] = [];
   private lastClock = '';
   private readonly lastValues = new Map<string, string>();
+  private readonly effectIcons: Phaser.GameObjects.Image[] = [];
+  private readonly effectTexts: Phaser.GameObjects.Text[] = [];
 
   constructor(scene: Phaser.Scene) {
     const x = 24;
@@ -59,7 +62,13 @@ export class StatusHud {
       })
       .setOrigin(0.5, 0);
 
-    this.objectives = scene.add.container(24, 168);
+    for (let i = 0; i < 3; i++) {
+      this.effectIcons.push(scene.add.image(30 + i * 124, 162, TEX.status, 'poison').setScale(1.5).setVisible(false));
+      this.effectTexts.push(
+        scene.add.text(42 + i * 124, 154, '', { fontFamily: FONTS.ui, fontSize: '13px', fontStyle: '600', color: CSS.text }).setVisible(false),
+      );
+    }
+    this.objectives = scene.add.container(24, 182);
     this.objectiveTitle = scene.add.text(0, 0, 'First day', { fontFamily: FONTS.ui, fontSize: '14px', fontStyle: '700', color: CSS.gold });
     this.objectives.add(this.objectiveTitle);
   }
@@ -90,6 +99,29 @@ export class StatusHud {
                 ? 'Low!'
                 : '';
       if (b.warn.text !== warning) b.warn.setText(warning).setVisible(warning !== '');
+    }
+  }
+
+  /** Status effect row (icon + name + seconds), not colour-only. */
+  updateEffects(list: ReadonlyArray<{ id: string; remaining: number }>): void {
+    const label: Record<string, [string, string]> = {
+      poison: ['Poisoned', CSS.danger],
+      blessing: ['Blessed', CSS.gold],
+      ward: ['Warded', CSS.turquoise],
+    };
+    for (let i = 0; i < this.effectIcons.length; i++) {
+      const e = list[i];
+      const icon = this.effectIcons[i];
+      const text = this.effectTexts[i];
+      if (!icon || !text) continue;
+      if (!e) {
+        icon.setVisible(false);
+        text.setVisible(false);
+        continue;
+      }
+      const [name, color] = label[e.id] ?? [e.id, CSS.text];
+      icon.setFrame(e.id).setVisible(true);
+      text.setText(`${name} ${Math.ceil(e.remaining)}s`).setColor(color).setVisible(true);
     }
   }
 

@@ -20,6 +20,8 @@ const full: SaveData = {
   objectives: ['gather', 'craft_axe'],
   refundStructures: [],
   refundItems: [],
+  effects: [{ id: 'poison', remaining: 4, dps: 1.2, regenPerHour: 0 }],
+  shrines: [{ key: '-1,0:5', lastOffering: 300 }],
 };
 
 describe('parseSave', () => {

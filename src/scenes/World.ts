@@ -1,10 +1,16 @@
 import Phaser from 'phaser';
-import { CAMERA, DEPTH, GATHER, PICKUP, SCENES, WATER } from '../config';
+import { CAMERA, DEBUG_HOOKS, DEPTH, GATHER, PICKUP, SCENES, WATER } from '../config';
 import { getGameData, itemDef } from '../data/gameData';
 import type { GameData, Station, ToolKind } from '../data/schema';
 import { Player, type PlayerKeys } from '../entities/Player';
 import type { ResourceNode } from '../entities/ResourceNode';
 import { Building } from '../systems/Building';
+import { Encounters } from '../systems/Encounters';
+import { Projectiles } from '../systems/Projectiles';
+import { StatusEffects, type EffectId } from '../systems/StatusEffects';
+import type { Enemy } from '../entities/Enemy';
+import { hash2, mulberry32 } from '../utils/random';
+import { rollLoot } from '../systems/Loot';
 import { GameClock, darknessAt, inHourWindow, phaseOf } from '../systems/Clock';
 import { gameEvents, onSceneEvent, type ClockTick, type PlayerTick, type SurvivalTick } from '../systems/GameEvents';
 import { Gathering } from '../systems/Gathering';
@@ -86,6 +92,17 @@ export class World extends Phaser.Scene {
   private stationsKey = '';
   private readonly stations = new Set<Station>();
   private readonly debugHandler = oncePerKeyEvent(() => this.toggleDebug());
+  private encounters!: Encounters;
+  private projectiles!: Projectiles;
+  private effects = new StatusEffects();
+  /** Neak Ta shrine key → clock seconds of the last offering. */
+  private readonly shrineState = new Map<string, number>();
+  private playerInvulnUntil = 0;
+  private nextAttackAt = 0;
+  private nextEffectsEmitAt = 0;
+  private kills = 0;
+  private pendingAttack = false;
+  private readonly lightHit = { x: 0, y: 0, radius: 0 };
   /**
    * Discrete presses are captured from keydown events (not Key.JustDown, which Phaser clears
    * when a key is pressed and released within one frame) and consumed in update().
@@ -95,6 +112,7 @@ export class World extends Phaser.Scene {
   private readonly pressHandler = oncePerKeyEvent((e: KeyboardEvent) => {
     if (e.repeat) return;
     if (e.code === 'KeyF') this.pendingUse = true;
+    else if (e.code === 'Space') this.pendingAttack = true;
     else if (e.code === 'KeyE') this.pendingInteract = true;
   });
   private readonly playerRect = new Phaser.Geom.Rectangle();
@@ -129,7 +147,7 @@ export class World extends Phaser.Scene {
     }
     this.seed = save ? save.seed : pickSeed(start?.seed);
     this.registry.set('worldSeed', this.seed);
-    this.gen = new WorldGen(this.seed, this.gameData.biomes);
+    this.gen = new WorldGen(this.seed, this.gameData.biomes, this.gameData.shrines.chancePerClearingChunk);
     this.spawn = this.gen.spawnPoint();
 
     this.props = new PropLayer(this);
@@ -143,7 +161,29 @@ export class World extends Phaser.Scene {
     this.gathering = new Gathering(this, this.chunks.nodes, this.gameData, this.seed);
 
     this.floating = new FloatingText(this);
-    this.interaction = new Interaction(this, this.chunks.nodes, (x, y) => this.chunks.tileAtWorld(x, y), this.structures.list);
+    this.interaction = new Interaction(this, this.chunks.nodes, (x, y) => this.chunks.tileAtWorld(x, y), this.structures.list, this.chunks.shrines);
+    this.effects = new StatusEffects();
+    this.shrineState.clear();
+    this.projectiles = new Projectiles(this, {
+      playerX: () => this.player.x,
+      playerY: () => this.player.y - 10,
+      inLight: (x, y) => this.lightAt(x, y, 0) !== null,
+      hitPlayer: (dmg, fx, fy) => this.hurtPlayer(dmg, 'spirit', fx, fy),
+    });
+    this.encounters = new Encounters(this, this.gameData, this.props.solids, {
+      isDeepWater: (x, y) => this.chunks.isDeepWater(x, y),
+      isLoaded: (cx, cy) => this.chunks.isLoaded(cx, cy),
+      biomeAt: (tx, ty) => this.gen.biomeAt(tx, ty),
+      lightAt: (x, y, m) => this.lightAt(x, y, m),
+      shrineDistance: (x, y) => this.shrineDistance(x, y),
+      hitPlayer: (enemy, dmg) => this.enemyHitsPlayer(enemy, dmg),
+      fireOrb: (enemy, dx, dy) => {
+        const pr = enemy.def.projectile;
+        if (pr) this.projectiles.fire(enemy.x + dx * 10, enemy.cy + dy * 10, dx, dy, pr.speed, pr.damage, pr.range);
+      },
+      onKilled: (enemy) => this.onEnemyKilled(enemy),
+    });
+    this.encounters.enabled = !(DEBUG_HOOKS && new URLSearchParams(window.location.search).has('calm'));
     this.building = new Building(this, this.structures);
     this.lighting = new Lighting(this, CAMERA.zoom);
     this.clock = new GameClock(this.gameData.survival.day);
@@ -222,6 +262,11 @@ export class World extends Phaser.Scene {
     this.stations.clear();
     this.pendingUse = false;
     this.pendingInteract = false;
+    this.pendingAttack = false;
+    this.playerInvulnUntil = 0;
+    this.nextAttackAt = 0;
+    this.nextEffectsEmitAt = 0;
+    this.kills = 0;
   }
 
   override update(_time: number, delta: number): void {
@@ -242,6 +287,9 @@ export class World extends Phaser.Scene {
     p.step(this.keys, dt, this.now, inputOn, this.survival.canSprint, this.terrainSpeed(p.x, p.y));
     this.clock.advance(dt / 1000);
     this.survival.update(dt / 1000, this.clock.secondsPerHour, p.sprinting);
+    const fx = this.effects.update(dt / 1000, this.clock.secondsPerHour);
+    if (fx.damage > 0) this.survival.damage(fx.damage, 'poison');
+    if (fx.heal > 0) this.survival.heal(fx.heal);
     this.watchSurvival();
     if (this.survival.dead) {
       this.emitTicks(cfg);
@@ -254,6 +302,16 @@ export class World extends Phaser.Scene {
     this.pickups.update(p.x, p.y, dt, this.now);
     this.burnTorch(dt);
     this.updateStations();
+    this.encounters.update(dt, this.now, {
+      playerX: p.x,
+      playerY: p.y,
+      darkness: this.darkness(),
+      day: this.clock.dayNumber,
+      spiritWard: this.effects.has('ward'),
+    });
+    this.projectiles.update(dt, this.now);
+    this.updateShrines();
+    this.emitEffects();
     if (this.building.active) this.updateBuilding();
 
     if (!this.input.activePointer.isDown) this.pointerHeld = false;
@@ -261,6 +319,7 @@ export class World extends Phaser.Scene {
       const target = this.interaction.update(p.x, p.y, p.facingVec.x, p.facingVec.y);
       this.setPrompt(this.promptFor(target.kind === 'structure' ? target.structure.def.interaction : target.kind, target));
       const pressed = this.pendingInteract;
+      if (this.pendingAttack) this.attack(p.x + p.facingVec.x * 20, p.y - 10 + p.facingVec.y * 20);
       if (this.pendingUse) this.useHeld();
       if (this.keys.interact.isDown || this.pointerHeld || pressed) this.act(null, pressed);
     } else {
@@ -270,8 +329,158 @@ export class World extends Phaser.Scene {
 
     this.pendingUse = false;
     this.pendingInteract = false;
+    this.pendingAttack = false;
     this.renderLighting();
     this.emitTicks(cfg);
+  }
+
+  // ---------- Combat, creatures, shrines ----------
+
+  /** Light covering a point (+margin): campfires, the held torch in the dark. Reuses one result object. */
+  private lightAt(x: number, y: number, margin: number): { x: number; y: number; radius: number } | null {
+    const dark = this.darkness() > TORCH_DARKNESS;
+    for (const s of this.structures.list) {
+      const r = s.def.lightRadius;
+      if (r > 0 && Math.hypot(x - s.x, y - (s.y - 8)) <= r * 0.8 + margin) {
+        this.lightHit.x = s.x;
+        this.lightHit.y = s.y - 8;
+        this.lightHit.radius = r;
+        return this.lightHit;
+      }
+    }
+    const held = this.inventory.held;
+    const light = held && dark ? itemDef(held.item).light : undefined;
+    if (light) {
+      const p = this.player;
+      if (Math.hypot(x - p.x, y - (p.y - 16)) <= light.radius * 0.75 + margin) {
+        this.lightHit.x = p.x;
+        this.lightHit.y = p.y - 16;
+        this.lightHit.radius = light.radius;
+        return this.lightHit;
+      }
+    }
+    return null;
+  }
+
+  private shrineDistance(x: number, y: number): number {
+    let best = Infinity;
+    for (const s of this.chunks.shrines) best = Math.min(best, Math.hypot(s.x - x, s.y - y));
+    return best;
+  }
+
+  /** Melee swing toward (ax, ay): held weapon/tool damage, spear reach bonus, wear on hit. */
+  private attack(ax: number, ay: number): boolean {
+    if (this.now < this.nextAttackAt || this.building.active) return false;
+    const c = this.gameData.combat;
+    const p = this.player;
+    const held = this.inventory.held;
+    const tool = held ? itemDef(held.item).tool : undefined;
+    const damage = tool ? tool.damage : c.handDamage;
+    const reach = c.baseReach + (tool?.kind === 'spear' ? c.spearBonusReach : 0);
+    const ox = p.x;
+    const oy = p.y - 10;
+    const dx = ax - ox;
+    const dy = ay - oy;
+    const len = Math.hypot(dx, dy) || 1;
+    p.swing(ax, ay + 8, this.now, GATHER.swingMs);
+    this.nextAttackAt = this.now + c.attackCooldownMs;
+    this.nextActAt = Math.max(this.nextActAt, this.now + GATHER.swingMs);
+    const hits = this.encounters.attack(ox, oy, dx / len, dy / len, reach, damage, this.now);
+    for (const e of hits) this.floating.show(e.x, e.cy - 14, `-${damage}`, '#ffffff');
+    if (hits.length > 0 && tool) {
+      if (this.inventory.inventory.wear(this.inventory.selected, 1) === 'broke') {
+        gameEvents.emit('toast', { text: `Your ${itemDef(held?.item ?? '').name} broke`, tone: 'warn' });
+      }
+      this.inventory.broadcast();
+    }
+    return hits.length > 0;
+  }
+
+  private enemyHitsPlayer(enemy: Enemy, damage: number): void {
+    const cause = enemy.def.kind === 'spirit' ? 'spirit' : 'wildlife';
+    if (!this.hurtPlayer(damage, cause, enemy.x, enemy.cy)) return;
+    const poison = enemy.def.poison;
+    if (poison) {
+      this.effects.apply('poison', poison.seconds, { dps: poison.damagePerSecond });
+      this.floating.show(this.player.x, this.player.y - 40, 'Poisoned', '#8ec26a');
+    }
+  }
+
+  /** Applies damage with i-frames, knockback, flash and shake. Returns false while invulnerable. */
+  private hurtPlayer(damage: number, cause: 'wildlife' | 'spirit', fromX: number, fromY: number): boolean {
+    if (this.now < this.playerInvulnUntil || this.busy || damage <= 0) return false;
+    const c = this.gameData.combat;
+    const p = this.player;
+    this.playerInvulnUntil = this.now + c.playerIFramesMs;
+    this.survival.damage(damage, cause);
+    const dx = p.x - fromX;
+    const dy = p.y - 10 - fromY;
+    const len = Math.hypot(dx, dy) || 1;
+    p.body.setVelocity((dx / len) * c.playerKnockback, (dy / len) * c.playerKnockback);
+    this.tweens.killTweensOf(p);
+    p.setAlpha(1);
+    this.tweens.add({ targets: p, alpha: 0.35, duration: 90, yoyo: true, repeat: Math.max(1, Math.floor(c.playerIFramesMs / 180) - 1), onComplete: () => p.setAlpha(1) });
+    this.cameras.main.shake(120, 0.004);
+    this.floating.show(p.x, p.y - 36, `-${damage}`, '#d9644a');
+    this.lastHurtAt = -Infinity;
+    return true;
+  }
+
+  private onEnemyKilled(enemy: Enemy): void {
+    this.kills++;
+    const table = this.gameData.loot.get(enemy.def.lootTable);
+    this.floating.show(enemy.x, enemy.cy - 20, enemy.def.kind === 'spirit' ? 'The spirit fades' : `${enemy.def.name} down`, '#e6b866');
+    if (!table) return;
+    const rng = mulberry32(hash2(this.kills, Math.floor(this.now), this.seed));
+    for (const stack of rollLoot(table, rng)) {
+      if (!this.pickups.spawn(stack.item, stack.qty, enemy.x, enemy.y - 4, this.now, 200)) this.inventory.add(stack.item, stack.qty);
+    }
+  }
+
+  /** Shows which shrines are resting (recently honoured) with the flower-laden frame. */
+  private updateShrines(): void {
+    const cooldown = this.gameData.shrines.cooldownHours * this.clock.secondsPerHour;
+    for (const s of this.chunks.shrines) {
+      const last = this.shrineState.get(s.key);
+      const resting = last !== undefined && this.clock.totalSeconds - last < cooldown;
+      const frame = resting ? '1' : '0';
+      if (String(s.image.frame.name) !== frame) s.image.setFrame(Number(frame));
+    }
+  }
+
+  private offerAtShrine(key: string): void {
+    const cfg = this.gameData.shrines;
+    const last = this.shrineState.get(key);
+    const cooldown = cfg.cooldownHours * this.clock.secondsPerHour;
+    if (last !== undefined && this.clock.totalSeconds - last < cooldown) {
+      gameEvents.emit('toast', { text: cfg.text.resting, tone: 'info' });
+      return;
+    }
+    const held = this.inventory.held;
+    const def = held ? itemDef(held.item) : null;
+    if (!held || !def || def.category !== cfg.offeringCategory) {
+      gameEvents.emit('toast', { text: cfg.text.needOffering, tone: 'info' });
+      return;
+    }
+    this.inventory.inventory.takeFromSlot(this.inventory.selected, 1);
+    this.inventory.broadcast();
+    this.shrineState.set(key, this.clock.totalSeconds);
+    const seconds = cfg.blessing.durationHours * this.clock.secondsPerHour;
+    this.effects.apply('blessing', seconds, { regenPerHour: cfg.blessing.regenPerHour });
+    if (cfg.blessing.spiritWard) this.effects.apply('ward', seconds);
+    this.player.swing(this.player.x, this.player.y - 30, this.now, GATHER.swingMs * 3);
+    this.floating.show(this.player.x, this.player.y - 40, 'Blessed', '#e6b866');
+    gameEvents.emit('toast', { text: cfg.text.offered, tone: 'info' });
+    this.nextEffectsEmitAt = 0;
+  }
+
+  private emitEffects(): void {
+    if (this.now < this.nextEffectsEmitAt) return;
+    this.nextEffectsEmitAt = this.now + 500;
+    gameEvents.emit(
+      'effects:changed',
+      this.effects.list.map((e) => ({ id: e.id, remaining: e.remaining })),
+    );
   }
 
   // ---------- Survival, clock, lighting ----------
@@ -384,6 +593,8 @@ export class World extends Phaser.Scene {
           ? 'E — Sleep until morning (saves)'
           : `Shelter — you can sleep from ${hourLabel(sl.fromHour)}`;
       }
+      case 'shrine':
+        return `E — ${this.gameData.shrines.text.prompt}`;
       default:
         return '';
     }
@@ -408,6 +619,10 @@ export class World extends Phaser.Scene {
       this.floating.show(p.x, p.y - 34, 'Fresh water', '#4fc2b4');
       gameEvents.emit('player:drank');
       this.completeObjective('drink');
+      return;
+    }
+    if (target.kind === 'shrine' && pressed) {
+      this.offerAtShrine(target.shrine.key);
       return;
     }
     if (target.kind === 'structure' && pressed) {
@@ -579,6 +794,8 @@ export class World extends Phaser.Scene {
         seed: this.seed,
         pickups: this.pickups,
         objectives: this.objectives,
+        effects: this.effects,
+        shrines: this.shrineState,
         now: this.now,
       }),
     );
@@ -653,6 +870,8 @@ export class World extends Phaser.Scene {
       this.time.delayedCall(800, () => gameEvents.emit('toast', { text: msg.trim(), tone: lost > 0 ? 'warn' : 'info' }));
     }
     this.objectives = new Objectives(save.objectives);
+    this.effects.restore(save.effects.map((e) => ({ ...e, id: e.id as EffectId })));
+    for (const s of save.shrines) this.shrineState.set(s.key, s.lastOffering);
   }
 
   /**
@@ -746,6 +965,12 @@ export class World extends Phaser.Scene {
       return;
     }
     if (!pointer.leftButtonDown()) return;
+    const c = this.gameData.combat;
+    const near = this.encounters.nearest(this.player.x, this.player.y - 10, c.baseReach + c.spearBonusReach + 30);
+    if (near) {
+      this.attack(pointer.worldX, pointer.worldY);
+      return;
+    }
     this.pointerHeld = true;
     const node = this.interaction.nodeAt(pointer.worldX, pointer.worldY, this.player.x, this.player.y);
     if (node) this.act(node, true);

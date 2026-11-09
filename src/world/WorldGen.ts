@@ -9,7 +9,7 @@ const WATER_MINIMAP = { deep: '#1d4a52', shallow: '#2c6a6a' } as const;
 export interface GenProp {
   /** Stable id: "cx,cy:index" — chunk diffs and saves key on it. */
   key: string;
-  kind: 'resource' | 'scenery';
+  kind: 'resource' | 'scenery' | 'shrine';
   /** resources.json id (resource) or a SCENERY_SPRITES key (scenery). */
   id: string;
   x: number;
@@ -60,6 +60,8 @@ export class WorldGen {
   constructor(
     seed: number,
     private readonly biomes: ReadonlyMap<BiomeId, BiomeDef>,
+    /** Chance (0..1) that a clearing chunk holds a Neak Ta shrine (shrines.json). */
+    private readonly shrineChance = 0,
   ) {
     this.seed = seed >>> 0;
     const n = (salt: number) => createNoise2D(mulberry32(hash2(salt, 7919, this.seed)));
@@ -264,6 +266,17 @@ export class WorldGen {
       add('resource', s.id, lx, ly, true, 0);
     }
 
+    // Neak Ta shrines: one guaranteed near spawn, occasional ones in clearings. Space around
+    // them is reserved (and no creatures spawn near them).
+    const reserve = (lx: number, ly: number, r: number) => {
+      for (let oy = -r; oy <= r; oy++) for (let ox = -r; ox <= r; ox++) occupied.add((ly + oy) * N + lx + ox);
+    };
+    const shrineTile = this.shrineTileInChunk(cx, cy, tiles);
+    if (shrineTile) {
+      add('shrine', 'neak_ta', shrineTile[0], shrineTile[1], true, 0);
+      reserve(shrineTile[0], shrineTile[1], 2);
+    }
+
     // Ruin architecture first so vegetation doesn't fill the courtyard.
     this.placeRuins(cx, cy, tiles, occupied, add);
 
@@ -339,6 +352,28 @@ export class WorldGen {
     const clx = site.tx - tx0;
     const cly = site.ty - ty0;
     if (clx >= 0 && cly >= 0 && clx < N && cly < N) add('scenery', 'ruin_altar', clx, cly, true, 0);
+  }
+
+  /** Local tile of this chunk's Neak Ta shrine, or null. Deterministic per (seed, chunk). */
+  private shrineTileInChunk(cx: number, cy: number, tiles: number[][]): [number, number] | null {
+    const N = CHUNK_TILES;
+    const st = WORLD_GEN.starterShrine;
+    const dry = (lx: number, ly: number) => {
+      const t = tiles[ly]?.[lx];
+      return t !== undefined && t !== TILE.waterA && t !== TILE.shallowsA && t !== TILE.shore;
+    };
+    if (chunkOf(st.tx) === cx && chunkOf(st.ty) === cy) return [st.tx - cx * N, st.ty - cy * N];
+    if (Math.max(Math.abs(cx), Math.abs(cy)) <= 1) return null;
+    const h = hash2(cx, cy, this.seed ^ 0x5417);
+    if ((h % 10000) / 10000 >= this.shrineChance) return null;
+    if (this.biomeAt(cx * N + N / 2, cy * N + N / 2) !== 'clearing') return null;
+    const rng = mulberry32(h);
+    for (let i = 0; i < 12; i++) {
+      const lx = 8 + Math.floor(rng() * 16);
+      const ly = 8 + Math.floor(rng() * 16);
+      if (dry(lx, ly) && dry(lx, ly + 1) && !this.ruinAt(cx * N + lx, cy * N + ly)) return [lx, ly];
+    }
+    return null;
   }
 
   /** Spawn point in world px: centre of tile (0,0). */

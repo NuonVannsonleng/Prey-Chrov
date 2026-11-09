@@ -23,6 +23,7 @@ import { createCanvasTexture, ellipse, hex, px, shade, type Ctx } from './canvas
 import { generateGatheringTextures } from './gathering';
 import { generateSurvivalTextures } from './survival';
 import { drawExtraTiles, generateScenery } from './world';
+import { generateCreatureTextures } from './creatures';
 
 /** Draws every placeholder texture on canvases. Keys and frame layout live in textures.ts. */
 
@@ -543,6 +544,7 @@ export function generateAllTextures(scene: Phaser.Scene): void {
   generateGatheringTextures(scene);
   generateSurvivalTextures(scene);
   generateScenery(scene);
+  generateCreatureTextures(scene);
 
   const crisp = [
     TEX.tiles,
@@ -559,6 +561,9 @@ export function generateAllTextures(scene: Phaser.Scene): void {
     TEX.structures,
     TEX.flame,
     TEX.scenery,
+    TEX.creatures,
+    TEX.shrine,
+    TEX.status,
   ];
   for (const key of crisp) scene.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
 }

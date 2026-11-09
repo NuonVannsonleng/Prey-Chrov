@@ -17,6 +17,7 @@ const HINTS = [
   ['WASD', 'Move'],
   ['Shift', 'Sprint'],
   ['E / Click', 'Gather · drink · use'],
+  ['Click / Space', 'Attack (near a creature)'],
   ['F', 'Eat / place held item'],
   ['1–6 / Wheel', 'Hotbar'],
   ['I', 'Inventory'],
@@ -130,6 +131,7 @@ export class UI extends Phaser.Scene {
     });
     onSceneEvent(this, 'survival:tick', (t) => this.status.updateSurvival(t));
     onSceneEvent(this, 'clock:tick', (c) => this.status.updateClock(c));
+    onSceneEvent(this, 'effects:changed', (list) => this.status.updateEffects(list));
     onSceneEvent(this, 'objectives:changed', (list) => this.status.updateObjectives(list));
     onSceneEvent(this, 'craft:stations', (s) => this.crafting.setStations(s));
     onSceneEvent(this, 'ui:open-crafting', () => {

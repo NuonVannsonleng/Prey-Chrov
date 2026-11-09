@@ -1,0 +1,224 @@
+import Phaser from 'phaser';
+import { CHUNK_TILES, TILE_SIZE } from '../config';
+import type { BiomeId, EnemyDef, GameData } from '../data/schema';
+import { Enemy, type EnemyWorld } from '../entities/Enemy';
+import { inArc } from './StatusEffects';
+
+/** World services the encounter system needs (implemented by the World scene). */
+export interface EncounterServices {
+  isDeepWater(x: number, y: number): boolean;
+  isLoaded(cx: number, cy: number): boolean;
+  biomeAt(tx: number, ty: number): BiomeId;
+  /** Light covering a point (with margin), or null. */
+  lightAt(x: number, y: number, margin: number): { x: number; y: number; radius: number } | null;
+  /** Distance to the nearest Neak Ta shrine (no spawns near shrines). */
+  shrineDistance(x: number, y: number): number;
+  hitPlayer(enemy: Enemy, damage: number): void;
+  fireOrb(enemy: Enemy, dirX: number, dirY: number): void;
+  onKilled(enemy: Enemy): void;
+}
+
+export interface EncounterFrame {
+  playerX: number;
+  /** Player feet y. */
+  playerY: number;
+  darkness: number;
+  day: number;
+  spiritWard: boolean;
+}
+
+const MAX_POOL = 16;
+const NIGHT_DARKNESS = 0.5;
+const DAWN_DARKNESS = 0.35;
+
+/**
+ * Finite, pooled creature population. Spawns off-screen in a ring around the player
+ * using data weights (time of day, first day, biome, per-type caps), never in water,
+ * solids, firelight or near shrines; despawns far creatures; spirits fade at dawn.
+ * One collider (walkers vs static solids) for the whole pool.
+ */
+export class Encounters {
+  readonly enemies: Enemy[] = [];
+  readonly group: Phaser.Physics.Arcade.Group;
+  private spawnTimer = 0;
+  /** Natural spawning on/off (debug `?calm` turns it off for automated tests). */
+  enabled = true;
+  private readonly world: EnemyWorld & { now: number; playerX: number; playerY: number; spiritWard: boolean; dawn: boolean };
+
+  constructor(
+    private readonly scene: Phaser.Scene,
+    private readonly data: GameData,
+    solids: Phaser.Physics.Arcade.StaticGroup,
+    private readonly services: EncounterServices,
+  ) {
+    this.group = scene.physics.add.group();
+    scene.physics.add.collider(this.group, solids, undefined, (e) => !(e as Enemy).isFlying, this);
+    const s = services;
+    this.world = {
+      now: 0,
+      playerX: 0,
+      playerY: 0,
+      spiritWard: false,
+      dawn: false,
+      lightAt: (x, y, m) => s.lightAt(x, y, m),
+      blocked: (x, y) => s.isDeepWater(x, y),
+      hitPlayer: (e, d) => s.hitPlayer(e, d),
+      fireOrb: (e, dx, dy) => s.fireOrb(e, dx, dy),
+    };
+  }
+
+  get aliveCount(): number {
+    let n = 0;
+    for (const e of this.enemies) if (e.active) n++;
+    return n;
+  }
+
+  update(dtMs: number, now: number, f: EncounterFrame): void {
+    const w = this.world;
+    w.now = now;
+    w.playerX = f.playerX;
+    w.playerY = f.playerY - 10;
+    w.spiritWard = f.spiritWard;
+    w.dawn = f.darkness < DAWN_DARKNESS;
+
+    for (const e of this.enemies) {
+      if (!e.active) continue;
+      if (e.aiState === 'fade' && e.alpha <= 0.02) {
+        e.despawn();
+        continue;
+      }
+      if (Math.hypot(e.x - f.playerX, e.y - f.playerY) > this.data.encounters.despawnDistance) {
+        e.despawn();
+        continue;
+      }
+      e.update2(w, dtMs);
+    }
+
+    const night = f.darkness > NIGHT_DARKNESS;
+    const cfg = this.data.encounters;
+    if (!this.enabled) return;
+    this.spawnTimer -= dtMs / 1000;
+    if (this.spawnTimer > 0) return;
+    this.spawnTimer = night ? cfg.spawnIntervalSeconds.night : cfg.spawnIntervalSeconds.day;
+    if (this.aliveCount >= this.cap(night, f)) return;
+    this.trySpawn(night, f, now);
+  }
+
+  /** Population cap: gentle first night, ramping with days survived, scaled by local biome danger. */
+  cap(night: boolean, f: EncounterFrame): number {
+    const cfg = this.data.encounters;
+    if (!night) return cfg.maxAlive.day;
+    const ramp = cfg.firstNightMax + Math.max(0, f.day - 1) * cfg.nightRampPerDay;
+    const biome = this.data.biomes.get(this.services.biomeAt(Math.floor(f.playerX / TILE_SIZE), Math.floor(f.playerY / TILE_SIZE)));
+    const danger = biome?.nightDanger ?? 1;
+    return Math.max(1, Math.min(cfg.maxAlive.night, Math.round(ramp * danger)));
+  }
+
+  /** Player melee: hits every live enemy inside the arc. Returns enemies hit. */
+  attack(ox: number, oy: number, fx: number, fy: number, reach: number, damage: number, now: number): Enemy[] {
+    const c = this.data.combat;
+    const hit: Enemy[] = [];
+    for (const e of this.enemies) {
+      if (!e.active || e.aiState === 'fade') continue;
+      if (!inArc(ox, oy, fx, fy, e.x, e.cy, reach + 8, c.attackArcDegrees)) continue;
+      if (e.takeHit(damage, ox, oy, c.enemyKnockback, c.enemyIFramesMs, now)) {
+        hit.push(e);
+        if (e.dead) {
+          this.services.onKilled(e);
+          e.despawn();
+        }
+      }
+    }
+    return hit;
+  }
+
+  /** Nearest live enemy within range of a point (for attack auto-aim and prompts). */
+  nearest(x: number, y: number, range: number): Enemy | null {
+    let best: Enemy | null = null;
+    let bd = range;
+    for (const e of this.enemies) {
+      if (!e.active || e.aiState === 'fade') continue;
+      const d = Math.hypot(e.x - x, e.cy - y);
+      if (d < bd) {
+        bd = d;
+        best = e;
+      }
+    }
+    return best;
+  }
+
+  clear(): void {
+    for (const e of this.enemies) if (e.active) e.despawn();
+  }
+
+  private trySpawn(night: boolean, f: EncounterFrame, now: number): void {
+    const cfg = this.data.encounters;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = cfg.spawnRing.min + Math.random() * (cfg.spawnRing.max - cfg.spawnRing.min);
+      const x = f.playerX + Math.cos(a) * r;
+      const y = f.playerY + Math.sin(a) * r;
+      const tx = Math.floor(x / TILE_SIZE);
+      const ty = Math.floor(y / TILE_SIZE);
+      if (!this.services.isLoaded(Math.floor(tx / CHUNK_TILES), Math.floor(ty / CHUNK_TILES))) continue;
+      const def = this.pickDef(night, f.day, this.services.biomeAt(tx, ty));
+      if (!def) continue;
+      if (!this.validSpot(def, x, y)) continue;
+      const e = this.obtain();
+      if (!e) return;
+      e.spawn(def, x, y, now);
+      return;
+    }
+  }
+
+  private validSpot(def: EnemyDef, x: number, y: number): boolean {
+    const s = this.services;
+    if (s.isDeepWater(x, y - 4)) return false;
+    if (s.shrineDistance(x, y) < 180) return false;
+    if (s.lightAt(x, y - 10, 40)) return false;
+    if (!def.flying && this.scene.physics.overlapRect(x - 14, y - 12, 28, 12, false, true).length > 0) return false;
+    return true;
+  }
+
+  private pickDef(night: boolean, day: number, biome: BiomeId): EnemyDef | null {
+    const options: Array<[EnemyDef, number]> = [];
+    for (const d of this.data.enemies.values()) {
+      if (night ? d.active === 'day' : d.active === 'night') continue;
+      if (d.spawn.minDay > day) continue;
+      const bw = d.spawn.biomes[biome] ?? 0;
+      if (bw <= 0) continue;
+      let alive = 0;
+      for (const e of this.enemies) if (e.active && e.def.id === d.id) alive++;
+      if (alive >= d.spawn.maxAlive) continue;
+      options.push([d, d.spawn.weight * bw]);
+    }
+    const total = options.reduce((s, [, w]) => s + w, 0);
+    if (total <= 0) return null;
+    let pick = Math.random() * total;
+    for (const [d, w] of options) {
+      pick -= w;
+      if (pick <= 0) return d;
+    }
+    return options[options.length - 1]?.[0] ?? null;
+  }
+
+  private obtain(): Enemy | null {
+    const free = this.enemies.find((e) => !e.active);
+    if (free) return free;
+    if (this.enemies.length >= MAX_POOL) return null;
+    const e = new Enemy(this.scene);
+    this.group.add(e);
+    e.body.enable = false;
+    this.enemies.push(e);
+    return e;
+  }
+
+  /** Test/debug: spawn a specific creature near a point (bypasses spawn rules). */
+  spawnAt(id: string, x: number, y: number, now: number): Enemy | null {
+    const def = this.data.enemies.get(id);
+    const e = def ? this.obtain() : null;
+    if (!def || !e) return null;
+    e.spawn(def, x, y, now);
+    return e;
+  }
+}

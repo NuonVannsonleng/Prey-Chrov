@@ -58,6 +58,8 @@ export interface GameEventMap {
   'world:info': { seed: number };
   /** Placed structure positions (minimap markers). */
   'structures:changed': Array<{ x: number; y: number; kind: string }>;
+  /** Active status effects (sent about once a second). */
+  'effects:changed': Array<{ id: string; remaining: number }>;
 }
 
 export interface SurvivalTick {

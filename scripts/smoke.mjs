@@ -16,7 +16,7 @@ const check = (name, ok, detail = '') => {
 
 const server = await preview({ preview: { port: 4317, strictPort: true }, logLevel: 'silent' });
 const SEED = 4242;
-const url = `http://localhost:4317/?debug&seed=${SEED}`;
+const url = `http://localhost:4317/?debug&calm&seed=${SEED}`;
 
 let browser;
 for (const channel of ['msedge', 'chrome']) {
@@ -394,6 +394,149 @@ try {
   await sleep(300);
   check('chunk generation is deterministic for the seed', (await chunkSig()) === sigBefore);
 
+  // ---------- M5: wildlife, spirits, combat, shrines ----------
+  const setHourM5 = (h) => evalW('const c = w.clock; c.totalSeconds = (c.dayNumber - 1) * 480 + arg * 20;', h);
+  const hp = () => evalW('return w.survival.stats.health;');
+  const setHealth = (v) => evalW('w.survival.stats.health = arg; w.playerInvulnUntil = 0;', v);
+  const spawnNear = (id, dx, dy) => evalW('const p = w.player; const e = w.encounters.spawnAt(arg[0], p.x + arg[1], p.y + arg[2], w.now); return e ? w.encounters.enemies.indexOf(e) : -1;', [id, dx, dy]);
+  const enemy = (i) => evalW('const e = w.encounters.enemies[arg]; return e && e.active ? { hp: e.hp, state: e.aiState, x: e.x, y: e.y } : null;', i);
+  const clearEnemies = () => evalW('w.encounters.clear(); w.projectiles.clear();');
+  await setHourM5(10);
+  await teleport(16, 30);
+  await sleep(200);
+  check('natural spawning off for the test (calm)', (await evalW('return w.encounters.enabled;')) === false);
+
+  // Boar: telegraphed charge hurts; one hit per charge (i-frames).
+  await setHealth(100);
+  const boar = await spawnNear('wild_boar', 110, 0);
+  let sawTelegraph = false;
+  for (let i = 0; i < 40; i++) {
+    const st = await enemy(boar);
+    if (st?.state === 'telegraph') sawTelegraph = true;
+    if ((await hp()) < 100) break;
+    await sleep(100);
+  }
+  await page.screenshot({ path: OUT + '/17-boar.png' });
+  const afterBoar = await hp();
+  check('boar telegraphs before charging', sawTelegraph);
+  check('boar charge damages the player once', afterBoar < 100 && afterBoar >= 100 - 2 * 12, 'health=' + afterBoar.toFixed(1));
+
+  // Fight back with a spear (Space attacks the facing direction).
+  await evalW('w.inventory.inventory.restore([{ item: "spear", qty: 1, durability: 60 }]); w.inventory.selected = 0; w.inventory.broadcast();');
+  const meat0 = await count('raw_meat');
+  let killed = false;
+  for (let i = 0; i < 40 && !killed; i++) {
+    const st = await enemy(boar);
+    if (!st) {
+      killed = true;
+      break;
+    }
+    await evalW('const p = w.player; const e = w.encounters.enemies[arg]; p.body.reset(e.x - 26, e.y); p.facingVec.x = 1; p.facingVec.y = 0; w.playerInvulnUntil = w.now + 5000;', boar);
+    await page.keyboard.press('Space');
+    await sleep(450);
+  }
+  await sleep(1200);
+  check('spear attacks kill the boar', killed);
+  check('boar drops meat (collected)', (await count('raw_meat')) > meat0, 'meat=' + (await count('raw_meat')));
+  const spearAfter = await evalW('return w.inventory.inventory.get(0);');
+  check('weapon wears on hits', !!spearAfter && spearAfter.durability < 60, JSON.stringify(spearAfter));
+
+  // Viper: bite poisons, poison wears off.
+  await clearEnemies();
+  await setHealth(100);
+  await teleport(16, 30);
+  const viper = await spawnNear('pit_viper', 30, 0);
+  let poisoned = false;
+  for (let i = 0; i < 40 && !poisoned; i++) {
+    poisoned = await evalW('return w.effects.has("poison");');
+    if (!poisoned) await sleep(100);
+  }
+  check('viper bite poisons', poisoned);
+  await clearEnemies();
+  await page.screenshot({ path: OUT + '/18-poison.png' });
+  await sleep(8500);
+  check('poison wears off', !(await evalW('return w.effects.has("poison");')));
+  void viper;
+
+  // Night: spirits avoid campfire light; Arak orbs fizzle in light.
+  await clearEnemies();
+  await setHourM5(23);
+  await setHealth(100);
+  await teleport(16 + 1300, 30);
+  await sleep(400);
+  await evalW('const p = w.player; w.structures.place("campfire", p.x + 40, p.y + 4);');
+  await sleep(300);
+  await evalW('const p = w.player; const fire = w.structures.records[w.structures.records.length - 1]; p.body.reset(fire.x, fire.y + 26);');
+  await sleep(200);
+  const apIdx = await spawnNear('ap', 30, -10);
+  const arakIdx = await spawnNear('arak', 150, 0);
+  await sleep(5000);
+  const apState = await enemy(apIdx);
+  const fireDist = await evalW('const e = w.encounters.enemies[arg]; const f = w.structures.records[w.structures.records.length - 1]; return Math.hypot(e.x - f.x, e.cy - (f.y - 8));', apIdx);
+  await page.screenshot({ path: OUT + '/19-night-fire.png' });
+  check('spirits are pushed out of firelight', !!apState && fireDist > 100, 'distance=' + Math.round(fireDist));
+  check('standing in firelight keeps the player safe from spirits', (await hp()) >= 99.5, 'health=' + (await hp()).toFixed(1));
+  void arakIdx;
+
+  // Away from light, an Ap attacks.
+  await clearEnemies();
+  await teleport(16 + 600, 30);
+  await sleep(400);
+  await setHealth(100);
+  await spawnNear('ap', 100, 0);
+  for (let i = 0; i < 60 && (await hp()) >= 100; i++) await sleep(100);
+  check('in the dark without light, an Ap attacks', (await hp()) < 100, 'health=' + (await hp()).toFixed(1));
+
+  // Dawn: spirits fade away.
+  const fadeIdx = await spawnNear('ap', 120, 0);
+  await setHourM5(9);
+  await sleep(2200);
+  check('spirits fade at dawn', (await enemy(fadeIdx)) === null);
+
+  // Neak Ta shrine near spawn: offering grants a blessing and spirit ward; resting afterwards.
+  await clearEnemies();
+  await teleport(16, 30);
+  await sleep(300);
+  const shrine = await evalW('const s = w.chunks.shrines[0]; return s ? { key: s.key, x: s.x, y: s.y } : null;');
+  check('a Neak Ta shrine stands near spawn', !!shrine, JSON.stringify(shrine));
+  if (shrine) {
+    await evalW('w.inventory.inventory.restore([{ item: "berries", qty: 2 }]); w.inventory.selected = 0; w.inventory.broadcast();');
+    await teleport(shrine.x, shrine.y + 24);
+    await sleep(200);
+    await hold(['KeyW'], 80);
+    const prompt = await evalW('return ui.prompt.text;');
+    await page.keyboard.press('KeyE');
+    await sleep(300);
+    const fx = await evalW('return { blessing: w.effects.has("blessing"), ward: w.effects.has("ward"), berries: w.inventory.inventory.count("berries") };');
+    await page.screenshot({ path: OUT + '/20-shrine.png' });
+    check('shrine offering grants blessing + spirit ward and uses one food', /Neak Ta/.test(prompt) && fx.blessing && fx.ward && fx.berries === 1, JSON.stringify({ prompt, fx }));
+    await page.keyboard.press('KeyE');
+    await sleep(300);
+    check('shrine rests after an offering (no repeat farming)', (await evalW('return w.inventory.inventory.count("berries");')) === 1);
+    await setHourM5(23);
+    await teleport(16 + 600, 30);
+    await sleep(300);
+    await setHealth(100);
+    await spawnNear('ap', 90, 0);
+    await sleep(4000);
+    check('spirit ward keeps spirits from attacking', (await hp()) >= 99.5, 'health=' + (await hp()).toFixed(1));
+    await clearEnemies();
+    await evalW('w.effects.clear("ward"); w.effects.clear("blessing");');
+  }
+
+  // Population caps: gentle first night, more on night 3, bounded.
+  const caps = await evalW('const f = (d) => w.encounters.cap(true, { playerX: 16, playerY: 30, darkness: 0.8, day: d, spiritWard: false }); return [f(1), f(3), f(30)];');
+  check('night population: gentle on night 1, larger by night 3, capped', caps[0] <= 2 && caps[1] > caps[0] && caps[2] <= 6, JSON.stringify(caps));
+  await evalW('w.encounters.enabled = true;');
+  await sleep(9000);
+  const alive = await evalW('return w.encounters.aliveCount;');
+  check('natural spawning respects the cap', alive <= caps[2], 'alive=' + alive);
+  await evalW('w.encounters.enabled = false; w.encounters.clear(); w.projectiles.clear();');
+  await setHourM5(10);
+  await setHealth(100);
+  await teleport(16, 30);
+  await sleep(300);
+
   // ---------- M3: survival, crafting, structures, night, sleep/save, death ----------
   const toPageXY = async (gx, gy) => {
     const box = await page.locator('canvas').boundingBox();
@@ -491,7 +634,7 @@ try {
   await clickWorld(pl.x + 46, pl.y + 2);
   await sleep(200);
   const fires = await evalW('return w.structures.list.filter((s) => s.def.id === "campfire").length;');
-  check('campfire placed with a valid click', fires === 1 && (await hasItem('campfire_kit')) === 0, 'fires=' + fires);
+  check('campfire placed with a valid click', fires >= 1 && (await hasItem('campfire_kit')) === 0, 'fires=' + fires);
   await page.screenshot({ path: OUT + '/11-campfire.png' });
 
   // Cooking at the campfire via E → crafting panel → roast.

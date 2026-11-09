@@ -18,6 +18,15 @@ interface NodeState {
   harvests: number;
 }
 
+export interface ShrineInstance {
+  key: string;
+  x: number;
+  y: number;
+  image: Phaser.GameObjects.Image;
+}
+
+const SHRINE_FOOTPRINT = { w: 20, h: 10 };
+
 interface LoadedChunk {
   key: string;
   cx: number;
@@ -30,6 +39,7 @@ interface LoadedChunk {
   zones: Phaser.GameObjects.Zone[];
   canopies: Canopy[];
   nodes: ResourceNode[];
+  shrines: ShrineInstance[];
 }
 
 /**
@@ -41,6 +51,8 @@ interface LoadedChunk {
 export class ChunkManager {
   /** Live list of loaded resource nodes (shared with Gathering and Interaction). */
   readonly nodes: ResourceNode[] = [];
+  /** Live list of loaded Neak Ta shrines (shared with Interaction and Encounters). */
+  readonly shrines: ShrineInstance[] = [];
   private readonly loaded = new Map<string, LoadedChunk>();
   private readonly states = new Map<string, NodeState>();
   private readonly pending: Array<[number, number]> = [];
@@ -139,7 +151,7 @@ export class ChunkManager {
     const collider = this.scene.physics.add.collider(this.player, layer);
     const animated = layer.filterTiles((t: Phaser.Tilemaps.Tile) => t.index === TILE.waterA || t.index === TILE.shallowsA);
 
-    const chunk: LoadedChunk = { key, cx, cy, tilemap, layer, collider, animated, images: [], zones: [], canopies: [], nodes: [] };
+    const chunk: LoadedChunk = { key, cx, cy, tilemap, layer, collider, animated, images: [], zones: [], canopies: [], nodes: [], shrines: [] };
     for (const p of data.props) {
       if (p.kind === 'resource') {
         const def = this.data.resources.get(p.id);
@@ -153,6 +165,13 @@ export class ChunkManager {
         }
         chunk.nodes.push(node);
         this.nodes.push(node);
+      } else if (p.kind === 'shrine') {
+        const image = this.scene.add.image(p.x, p.y, TEX.shrine, 0).setOrigin(0.5, 1).setDepth(p.y);
+        chunk.images.push(image);
+        chunk.zones.push(this.props.addSolid(p.x, p.y, SHRINE_FOOTPRINT));
+        const shrine = { key: p.key, x: p.x, y: p.y, image };
+        chunk.shrines.push(shrine);
+        this.shrines.push(shrine);
       } else {
         this.addScenery(chunk, p.id as ScenerySprite, p.x, p.y, p.variant, p.canopyVariant);
       }
@@ -181,6 +200,10 @@ export class ChunkManager {
       n.destroy();
       const i = this.nodes.indexOf(n);
       if (i >= 0) this.nodes.splice(i, 1);
+    }
+    for (const s of c.shrines) {
+      const i = this.shrines.indexOf(s);
+      if (i >= 0) this.shrines.splice(i, 1);
     }
     for (const img of c.images) img.destroy();
     for (const z of c.zones) this.props.removeSolid(z);
@@ -253,6 +276,7 @@ export class ChunkManager {
   forget(): void {
     this.loaded.clear();
     this.nodes.length = 0;
+    this.shrines.length = 0;
     this.pending.length = 0;
   }
 

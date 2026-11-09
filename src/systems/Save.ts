@@ -64,6 +64,10 @@ export interface SaveData {
   refundStructures: string[];
   /** Items to return to the player on load (e.g. ground items from a pre-procedural save). */
   refundItems: Array<{ item: string; qty: number }>;
+  /** Active status effects (poison, blessing, ward). */
+  effects: Array<{ id: string; remaining: number; dps: number; regenPerHour: number }>;
+  /** Neak Ta shrines: key → clock seconds of the last offering. */
+  shrines: Array<{ key: string; lastOffering: number }>;
 }
 
 function defaultStorage(): KeyValueStorage | null {
@@ -204,6 +208,16 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
     refundStructures: (Array.isArray(rec['refundStructures']) ? rec['refundStructures'] : []).filter(
       (o): o is string => typeof o === 'string',
     ),
+    effects: (Array.isArray(rec['effects']) ? rec['effects'] : []).flatMap((o: unknown) => {
+      if (!isRec(o) || typeof o['id'] !== 'string') return [];
+      const remaining = finite(o['remaining'], 0);
+      return remaining > 0 ? [{ id: o['id'], remaining, dps: Math.max(0, finite(o['dps'], 0)), regenPerHour: Math.max(0, finite(o['regenPerHour'], 0)) }] : [];
+    }),
+    shrines: (Array.isArray(rec['shrines']) ? rec['shrines'] : []).flatMap((o: unknown) => {
+      if (!isRec(o) || typeof o['key'] !== 'string') return [];
+      const last = finite(o['lastOffering'], NaN);
+      return Number.isFinite(last) ? [{ key: o['key'], lastOffering: last }] : [];
+    }),
     refundItems: (Array.isArray(rec['refundItems']) ? rec['refundItems'] : []).flatMap((o: unknown) => {
       if (!isRec(o)) return [];
       const item = str(o['item']);

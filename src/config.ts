@@ -151,6 +151,8 @@ export const WORLD_GEN = {
   /** Tiles around (0,0) that are always a safe clearing with no rivers. */
   spawnSafeRadius: 14,
   starterPond: { tx: 8, ty: 6, rx: 3.2, ry: 2.2 },
+  /** A Neak Ta shrine always stands near spawn so the player meets one early. */
+  starterShrine: { tx: -10, ty: 8 },
   starterProps: [
     { id: 'jungle_tree', tx: -5, ty: -3 },
     { id: 'jungle_tree', tx: -7, ty: 2 },

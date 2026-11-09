@@ -7,7 +7,7 @@ export interface SurvivalStats {
   stamina: number;
 }
 
-export type DeathCause = 'starvation' | 'dehydration' | 'injury';
+export type DeathCause = 'starvation' | 'dehydration' | 'injury' | 'wildlife' | 'spirit' | 'poison';
 
 /**
  * Health / hunger / thirst / stamina. Pure logic: feed it real seconds and the clock's
@@ -82,6 +82,11 @@ export class Survival {
     if (!(amount > 0) || this.dead) return;
     this.stats.health = clamp(this.stats.health - amount, 0, this.cfg.maxHealth);
     this.lastDamageCause = cause;
+  }
+
+  heal(amount: number): void {
+    if (!(amount > 0) || this.dead) return;
+    this.stats.health = clamp(this.stats.health + amount, 0, this.cfg.maxHealth);
   }
 
   eat(food: NonNullable<ItemDef['food']>): void {
