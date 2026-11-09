@@ -16,6 +16,7 @@ import { SURVIVAL_ICON_DRAW } from './survival';
 import { COOKING_ICON_DRAW } from './cooking';
 import { BUILDING_ICON_DRAW } from './building';
 import { GEAR_ICON_DRAW } from './gear';
+import { EXPLORE_ICON_DRAW } from './explore';
 
 // ---------- Bamboo ----------
 
@@ -143,6 +144,7 @@ const ICON_DRAW: Record<IconKey, (ctx: Ctx, ox: number) => void> = {
   ...COOKING_ICON_DRAW,
   ...BUILDING_ICON_DRAW,
   ...GEAR_ICON_DRAW,
+  ...EXPLORE_ICON_DRAW,
   wood: (ctx, ox) => {
     px(ctx, ox + 2, 6, 12, 6, hex(0x6b4a2e));
     px(ctx, ox + 2, 6, 12, 2, hex(0x84603c));

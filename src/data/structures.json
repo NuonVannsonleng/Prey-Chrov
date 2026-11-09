@@ -137,5 +137,17 @@
     "lightRadius": 0,
     "interaction": null,
     "outpost": true
+  },
+  {
+    "id": "trail_sign",
+    "name": "Trail Sign",
+    "sprite": "sign",
+    "footprint": {
+      "w": 8,
+      "h": 6
+    },
+    "solid": true,
+    "lightRadius": 0,
+    "interaction": null
   }
 ]

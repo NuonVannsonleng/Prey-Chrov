@@ -29,6 +29,8 @@ export const TEX = {
   heartTree: 'tex-heart-tree',
   roots: 'tex-roots',
   herbs: 'tex-herbs',
+  ruinParts: 'tex-ruin-parts',
+  landmarks: 'tex-landmarks',
   minimap: 'tex-minimap',
   vignette: 'tex-vignette',
   menuBg: 'tex-menu-bg',
@@ -168,11 +170,14 @@ export const ICON_KEYS = [
   'hide_vest',
   'leaf_cape',
   'bark_sandals',
+  'compass',
+  'nav_note',
+  'trail_sign',
 ] as const;
 export type IconKey = (typeof ICON_KEYS)[number];
 
 /** Placeable structure visuals (structures.json `sprite`), frames inside TEX.structures. */
-export const STRUCTURE_SPRITES = ['campfire', 'shelter', 'pot', 'wall', 'roof', 'chest', 'collector', 'workbench', 'bed', 'flag'] as const;
+export const STRUCTURE_SPRITES = ['campfire', 'shelter', 'pot', 'wall', 'roof', 'chest', 'collector', 'workbench', 'bed', 'flag', 'sign'] as const;
 export type StructureSprite = (typeof STRUCTURE_SPRITES)[number];
 /** Frames inside TEX.structures; rotatable sprites add a '<sprite>_v' frame. */
 export const STRUCTURE_FRAME: Record<StructureSprite | 'wall_v', { x: number; w: number; h: number }> = {
@@ -187,6 +192,7 @@ export const STRUCTURE_FRAME: Record<StructureSprite | 'wall_v', { x: number; w:
   workbench: { x: 306, w: 36, h: 26 },
   bed: { x: 342, w: 44, h: 24 },
   flag: { x: 386, w: 16, h: 38 },
+  sign: { x: 402, w: 22, h: 30 },
 };
 export const LIGHT_TEXTURE_SIZE = 256;
 

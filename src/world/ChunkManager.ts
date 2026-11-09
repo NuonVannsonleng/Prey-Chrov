@@ -51,6 +51,40 @@ export interface HeartInstance {
   image: Phaser.GameObjects.Image;
 }
 
+/** M13 ruin puzzle piece, trap, reliquary, glyph stone or hidden cache (state is owned by the World). */
+export interface RuinFeatureObj {
+  key: string;
+  kind: 'lamp' | 'plate' | 'trap' | 'reliquary' | 'glyph' | 'secret';
+  /** Lamp symbol, plate/trap index, glyph order… */
+  fid: string;
+  /** Owning ruin site key ("tx,ty"). */
+  ruin: string;
+  x: number;
+  y: number;
+  image: Phaser.GameObjects.Image;
+}
+
+/** M13 rare landmark. */
+export interface LandmarkObj {
+  key: string;
+  id: string;
+  x: number;
+  y: number;
+  image: Phaser.GameObjects.Image;
+}
+
+const FEATURE_FOOTPRINT: Record<string, { w: number; h: number }> = {
+  lamp: { w: 14, h: 8 },
+  reliquary: { w: 22, h: 10 },
+  glyph: { w: 16, h: 8 },
+  secret: { w: 24, h: 10 },
+};
+const LANDMARK_FOOTPRINT: Record<string, { w: number; h: number }> = {
+  great_fig: { w: 44, h: 16 },
+  termite_mound: { w: 30, h: 12 },
+  split_boulder: { w: 50, h: 14 },
+};
+
 /** Ruin chest or key tablet (state — opened/read — is owned by the World). */
 export interface RuinObject {
   key: string;
@@ -79,6 +113,8 @@ interface LoadedChunk {
   roots: RootWall[];
   heart: HeartInstance | null;
   cover: Array<{ x: number; y: number }>;
+  features: RuinFeatureObj[];
+  landmarks: LandmarkObj[];
   /** Tiles flooded to shallows (with their dry index) for restoring. */
   flooded: Array<[Phaser.Tilemaps.Tile, number]>;
   /** Length of `animated` before flood tiles were appended. */
@@ -98,6 +134,9 @@ export class ChunkManager {
   readonly shrines: ShrineInstance[] = [];
   /** Live list of loaded ruin chests and key tablets (shared with Interaction). */
   readonly ruins: RuinObject[] = [];
+  /** M13: live ruin features and landmarks in loaded chunks. */
+  readonly features: RuinFeatureObj[] = [];
+  readonly landmarks: LandmarkObj[] = [];
   /** M12: dense vegetation the player can hide in (ferns, reeds). */
   readonly cover: Array<{ x: number; y: number }> = [];
   /** Live list of loaded root-ring sections around the Heart Tree. */
@@ -206,7 +245,7 @@ export class ChunkManager {
     const collider = this.scene.physics.add.collider(this.player, layer);
     const animated = layer.filterTiles((t: Phaser.Tilemaps.Tile) => t.index === TILE.waterA || t.index === TILE.shallowsA);
 
-    const chunk: LoadedChunk = { key, cx, cy, tilemap, layer, collider, animated, images: [], zones: [], canopies: [], nodes: [], shrines: [], ruins: [], roots: [], heart: null, cover: [], flooded: [], baseAnimated: animated.length };
+    const chunk: LoadedChunk = { key, cx, cy, tilemap, layer, collider, animated, images: [], zones: [], canopies: [], nodes: [], shrines: [], ruins: [], roots: [], heart: null, cover: [], features: [], landmarks: [], flooded: [], baseAnimated: animated.length };
     for (const p of data.props) {
       if (p.kind === 'resource') {
         const def = this.data.resources.get(p.id);
@@ -220,6 +259,31 @@ export class ChunkManager {
         }
         chunk.nodes.push(node);
         this.nodes.push(node);
+      } else if (p.kind === 'feature') {
+        // id = "<kind>:<fid>@<ruinKey>"
+        const at = p.id.indexOf('@');
+        const [kind, fid] = p.id.slice(0, at).split(':') as [RuinFeatureObj['kind'], string];
+        const frame =
+          kind === 'lamp' ? `lamp_${fid}_off` : kind === 'plate' ? 'plate_up' : kind === 'trap' ? 'trap_down' : kind === 'reliquary' ? 'reliquary_closed' : kind === 'glyph' ? 'glyph' : 'secret';
+        const flat = kind === 'plate' || kind === 'trap';
+        const image = this.scene.add
+          .image(p.x, p.y + (flat ? 6 : 2), TEX.ruinParts, frame)
+          .setOrigin(0.5, 1)
+          .setDepth(flat ? DEPTH.targetRing - 0.1 : ySort(p.y));
+        chunk.images.push(image);
+        const fp = FEATURE_FOOTPRINT[kind];
+        if (fp) chunk.zones.push(this.props.addSolid(p.x, p.y, fp));
+        const obj: RuinFeatureObj = { key: p.key, kind, fid, ruin: p.id.slice(at + 1), x: p.x, y: p.y, image };
+        chunk.features.push(obj);
+        this.features.push(obj);
+      } else if (p.kind === 'landmark') {
+        const image = this.scene.add.image(p.x, p.y + 4, TEX.landmarks, p.id).setOrigin(0.5, 1).setDepth(ySort(p.y));
+        chunk.images.push(image);
+        const fp = LANDMARK_FOOTPRINT[p.id];
+        if (fp) chunk.zones.push(this.props.addSolid(p.x, p.y, fp));
+        const lm: LandmarkObj = { key: p.key, id: p.id, x: p.x, y: p.y, image };
+        chunk.landmarks.push(lm);
+        this.landmarks.push(lm);
       } else if (p.kind === 'root') {
         const image = this.scene.add.image(p.x, p.y + 2, TEX.roots, 0).setOrigin(0.5, 1).setDepth(ySort(p.y));
         chunk.images.push(image);
@@ -251,6 +315,22 @@ export class ChunkManager {
         this.shrines.push(shrine);
       } else {
         this.addScenery(chunk, p.id as ScenerySprite, p.x, p.y, p.variant, p.canopyVariant);
+      }
+    }
+    // M13: stepping stones show where a hidden river shortcut crosses deep water.
+    const N = CHUNK_TILES;
+    for (let lx = 0; lx < N; lx++) {
+      const tx = cx * N + lx;
+      for (let ly = 0; ly < N; ly++) {
+        const ty = cy * N + ly;
+        if (!this.gen.steppingAt(tx, ty)) continue;
+        chunk.images.push(
+          this.scene.add
+            .image(tx * TILE_SIZE + TILE_SIZE / 2, ty * TILE_SIZE + TILE_SIZE / 2 + 4, TEX.ruinParts, 'stones')
+            .setOrigin(0.5, 0.5)
+            .setDepth(DEPTH.ground + 0.2)
+            .setAlpha(0.95),
+        );
       }
     }
     this.loaded.set(key, chunk);
@@ -295,6 +375,14 @@ export class ChunkManager {
     for (const r of c.roots) {
       const i = this.roots.indexOf(r);
       if (i >= 0) this.roots.splice(i, 1);
+    }
+    for (const f of c.features) {
+      const i = this.features.indexOf(f);
+      if (i >= 0) this.features.splice(i, 1);
+    }
+    for (const l of c.landmarks) {
+      const i = this.landmarks.indexOf(l);
+      if (i >= 0) this.landmarks.splice(i, 1);
     }
     if (c.cover.length) {
       const gone = new Set(c.cover);
@@ -420,6 +508,8 @@ export class ChunkManager {
     this.ruins.length = 0;
     this.roots.length = 0;
     this.cover.length = 0;
+    this.features.length = 0;
+    this.landmarks.length = 0;
     this.heart = null;
     this.floodQueue.length = 0;
     this.pending.length = 0;

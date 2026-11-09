@@ -645,5 +645,60 @@
     "station": "workbench",
     "category": "gear",
     "unlock": "trail_craft"
+  },
+  {
+    "id": "compass",
+    "output": "compass",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "flint",
+        "qty": 1
+      },
+      {
+        "item": "stick",
+        "qty": 1
+      },
+      {
+        "item": "leaf",
+        "qty": 1
+      }
+    ],
+    "station": "none",
+    "category": "tools"
+  },
+  {
+    "id": "nav_note",
+    "output": "nav_note",
+    "qty": 2,
+    "ingredients": [
+      {
+        "item": "leaf",
+        "qty": 2
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 1
+      }
+    ],
+    "station": "none",
+    "category": "tools"
+  },
+  {
+    "id": "trail_sign",
+    "output": "trail_sign_kit",
+    "qty": 2,
+    "ingredients": [
+      {
+        "item": "stick",
+        "qty": 2
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 1
+      }
+    ],
+    "station": "none",
+    "category": "building"
   }
 ]

@@ -133,7 +133,24 @@ function drawFlag(ctx: Ctx, baseY: number): void {
   ellipse(ctx, ox + 5, baseY - 3, 4, 2.5, hex(0x7d8285));
 }
 
-export const BUILDING_FRAMES = ['wall', 'wall_v', 'roof', 'chest', 'collector', 'workbench', 'bed', 'flag'] as const;
+export const BUILDING_FRAMES = ['wall', 'wall_v', 'roof', 'chest', 'collector', 'workbench', 'bed', 'flag', 'sign'] as const;
+
+function drawSign(ctx: Ctx, baseY: number): void {
+  const { x: ox, h } = STRUCTURE_FRAME.sign;
+  ellipse(ctx, ox + 11, baseY - 2, 6, 2, 'rgba(0,0,0,0.3)');
+  px(ctx, ox + 10, baseY - h + 6, 3, h - 7, hex(WOOD));
+  ctx.fillStyle = hex(WOOD_LIGHT);
+  ctx.beginPath();
+  ctx.moveTo(ox + 2, baseY - h + 6);
+  ctx.lineTo(ox + 17, baseY - h + 6);
+  ctx.lineTo(ox + 21, baseY - h + 10);
+  ctx.lineTo(ox + 17, baseY - h + 14);
+  ctx.lineTo(ox + 2, baseY - h + 14);
+  ctx.closePath();
+  ctx.fill();
+  px(ctx, ox + 5, baseY - h + 9, 9, 1, hex(shade(WOOD, -0.3)));
+  px(ctx, ox + 5, baseY - h + 11, 6, 1, hex(shade(WOOD, -0.3)));
+}
 
 export function drawBuildingStructures(ctx: Ctx, baseY: number): void {
   drawWall(ctx, baseY);
@@ -144,6 +161,7 @@ export function drawBuildingStructures(ctx: Ctx, baseY: number): void {
   drawWorkbench(ctx, baseY);
   drawBed(ctx, baseY);
   drawFlag(ctx, baseY);
+  drawSign(ctx, baseY);
 }
 
 export const BUILDING_ICON_DRAW = {

@@ -195,7 +195,7 @@ function drawShelter(ctx: Ctx): void {
 }
 
 function generateStructures(scene: Phaser.Scene): void {
-  const width = STRUCTURE_FRAME.flag.x + STRUCTURE_FRAME.flag.w;
+  const width = STRUCTURE_FRAME.sign.x + STRUCTURE_FRAME.sign.w;
   const height = Math.max(STRUCTURE_FRAME.campfire.h, STRUCTURE_FRAME.shelter.h);
   const tex = createCanvasTexture(scene, TEX.structures, width, height, (ctx) => {
     ctx.save();

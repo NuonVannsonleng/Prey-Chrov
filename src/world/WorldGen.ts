@@ -3,13 +3,14 @@ import type { BiomeDef, BiomeId } from '../data/schema';
 import { CHUNK_TILES, TILE_SIZE, WORLD_GEN } from '../config';
 import { GROUND_TILE, TILE, type GroundTileKey } from '../textures';
 import { hash2, mulberry32 } from '../utils/random';
+import { LANDMARK_CELL, isSteppingTile, landmarkCandidate, ruinPlan, type LandmarkId } from './RuinPlan';
 
 const WATER_MINIMAP = { deep: '#1d4a52', shallow: '#2c6a6a' } as const;
 
 export interface GenProp {
   /** Stable id: "cx,cy:index" — chunk diffs and saves key on it. */
   key: string;
-  kind: 'resource' | 'scenery' | 'shrine' | 'chest' | 'tablet' | 'heart' | 'root';
+  kind: 'resource' | 'scenery' | 'shrine' | 'chest' | 'tablet' | 'heart' | 'root' | 'feature' | 'landmark';
   /** resources.json id (resource) or a SCENERY_SPRITES key (scenery). */
   id: string;
   x: number;
@@ -56,6 +57,7 @@ export class WorldGen {
   private readonly pond: NoiseFunction2D;
   private readonly detail: NoiseFunction2D;
   private readonly ruinCache = new Map<number, RuinSite | null>();
+  private readonly landmarkCache = new Map<number, { tx: number; ty: number; id: LandmarkId } | null>();
   private tabletSiteCache: RuinSite[] | null = null;
   private heartCache: { tx: number; ty: number } | null = null;
   private heartSearching = false;
@@ -155,7 +157,8 @@ export class WorldGen {
     if (r < WORLD_GEN.riverWidth) {
       // Fords: stretches of the river stay shallow so rivers never wall off the world.
       const fordable = this.ford(tx / WORLD_GEN.fordScale, ty / WORLD_GEN.fordScale) > WORLD_GEN.fordThreshold;
-      return r < WORLD_GEN.riverWidth * 0.55 && !fordable ? 'deep' : 'shallow';
+      const deep = r < WORLD_GEN.riverWidth * 0.55 && !fordable;
+      return deep && !isSteppingTile(tx, ty, this.seed) ? 'deep' : 'shallow';
     }
     if (this.biomeAt(tx, ty) === 'river_swamp') {
       const p = this.pond(tx / 14, ty / 14);
@@ -163,6 +166,37 @@ export class WorldGen {
       if (p > 0.38) return 'shallow';
     }
     return null;
+  }
+
+  /** M13 shortcut: a stepping-stone tile where the river would otherwise be deep. */
+  steppingAt(tx: number, ty: number): boolean {
+    if (!isSteppingTile(tx, ty, this.seed)) return false; // cheap column test first
+    if (this.spawnDist(tx, ty) <= WORLD_GEN.spawnSafeRadius + 2 || this.ruinAt(tx, ty) || this.inHeartGlade(tx, ty, 2)) return false;
+    const r = Math.abs(this.river(tx / WORLD_GEN.riverScale, ty / WORLD_GEN.riverScale));
+    if (r >= WORLD_GEN.riverWidth * 0.55) return false;
+    return !(this.ford(tx / WORLD_GEN.fordScale, ty / WORLD_GEN.fordScale) > WORLD_GEN.fordThreshold);
+  }
+
+  /** M13: the validated landmark in a landmark cell (dry, clear of ruins, spawn and the Heart), cached. */
+  landmarkInCell(cellX: number, cellY: number): { tx: number; ty: number; id: LandmarkId } | null {
+    const key = cellX * 4194304 + cellY;
+    const cached = this.landmarkCache.get(key);
+    if (cached !== undefined) return cached;
+    let out: { tx: number; ty: number; id: LandmarkId } | null = null;
+    const raw = landmarkCandidate(cellX, cellY, this.seed);
+    const N = CHUNK_TILES;
+    const snap = (t: number) => {
+      const ch = Math.floor(t / N);
+      return ch * N + Math.min(N - 4, Math.max(3, t - ch * N));
+    };
+    const c = raw ? { ...raw, tx: snap(raw.tx), ty: snap(raw.ty) } : null;
+    if (c && this.spawnDist(c.tx, c.ty) > WORLD_GEN.spawnSafeRadius + 20 && !this.inHeartGlade(c.tx, c.ty, 8) && this.ruinsNear(c.tx, c.ty, WORLD_GEN.ruinRadius + 8).length === 0) {
+      let dry = true;
+      for (let oy = -3; oy <= 3 && dry; oy++) for (let ox = -3; ox <= 3; ox++) if (this.waterAt(c.tx + ox, c.ty + oy)) dry = false;
+      if (dry) out = c;
+    }
+    this.landmarkCache.set(key, out);
+    return out;
   }
 
   isSolidWater(tx: number, ty: number): boolean {
@@ -173,7 +207,8 @@ export class WorldGen {
     const water = this.waterAt(tx, ty);
     let shore = false;
     if (!water) {
-      for (let oy = -1; oy <= 1 && !shore; oy++) for (let ox = -1; ox <= 1; ox++) if ((ox || oy) && this.waterAt(tx + ox, ty + oy) === 'deep') shore = true;
+      // Stepping stones keep their banks as shore (as when the river there was deep).
+      for (let oy = -1; oy <= 1 && !shore; oy++) for (let ox = -1; ox <= 1; ox++) if ((ox || oy) && (this.waterAt(tx + ox, ty + oy) === 'deep' || this.steppingAt(tx + ox, ty + oy))) shore = true;
     }
     return this.tileFrom(tx, ty, water, shore);
   }
@@ -232,7 +267,7 @@ export class WorldGen {
         const w = water[(y + 1) * G + x + 1] ?? null;
         let shore = false;
         if (!w) {
-          for (let oy = 0; oy <= 2 && !shore; oy++) for (let ox = 0; ox <= 2; ox++) if (water[(y + oy) * G + x + ox] === 'deep') shore = true;
+          for (let oy = 0; oy <= 2 && !shore; oy++) for (let ox = 0; ox <= 2; ox++) if (water[(y + oy) * G + x + ox] === 'deep' || this.steppingAt(tx0 + x + ox - 1, ty0 + y + oy - 1)) shore = true;
         }
         row.push(this.tileFrom(tx0 + x, ty0 + y, w, shore));
       }
@@ -290,6 +325,7 @@ export class WorldGen {
     const solidOk = (lx: number, ly: number) =>
       lx >= 1 && ly >= 1 && lx < N - 1 && ly < N - 1 && dryLand(lx, ly) && !blocked(lx, ly) && this.spawnDist(tx0 + lx, ty0 + ly) > 3.5;
 
+    const vegStart = props.length;
     for (let attempt = 0; attempt < N * N * 0.35; attempt++) {
       const lx = Math.floor(rng() * N);
       const ly = Math.floor(rng() * N);
@@ -304,7 +340,60 @@ export class WorldGen {
         break;
       }
     }
+    this.placeExtras(cx, cy, props, vegStart, add);
     return { cx, cy, tiles, props };
+  }
+
+  /**
+   * M13 extras (ruin layouts, puzzle pieces, traps, caches, landmarks) are appended after the
+   * vegetation pass and then clear any vegetation on their tiles. Everything generated before
+   * keeps exactly the same keys and positions as in older versions, so saved chest and node
+   * states still line up.
+   */
+  private placeExtras(
+    cx: number,
+    cy: number,
+    props: GenProp[],
+    vegStart: number,
+    add: (kind: GenProp['kind'], id: string, lx: number, ly: number, solid: boolean, jitter?: number) => void,
+  ): void {
+    const N = CHUNK_TILES;
+    const tx0 = cx * N;
+    const ty0 = cy * N;
+    const clear: Array<[number, number, number]> = [];
+    const site = this.ruinsNear(tx0 + N / 2, ty0 + N / 2, N * 1.5).find(
+      (s) => s.tx + s.radius >= tx0 && s.tx - s.radius < tx0 + N && s.ty + s.radius >= ty0 && s.ty - s.radius < ty0 + N,
+    );
+    if (site) {
+      for (const f of ruinPlan(site, this.seed).features) {
+        if (f.kind === 'pillar' && f.id === 'inner') continue; // placed by placeRuins
+        const lx = site.tx + f.ox - tx0;
+        const ly = site.ty + f.oy - ty0;
+        if (lx < 0 || ly < 0 || lx >= N || ly >= N) continue;
+        // Architecture keeps off chunk edges (chunks never wall each other off); puzzle pieces
+        // always exist wherever they fall, or a puzzle could become unsolvable.
+        const edge = lx < 1 || ly < 1 || lx >= N - 1 || ly >= N - 1;
+        if (edge && (f.kind === 'pillar' || f.kind === 'inner_wall')) continue;
+        if (f.kind === 'pillar') add('scenery', 'ruin_pillar', lx, ly, true, 0);
+        else if (f.kind === 'inner_wall') add('scenery', 'ruin_wall', lx, ly, true, 0);
+        else add('feature', `${f.kind}:${f.id}@${site.tx},${site.ty}`, lx, ly, f.solid, 0);
+        clear.push([lx, ly, 0]);
+      }
+    }
+    const lm = this.landmarkInCell(Math.floor((tx0 + N / 2) / LANDMARK_CELL), Math.floor((ty0 + N / 2) / LANDMARK_CELL));
+    if (lm && lm.tx >= tx0 && lm.tx < tx0 + N && lm.ty >= ty0 && lm.ty < ty0 + N) {
+      add('landmark', lm.id, lm.tx - tx0, lm.ty - ty0, true, 0);
+      clear.push([lm.tx - tx0, lm.ty - ty0, 3]);
+    }
+    if (!clear.length) return;
+    const vegEnd = props.length - clear.length;
+    for (let i = vegEnd - 1; i >= vegStart; i--) {
+      const p = props[i];
+      if (!p) continue;
+      const lx = Math.floor(p.x / TILE_SIZE) - tx0;
+      const ly = Math.floor(p.y / TILE_SIZE) - ty0;
+      if (clear.some(([x, y, r]) => Math.abs(x - lx) <= r && Math.abs(y - ly) <= r)) props.splice(i, 1);
+    }
   }
 
   private placeRuins(
@@ -344,7 +433,8 @@ export class WorldGen {
         add('scenery', (tx + ty) % 3 === 0 ? 'ruin_pillar' : 'ruin_wall', lx, ly, true, 0);
       }
     }
-    // Inner pillars and rubble.
+    // Inner pillars and rubble (unchanged since M6 so saved prop keys stay stable; M13 extras
+    // are appended after the vegetation pass in placeExtras).
     for (const [ox, oy] of [
       [-3, -3],
       [3, -3],

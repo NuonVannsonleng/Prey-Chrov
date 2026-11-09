@@ -134,6 +134,30 @@
       "xp": 1,
       "unique": true,
       "text": "a shrine honoured"
+    },
+    "landmark": {
+      "skill": "exploration",
+      "xp": 3,
+      "unique": true,
+      "text": "a landmark discovered"
+    },
+    "shortcut": {
+      "skill": "exploration",
+      "xp": 2,
+      "unique": true,
+      "text": "a shortcut found"
+    },
+    "puzzle": {
+      "skill": "exploration",
+      "xp": 3,
+      "unique": true,
+      "text": "a ruin puzzle solved"
+    },
+    "secret": {
+      "skill": "exploration",
+      "xp": 2,
+      "unique": true,
+      "text": "a hidden cache found"
     }
   },
   "knowledge": [
