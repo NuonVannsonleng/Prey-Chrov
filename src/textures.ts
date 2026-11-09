@@ -154,16 +154,33 @@ export const ICON_KEYS = [
   'antidote',
   'stew',
   'pot',
+  'wall',
+  'roof',
+  'chest',
+  'collector',
+  'workbench',
+  'bed',
+  'flag',
+  'rain_water',
 ] as const;
 export type IconKey = (typeof ICON_KEYS)[number];
 
 /** Placeable structure visuals (structures.json `sprite`), frames inside TEX.structures. */
-export const STRUCTURE_SPRITES = ['campfire', 'shelter', 'pot'] as const;
+export const STRUCTURE_SPRITES = ['campfire', 'shelter', 'pot', 'wall', 'roof', 'chest', 'collector', 'workbench', 'bed', 'flag'] as const;
 export type StructureSprite = (typeof STRUCTURE_SPRITES)[number];
-export const STRUCTURE_FRAME: Record<StructureSprite, { x: number; w: number; h: number }> = {
+/** Frames inside TEX.structures; rotatable sprites add a '<sprite>_v' frame. */
+export const STRUCTURE_FRAME: Record<StructureSprite | 'wall_v', { x: number; w: number; h: number }> = {
   campfire: { x: 0, w: 32, h: 28 },
   shelter: { x: 32, w: 72, h: 60 },
   pot: { x: 104, w: 28, h: 28 },
+  wall: { x: 132, w: 34, h: 30 },
+  wall_v: { x: 166, w: 12, h: 46 },
+  roof: { x: 178, w: 76, h: 50 },
+  chest: { x: 254, w: 26, h: 22 },
+  collector: { x: 280, w: 26, h: 34 },
+  workbench: { x: 306, w: 36, h: 26 },
+  bed: { x: 342, w: 44, h: 24 },
+  flag: { x: 386, w: 16, h: 38 },
 };
 export const LIGHT_TEXTURE_SIZE = 256;
 

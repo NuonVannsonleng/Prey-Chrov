@@ -26,10 +26,10 @@ export type ToolKind = (typeof TOOL_KINDS)[number];
 export const RECIPE_CATEGORIES = ['tools', 'light', 'building', 'food', 'medicine'] as const;
 export type RecipeCategory = (typeof RECIPE_CATEGORIES)[number];
 
-export const STATIONS = ['none', 'campfire', 'pot'] as const;
+export const STATIONS = ['none', 'campfire', 'pot', 'workbench'] as const;
 export type Station = (typeof STATIONS)[number];
 
-export const STRUCTURE_INTERACTIONS = ['cook', 'sleep'] as const;
+export const STRUCTURE_INTERACTIONS = ['cook', 'sleep', 'storage', 'collect', 'craft'] as const;
 export type StructureInteraction = (typeof STRUCTURE_INTERACTIONS)[number];
 
 /** items.json: array of ItemDef. */
@@ -136,6 +136,28 @@ export interface StructureDef {
   interaction: StructureInteraction | null;
   /** Crafting station this structure provides within reach. */
   station?: Exclude<Station, 'none'>;
+  /** R rotates it during placement (horizontal / vertical frame and footprint). */
+  rotatable?: boolean;
+  /** Snaps to this grid (px) and may sit flush against other structures (walls). */
+  snap?: number;
+  /** Game hours of monsoon weathering before it breaks (absent = never weathers). */
+  durability?: number;
+  /** Weathers in the monsoon even under a roof (roofs themselves). */
+  wearsAlways?: boolean;
+  /** Keeps the player warm and dry, and protects structures from weathering, within this radius. */
+  shelterRadius?: number;
+  /** Drawn above the player (roofs); fades while the player is underneath. */
+  overhead?: boolean;
+  /** Storage chest slots. */
+  storageSlots?: number;
+  /** Rain collector: units held; one unit per game hour of rain. */
+  rainCapacity?: number;
+  /** Item a held container is filled with at this structure (rain collector). */
+  collectItem?: string;
+  /** Extra health and full warmth after sleeping here (improved beds). */
+  sleepBonus?: { health: number };
+  /** Outpost flag: named marker on the map; creatures never spawn close by. */
+  outpost?: boolean;
 }
 
 /** fishing.json: the fishing minigame (M9). */
@@ -429,9 +451,20 @@ function validateStructures(p: string[], structures: Rec[]): void {
     if (!isNum(s['lightRadius']) || num(s['lightRadius']) < 0) p.push(`${w}: lightRadius must be >= 0`);
     const inter = s['interaction'];
     if (inter !== null && !STRUCTURE_INTERACTIONS.includes(inter as StructureInteraction))
-      p.push(`${w}: interaction must be null, "cook" or "sleep"`);
+      p.push(`${w}: interaction must be null or one of ${STRUCTURE_INTERACTIONS.join(', ')}`);
     const st = s['station'];
     if (st !== undefined && (st === 'none' || !STATIONS.includes(st as Station))) p.push(`${w}: unknown station ${String(st)}`);
+    for (const k of ['snap', 'durability', 'shelterRadius', 'storageSlots', 'rainCapacity'] as const) {
+      const v = s[k];
+      if (v !== undefined && (!isNum(v) || num(v) <= 0)) p.push(`${w}: ${k} must be > 0`);
+    }
+    if (s['storageSlots'] !== undefined && (!isInt(s['storageSlots']) || num(s['storageSlots']) > 24)) p.push(`${w}: storageSlots must be an integer <= 24`);
+    if (s['interaction'] === 'storage' && s['storageSlots'] === undefined) p.push(`${w}: storage needs storageSlots`);
+    if (s['interaction'] === 'collect' && (s['rainCapacity'] === undefined || !isStr(s['collectItem']))) p.push(`${w}: collect needs rainCapacity and collectItem`);
+    if (s['interaction'] === 'craft' && s['station'] === undefined) p.push(`${w}: craft needs a station`);
+    if (s['rotatable'] === true && !STRUCTURE_SPRITES.includes(s['sprite'] as StructureSprite)) p.push(`${w}: rotatable needs a sprite`);
+    const sb = s['sleepBonus'];
+    if (sb !== undefined && (!isRec(sb) || !isNum(sb['health']) || num(sb['health']) < 0)) p.push(`${w}: sleepBonus.health must be >= 0`);
   }
 }
 
@@ -685,6 +718,7 @@ export function validateGameData(raw: RawGameData): GameData {
   validateResources(p, resources, ids(loot));
   validateRecipes(p, recipes, itemIds);
   validateStructures(p, structures);
+  for (const s of structures) if (s['collectItem'] !== undefined && !itemIds.has(s['collectItem'] as string)) p.push(`structure "${String(s['id'])}": collectItem unknown item ${String(s['collectItem'])}`);
   validateSurvival(p, raw.survival);
   validateBiomes(p, biomes, ids(resources));
   validateEnemies(p, enemies, ids(loot));
@@ -766,6 +800,13 @@ export function reachableItems(
       if (have.has(r.output)) continue;
       if (r.station !== 'none' && !stationKits(r.station).some((id) => have.has(id))) continue;
       if (r.ingredients.every((g) => have.has(g.item))) changed = add(r.output) || changed;
+    }
+    // A placed rain collector fills a held container with its collectItem.
+    for (const s of data.structures?.values() ?? []) {
+      if (!s.collectItem || have.has(s.collectItem)) continue;
+      const kitHave = [...data.items.values()].some((i) => i.places === s.id && have.has(i.id));
+      const containerHave = [...data.items.values()].some((i) => i.fillsTo && have.has(i.id));
+      if (kitHave && containerHave) changed = add(s.collectItem) || changed;
     }
     for (const it of data.items.values()) {
       if (!have.has(it.id)) continue;

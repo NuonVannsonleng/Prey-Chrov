@@ -3,6 +3,7 @@ import { LIGHT_TEXTURE_SIZE, STRUCTURE_FRAME, TEX } from '../textures';
 import { mulberry32, randInt } from '../utils/random';
 import { createCanvasTexture, ellipse, hex, px, shade, type Ctx } from './canvas';
 import { drawPot } from './cooking';
+import { BUILDING_FRAMES, drawBuildingStructures } from './building';
 
 /** Icon drawers for M3 items; registered into the shared icon sheet by gathering.ts. */
 export const SURVIVAL_ICON_DRAW = {
@@ -194,7 +195,7 @@ function drawShelter(ctx: Ctx): void {
 }
 
 function generateStructures(scene: Phaser.Scene): void {
-  const width = STRUCTURE_FRAME.pot.x + STRUCTURE_FRAME.pot.w;
+  const width = STRUCTURE_FRAME.flag.x + STRUCTURE_FRAME.flag.w;
   const height = Math.max(STRUCTURE_FRAME.campfire.h, STRUCTURE_FRAME.shelter.h);
   const tex = createCanvasTexture(scene, TEX.structures, width, height, (ctx) => {
     ctx.save();
@@ -203,6 +204,7 @@ function generateStructures(scene: Phaser.Scene): void {
     ctx.restore();
     drawShelter(ctx);
     drawPot(ctx, height);
+    drawBuildingStructures(ctx, height);
   });
   const c = STRUCTURE_FRAME.campfire;
   const s = STRUCTURE_FRAME.shelter;
@@ -210,6 +212,10 @@ function generateStructures(scene: Phaser.Scene): void {
   tex.add('shelter', 0, s.x, height - s.h, s.w, s.h);
   const pt = STRUCTURE_FRAME.pot;
   tex.add('pot', 0, pt.x, height - pt.h, pt.w, pt.h);
+  for (const key of BUILDING_FRAMES) {
+    const f = STRUCTURE_FRAME[key];
+    tex.add(key, 0, f.x, height - f.h, f.w, f.h);
+  }
 }
 
 /** Three flame frames (animated by cycling frames + a flicker tween). */

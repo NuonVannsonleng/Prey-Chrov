@@ -307,5 +307,207 @@
     ],
     "station": "pot",
     "category": "medicine"
+  },
+  {
+    "id": "workbench",
+    "output": "workbench_kit",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "wood",
+        "qty": 6
+      },
+      {
+        "item": "stone",
+        "qty": 2
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 2
+      }
+    ],
+    "station": "none",
+    "category": "building"
+  },
+  {
+    "id": "outpost_flag",
+    "output": "outpost_flag_kit",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "stick",
+        "qty": 3
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 2
+      },
+      {
+        "item": "leaf",
+        "qty": 2
+      }
+    ],
+    "station": "workbench",
+    "category": "building"
+  },
+  {
+    "id": "bamboo_wall",
+    "output": "bamboo_wall_kit",
+    "qty": 2,
+    "ingredients": [
+      {
+        "item": "bamboo",
+        "qty": 3
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 1
+      }
+    ],
+    "station": "workbench",
+    "category": "building"
+  },
+  {
+    "id": "thatch_roof",
+    "output": "thatch_roof_kit",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "bamboo",
+        "qty": 4
+      },
+      {
+        "item": "leaf",
+        "qty": 6
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 2
+      }
+    ],
+    "station": "workbench",
+    "category": "building"
+  },
+  {
+    "id": "storage_chest",
+    "output": "storage_chest_kit",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "wood",
+        "qty": 6
+      },
+      {
+        "item": "bamboo",
+        "qty": 2
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 2
+      }
+    ],
+    "station": "workbench",
+    "category": "building"
+  },
+  {
+    "id": "rain_collector",
+    "output": "rain_collector_kit",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "bamboo",
+        "qty": 4
+      },
+      {
+        "item": "leaf",
+        "qty": 4
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 2
+      }
+    ],
+    "station": "workbench",
+    "category": "building"
+  },
+  {
+    "id": "bamboo_bed",
+    "output": "bamboo_bed_kit",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "bamboo",
+        "qty": 6
+      },
+      {
+        "item": "leaf",
+        "qty": 4
+      },
+      {
+        "item": "hide",
+        "qty": 1
+      }
+    ],
+    "station": "workbench",
+    "category": "building"
+  },
+  {
+    "id": "vegetable_stew_rain",
+    "output": "vegetable_stew",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "bamboo_shoot",
+        "qty": 1
+      },
+      {
+        "item": "berries",
+        "qty": 2
+      },
+      {
+        "item": "rain_water",
+        "qty": 1
+      }
+    ],
+    "station": "pot",
+    "category": "food"
+  },
+  {
+    "id": "fish_soup_rain",
+    "output": "fish_soup",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "raw_fish",
+        "qty": 1
+      },
+      {
+        "item": "healing_leaf",
+        "qty": 1
+      },
+      {
+        "item": "rain_water",
+        "qty": 1
+      }
+    ],
+    "station": "pot",
+    "category": "food"
+  },
+  {
+    "id": "antidote_rain",
+    "output": "antidote",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "bitter_root",
+        "qty": 2
+      },
+      {
+        "item": "rain_water",
+        "qty": 1
+      }
+    ],
+    "station": "pot",
+    "category": "medicine"
   }
 ]

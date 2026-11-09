@@ -36,5 +36,106 @@
     "lightRadius": 0,
     "interaction": "cook",
     "station": "pot"
+  },
+  {
+    "id": "workbench",
+    "name": "Workbench",
+    "sprite": "workbench",
+    "footprint": {
+      "w": 30,
+      "h": 10
+    },
+    "solid": true,
+    "lightRadius": 0,
+    "interaction": "craft",
+    "station": "workbench"
+  },
+  {
+    "id": "bamboo_wall",
+    "name": "Bamboo Wall",
+    "sprite": "wall",
+    "footprint": {
+      "w": 32,
+      "h": 8
+    },
+    "solid": true,
+    "lightRadius": 0,
+    "interaction": null,
+    "rotatable": true,
+    "snap": 8,
+    "durability": 72
+  },
+  {
+    "id": "thatch_roof",
+    "name": "Thatch Roof",
+    "sprite": "roof",
+    "footprint": {
+      "w": 72,
+      "h": 44
+    },
+    "solid": false,
+    "lightRadius": 0,
+    "interaction": null,
+    "overhead": true,
+    "shelterRadius": 56,
+    "durability": 96,
+    "wearsAlways": true
+  },
+  {
+    "id": "storage_chest",
+    "name": "Storage Chest",
+    "sprite": "chest",
+    "footprint": {
+      "w": 22,
+      "h": 10
+    },
+    "solid": true,
+    "lightRadius": 0,
+    "interaction": "storage",
+    "storageSlots": 12
+  },
+  {
+    "id": "rain_collector",
+    "name": "Rain Collector",
+    "sprite": "collector",
+    "footprint": {
+      "w": 18,
+      "h": 10
+    },
+    "solid": true,
+    "lightRadius": 0,
+    "interaction": "collect",
+    "rainCapacity": 4,
+    "collectItem": "rain_water",
+    "durability": 120
+  },
+  {
+    "id": "bamboo_bed",
+    "name": "Bamboo Bed",
+    "sprite": "bed",
+    "footprint": {
+      "w": 40,
+      "h": 12
+    },
+    "solid": true,
+    "lightRadius": 0,
+    "interaction": "sleep",
+    "sleepBonus": {
+      "health": 25
+    },
+    "durability": 72
+  },
+  {
+    "id": "outpost_flag",
+    "name": "Outpost Flag",
+    "sprite": "flag",
+    "footprint": {
+      "w": 10,
+      "h": 6
+    },
+    "solid": true,
+    "lightRadius": 0,
+    "interaction": null,
+    "outpost": true
   }
 ]
