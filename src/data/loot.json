@@ -227,5 +227,56 @@
       "max": 0
     },
     "entries": []
+  },
+  {
+    "id": "ruin_chest",
+    "guaranteed": [
+      {
+        "item": "flint",
+        "min": 1,
+        "max": 2
+      },
+      {
+        "item": "cooked_meat",
+        "min": 1,
+        "max": 2
+      }
+    ],
+    "rolls": {
+      "min": 2,
+      "max": 3
+    },
+    "entries": [
+      {
+        "item": "stone",
+        "weight": 5,
+        "min": 2,
+        "max": 3
+      },
+      {
+        "item": "spirit_dust",
+        "weight": 3,
+        "min": 1,
+        "max": 2
+      },
+      {
+        "item": "torch",
+        "weight": 3,
+        "min": 1,
+        "max": 1
+      },
+      {
+        "item": "stone_axe",
+        "weight": 1,
+        "min": 1,
+        "max": 1
+      },
+      {
+        "item": "raw_meat",
+        "weight": 3,
+        "min": 1,
+        "max": 2
+      }
+    ]
   }
 ]

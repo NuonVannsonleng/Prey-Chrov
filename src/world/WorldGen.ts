@@ -9,7 +9,7 @@ const WATER_MINIMAP = { deep: '#1d4a52', shallow: '#2c6a6a' } as const;
 export interface GenProp {
   /** Stable id: "cx,cy:index" — chunk diffs and saves key on it. */
   key: string;
-  kind: 'resource' | 'scenery' | 'shrine';
+  kind: 'resource' | 'scenery' | 'shrine' | 'chest' | 'tablet';
   /** resources.json id (resource) or a SCENERY_SPRITES key (scenery). */
   id: string;
   x: number;
@@ -56,6 +56,8 @@ export class WorldGen {
   private readonly pond: NoiseFunction2D;
   private readonly detail: NoiseFunction2D;
   private readonly ruinCache = new Map<number, RuinSite | null>();
+  private tabletSiteCache: RuinSite[] | null = null;
+  private heartCache: { tx: number; ty: number } | null = null;
 
   constructor(
     seed: number,
@@ -352,6 +354,19 @@ export class WorldGen {
     const clx = site.tx - tx0;
     const cly = site.ty - ty0;
     if (clx >= 0 && cly >= 0 && clx < N && cly < N) add('scenery', 'ruin_altar', clx, cly, true, 0);
+    // Two chests flank the altar; the five nearest ruins also hold a key tablet before it.
+    for (const [ox, oy] of [
+      [-5, 1],
+      [5, 1],
+    ] as const) {
+      const lx = site.tx + ox - tx0;
+      const ly = site.ty + oy - ty0;
+      if (lx >= 0 && ly >= 0 && lx < N && ly < N) add('chest', 'ruin_chest', lx, ly, true, 0);
+    }
+    const order = this.tabletOrderAt(site);
+    const tlx = site.tx - tx0;
+    const tly = site.ty + 3 - ty0;
+    if (order > 0 && tlx >= 0 && tly >= 0 && tlx < N && tly < N) add('tablet', `tablet_${order}`, tlx, tly, true, 0);
   }
 
   /** Local tile of this chunk's Neak Ta shrine, or null. Deterministic per (seed, chunk). */
@@ -374,6 +389,68 @@ export class WorldGen {
       if (dry(lx, ly) && dry(lx, ly + 1) && !this.ruinAt(cx * N + lx, cy * N + ly)) return [lx, ly];
     }
     return null;
+  }
+
+  /**
+   * The ruins holding the five key tablets: the five ruin sites nearest to spawn, so the main
+   * quest always has reachable, discoverable targets (ruin courtyards are always reachable).
+   */
+  tabletSites(): RuinSite[] {
+    if (this.tabletSiteCache) return this.tabletSiteCache;
+    let radius = 300;
+    let sites: RuinSite[] = [];
+    while (sites.length < 5 && radius < 6000) {
+      sites = this.ruinsNear(0, 0, radius);
+      radius *= 1.6;
+    }
+    sites.sort((a, b) => Math.hypot(a.tx, a.ty) - Math.hypot(b.tx, b.ty));
+    this.tabletSiteCache = sites.slice(0, 5);
+    return this.tabletSiteCache;
+  }
+
+  /** Tablet order (1..5) held by a ruin site, or 0. */
+  tabletOrderAt(site: RuinSite): number {
+    const i = this.tabletSites().findIndex((s) => s.tx === site.tx && s.ty === site.ty);
+    return i + 1;
+  }
+
+  /**
+   * Heart of the Forest: a deterministic far site (~220 tiles out, direction from the seed),
+   * nudged to dry, non-ruin land so the quest target is always reachable.
+   */
+  heartSite(): { tx: number; ty: number } {
+    if (this.heartCache) return this.heartCache;
+    const ang = ((hash2(17, 23, this.seed) % 3600) / 3600) * Math.PI * 2;
+    const baseX = Math.round(Math.cos(ang) * WORLD_GEN.heartDistance);
+    const baseY = Math.round(Math.sin(ang) * WORLD_GEN.heartDistance);
+    for (let r = 0; r < 60; r++) {
+      for (let a = 0; a < 16; a++) {
+        const tx = baseX + Math.round(Math.cos((a / 16) * Math.PI * 2) * r);
+        const ty = baseY + Math.round(Math.sin((a / 16) * Math.PI * 2) * r);
+        if (!this.waterAt(tx, ty) && !this.ruinAt(tx, ty)) {
+          this.heartCache = { tx, ty };
+          return this.heartCache;
+        }
+      }
+    }
+    this.heartCache = { tx: baseX, ty: baseY };
+    return this.heartCache;
+  }
+
+  /**
+   * Monsoon flood mask: at flood level 0..1, low ground along rivers and in swamps becomes
+   * walkable shallows. Never deep water, never the spawn clearing or ruin courtyards, so the
+   * player can never be trapped and structures are never lost.
+   */
+  floodAt(tx: number, ty: number, level: number, floodRiverWidth: number): boolean {
+    if (level <= 0) return false;
+    if (this.spawnDist(tx, ty) <= WORLD_GEN.spawnSafeRadius - 2) return false;
+    if (this.waterAt(tx, ty)) return false;
+    if (this.ruinAt(tx, ty)) return false;
+    const r = Math.abs(this.river(tx / WORLD_GEN.riverScale, ty / WORLD_GEN.riverScale));
+    if (r < WORLD_GEN.riverWidth * (1 + (floodRiverWidth - 1) * level)) return true;
+    if (this.biomeAt(tx, ty) === 'river_swamp') return this.pond(tx / 14, ty / 14) > 0.38 - 0.25 * level;
+    return false;
   }
 
   /** Spawn point in world px: centre of tile (0,0). */

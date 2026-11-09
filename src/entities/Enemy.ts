@@ -96,9 +96,14 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setTintFill(0xffffff);
     this.scene.time.delayedCall(70, () => this.clearTint());
     // Being hit interrupts a wind-up (rewards aggression) and provokes the creature.
-    if (this.aiState === 'telegraph' || this.aiState === 'wander') this.setAi('recover', now, 350);
-    if (this.def.fleeBelowHp > 0 && this.hp / this.def.hp < this.def.fleeBelowHp) this.setAi('flee', now, 4000);
+    if (this.aiState === 'telegraph' || this.aiState === 'wander' || this.aiState === 'chase') this.setAi('recover', now, 300);
+    if (this.wounded) this.setAi('flee', now, 4000);
     return true;
+  }
+
+  /** Below its flee threshold: retreats instead of re-engaging. */
+  get wounded(): boolean {
+    return this.def.fleeBelowHp > 0 && this.hp > 0 && this.hp / this.def.hp < this.def.fleeBelowHp;
   }
 
   get dead(): boolean {
@@ -146,7 +151,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
     switch (this.aiState) {
       case 'wander':
-        if (aggro) this.setAi('chase', now);
+        if (aggro && this.wounded) this.setAi('flee', now, 4000);
+        else if (aggro) this.setAi('chase', now);
         else this.wander(w, dtMs);
         break;
       case 'chase':
@@ -157,6 +163,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         this.chase(w, dist, ux, uy);
         break;
       case 'telegraph':
+        if (passive) {
+          this.setAi('wander', now);
+          break;
+        }
         this.body.setVelocity(0, 0);
         this.pose(CREATURE_POSE.telegraph);
         // Small shake so the wind-up reads even in the dark.
@@ -171,7 +181,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       case 'recover':
         this.body.velocity.scale(Math.pow(0.02, dtMs / 1000));
         this.pose(CREATURE_POSE.idle);
-        if (now >= this.stateUntil) this.setAi(aggro ? 'chase' : 'wander', now);
+        if (now >= this.stateUntil) this.setAi(aggro && this.wounded ? 'flee' : aggro ? 'chase' : 'wander', now, aggro && this.wounded ? 4000 : 0);
         break;
       case 'flee':
         this.move(-ux * d.speed * 1.25, -uy * d.speed * 1.25, w);
@@ -262,7 +272,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         return;
       }
     }
-    if (!this.hitThisAttack && d.behavior !== 'caster' && dist <= d.attackRange) {
+    if (!this.hitThisAttack && d.behavior !== 'caster' && dist <= d.attackRange + (d.charge ? 0 : 10)) {
       this.hitThisAttack = true;
       w.hitPlayer(this, d.damage);
       if (d.charge) this.body.setVelocity(-this.dirX * 60, -this.dirY * 60);

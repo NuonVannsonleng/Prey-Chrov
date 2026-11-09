@@ -181,6 +181,10 @@ export interface GameData {
   encounters: EncounterConfig;
   combat: CombatConfig;
   shrines: ShrineConfig;
+  season: SeasonConfig;
+  tablets: readonly TabletDef[];
+  quests: ReadonlyMap<string, QuestDef>;
+  lore: LoreConfig;
 }
 
 export interface RawGameData {
@@ -195,6 +199,10 @@ export interface RawGameData {
   encounters: unknown;
   combat: unknown;
   shrines: unknown;
+  season: unknown;
+  tablets: unknown;
+  quests: unknown;
+  lore: unknown;
 }
 
 // ---------- Validation ----------
@@ -534,6 +542,46 @@ function validateM5Configs(p: string[], raw: RawGameData): void {
   }
 }
 
+function validateM6(p: string[], raw: RawGameData, tablets: Rec[], quests: Rec[], lootIds: Set<string>): void {
+  const s = raw.season;
+  if (!isRec(s)) p.push('season.json: must be an object');
+  else {
+    requireNumbers(p, 'season', s, ['firstDay', 'cycleDays', 'lengthDays'], 1);
+    requireNumbers(p, 'season', s, ['thirstMultiplier', 'hungerMultiplier', 'floodRiverWidth'], 0.1, 5);
+    requireNumbers(p, 'season', s, ['rainDarkness'], 0, 0.6);
+    requireNumbers(p, 'season.cold', s['cold'], ['lossPerHour', 'recoverPerHour', 'damagePerHour', 'shelterRadius'], 0);
+    if (isNum(s['lengthDays']) && isNum(s['cycleDays']) && num(s['lengthDays']) >= num(s['cycleDays']))
+      p.push('season.lengthDays must be shorter than cycleDays (the rain has to stop)');
+  }
+  const orders = new Set<number>();
+  for (const t of tablets) {
+    const w = `tablet "${String(t['id'])}"`;
+    if (!isInt(t['order']) || num(t['order']) < 1 || num(t['order']) > 5) p.push(`${w}: order must be 1..5`);
+    else if (orders.has(num(t['order']))) p.push(`${w}: duplicate order ${String(t['order'])}`);
+    else orders.add(num(t['order']));
+    for (const k of ['titleKm', 'titleEn', 'text']) if (!isStr(t[k])) p.push(`${w}: ${k} required`);
+  }
+  if (tablets.length !== 5) p.push(`tablets.json: exactly 5 tablets required (got ${tablets.length})`);
+  for (const q of quests) {
+    const w = `quest "${String(q['id'])}"`;
+    if (!isStr(q['title']) || !isStr(q['description'])) p.push(`${w}: title and description required`);
+    if (typeof q['mandatory'] !== 'boolean') p.push(`${w}: mandatory must be boolean`);
+    const steps = q['steps'];
+    if (!Array.isArray(steps) || steps.length === 0) p.push(`${w}: steps required`);
+    else
+      steps.forEach((st: unknown, i) => {
+        if (!isRec(st) || !isStr(st['id']) || !isStr(st['text'])) return void p.push(`${w} steps[${i}]: id and text required`);
+        if (st['kind'] !== 'collect_tablets' && st['kind'] !== 'reach_heart') p.push(`${w} steps[${i}]: unknown kind`);
+        if (st['kind'] === 'collect_tablets' && (!isInt(st['count']) || num(st['count']) < 1 || num(st['count']) > tablets.length))
+          p.push(`${w} steps[${i}]: count must be 1..${tablets.length} (no dead-end quest)`);
+      });
+  }
+  if (!quests.some((q) => q['id'] === 'the_five_tablets')) p.push('quests.json: main quest "the_five_tablets" missing');
+  const lore = raw.lore;
+  if (!isRec(lore) || !isStr(lore['disclaimer']) || !Array.isArray(lore['entries'])) p.push('lore.json needs disclaimer and entries');
+  if (!lootIds.has('ruin_chest')) p.push('loot.json: "ruin_chest" table required for ruin chests');
+}
+
 /** Validates raw JSON and returns typed lookup maps. Throws DataValidationError listing every problem. */
 export function validateGameData(raw: RawGameData): GameData {
   const p: string[] = [];
@@ -544,6 +592,8 @@ export function validateGameData(raw: RawGameData): GameData {
   const structures = collectIds(p, 'structures.json', raw.structures);
   const biomes = collectIds(p, 'biomes.json', raw.biomes);
   const enemies = collectIds(p, 'enemies.json', raw.enemies);
+  const tablets = collectIds(p, 'tablets.json', raw.tablets);
+  const quests = collectIds(p, 'quests.json', raw.quests);
   const ids = (list: Rec[]) => new Set(list.map((i) => i['id']).filter(isStr));
   const itemIds = ids(items);
 
@@ -556,6 +606,7 @@ export function validateGameData(raw: RawGameData): GameData {
   validateBiomes(p, biomes, ids(resources));
   validateEnemies(p, enemies, ids(loot));
   validateM5Configs(p, raw);
+  validateM6(p, raw, tablets, quests, ids(loot));
 
   if (p.length) throw new DataValidationError(p);
 
@@ -571,6 +622,10 @@ export function validateGameData(raw: RawGameData): GameData {
     encounters: raw.encounters as EncounterConfig,
     combat: raw.combat as CombatConfig,
     shrines: raw.shrines as ShrineConfig,
+    season: raw.season as SeasonConfig,
+    tablets: (tablets as unknown as TabletDef[]).slice().sort((a, b) => a.order - b.order),
+    quests: new Map((quests as unknown as QuestDef[]).map((q) => [q.id, q])),
+    lore: raw.lore as LoreConfig,
   };
 
   // Reachability: every item must be gatherable or craftable from gatherable items.
@@ -583,7 +638,10 @@ export function validateGameData(raw: RawGameData): GameData {
 /** Items that some resource node can actually drop (directly obtainable in the world). */
 export function obtainableItems(data: Pick<GameData, 'resources' | 'loot'> & Partial<Pick<GameData, 'enemies'>>): Set<string> {
   const out = new Set<string>();
-  const tables = [...data.resources.values()].map((r) => r.lootTable).concat([...(data.enemies?.values() ?? [])].map((e) => e.lootTable));
+  const tables = [...data.resources.values()]
+    .map((r) => r.lootTable)
+    .concat([...(data.enemies?.values() ?? [])].map((e) => e.lootTable))
+    .concat(data.loot.has('ruin_chest') ? ['ruin_chest'] : []);
   for (const id of tables) {
     const table = data.loot.get(id);
     if (!table) continue;
@@ -732,4 +790,58 @@ export interface ShrineConfig {
   cooldownHours: number;
   blessing: { durationHours: number; regenPerHour: number; spiritWard: boolean };
   text: { offered: string; resting: string; needOffering: string; prompt: string };
+}
+
+// ---------- Season, ruins, tablets, quests, lore (M6) ----------
+
+/** season.json: monsoon schedule and weather effects (single object). */
+export interface SeasonConfig {
+  /** First monsoon day (5 → days 5–6, 10–11 … with cycle 5, length 2). */
+  firstDay: number;
+  cycleDays: number;
+  lengthDays: number;
+  /** Rain lowers thirst drain and raises hunger drain. */
+  thirstMultiplier: number;
+  hungerMultiplier: number;
+  /** Extra darkness while it rains (daytime gloom). */
+  rainDarkness: number;
+  /** River flood: noise half-width multiplier at full flood (shallows only — never deep). */
+  floodRiverWidth: number;
+  cold: {
+    /** Warmth lost per game hour while exposed in the rain. */
+    lossPerHour: number;
+    /** Warmth regained per game hour near fire or in shelter. */
+    recoverPerHour: number;
+    /** Health lost per game hour at zero warmth. */
+    damagePerHour: number;
+    /** Within this many px of a shelter you count as sheltered. */
+    shelterRadius: number;
+  };
+}
+
+/** tablets.json: the five key stone tablets (array). */
+export interface TabletDef {
+  id: string;
+  /** Story order 1..5 (also which ruin, by distance from spawn, holds it). */
+  order: number;
+  titleKm: string;
+  titleEn: string;
+  /** 2–3 short sentences, English. */
+  text: string;
+}
+
+/** quests.json: quests (array). M6 ships the main quest. */
+export interface QuestDef {
+  id: string;
+  title: string;
+  titleKm?: string;
+  description: string;
+  mandatory: boolean;
+  steps: Array<{ id: string; text: string; kind: 'collect_tablets' | 'reach_heart'; count?: number }>;
+}
+
+/** lore.json: glossary with a clear fiction disclaimer (single object). */
+export interface LoreConfig {
+  disclaimer: string;
+  entries: Array<{ term: string; termKm?: string; text: string }>;
 }

@@ -48,6 +48,8 @@ export class Projectiles {
   fire(x: number, y: number, dirX: number, dirY: number, speed: number, damage: number, range: number): boolean {
     const o = this.pool.find((p) => !p.active);
     if (!o) return false;
+    // A recently fizzled orb may still be fading: stop that tween before reuse.
+    this.scene.tweens.killTweensOf(o.image);
     const len = Math.hypot(dirX, dirY) || 1;
     o.active = true;
     o.vx = (dirX / len) * speed;
@@ -89,6 +91,7 @@ export class Projectiles {
   }
 
   private release(o: Orb): void {
+    this.scene.tweens.killTweensOf(o.image);
     o.active = false;
     o.image.setVisible(false);
   }

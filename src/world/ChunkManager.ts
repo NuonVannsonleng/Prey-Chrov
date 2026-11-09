@@ -26,6 +26,19 @@ export interface ShrineInstance {
 }
 
 const SHRINE_FOOTPRINT = { w: 20, h: 10 };
+const CHEST_FOOTPRINT = { w: 24, h: 10 };
+const TABLET_FOOTPRINT = { w: 16, h: 8 };
+
+/** Ruin chest or key tablet (state — opened/read — is owned by the World). */
+export interface RuinObject {
+  key: string;
+  kind: 'chest' | 'tablet';
+  /** Loot table (chest) or tablet id. */
+  id: string;
+  x: number;
+  y: number;
+  image: Phaser.GameObjects.Image;
+}
 
 interface LoadedChunk {
   key: string;
@@ -40,6 +53,9 @@ interface LoadedChunk {
   canopies: Canopy[];
   nodes: ResourceNode[];
   shrines: ShrineInstance[];
+  ruins: RuinObject[];
+  /** Tiles flooded to shallows (with their dry index) for restoring. */
+  flooded: Array<[Phaser.Tilemaps.Tile, number]>;
 }
 
 /**
@@ -53,6 +69,10 @@ export class ChunkManager {
   readonly nodes: ResourceNode[] = [];
   /** Live list of loaded Neak Ta shrines (shared with Interaction and Encounters). */
   readonly shrines: ShrineInstance[] = [];
+  /** Live list of loaded ruin chests and key tablets (shared with Interaction). */
+  readonly ruins: RuinObject[] = [];
+  private floodLevel = 0;
+  private floodWidth = 1;
   private readonly loaded = new Map<string, LoadedChunk>();
   private readonly states = new Map<string, NodeState>();
   private readonly pending: Array<[number, number]> = [];
@@ -151,7 +171,7 @@ export class ChunkManager {
     const collider = this.scene.physics.add.collider(this.player, layer);
     const animated = layer.filterTiles((t: Phaser.Tilemaps.Tile) => t.index === TILE.waterA || t.index === TILE.shallowsA);
 
-    const chunk: LoadedChunk = { key, cx, cy, tilemap, layer, collider, animated, images: [], zones: [], canopies: [], nodes: [], shrines: [] };
+    const chunk: LoadedChunk = { key, cx, cy, tilemap, layer, collider, animated, images: [], zones: [], canopies: [], nodes: [], shrines: [], ruins: [], flooded: [] };
     for (const p of data.props) {
       if (p.kind === 'resource') {
         const def = this.data.resources.get(p.id);
@@ -165,6 +185,14 @@ export class ChunkManager {
         }
         chunk.nodes.push(node);
         this.nodes.push(node);
+      } else if (p.kind === 'chest' || p.kind === 'tablet') {
+        const tex = p.kind === 'chest' ? TEX.chest : TEX.tablet;
+        const image = this.scene.add.image(p.x, p.y, tex, 0).setOrigin(0.5, 1).setDepth(p.y);
+        chunk.images.push(image);
+        chunk.zones.push(this.props.addSolid(p.x, p.y, p.kind === 'chest' ? CHEST_FOOTPRINT : TABLET_FOOTPRINT));
+        const obj: RuinObject = { key: p.key, kind: p.kind, id: p.id, x: p.x, y: p.y, image };
+        chunk.ruins.push(obj);
+        this.ruins.push(obj);
       } else if (p.kind === 'shrine') {
         const image = this.scene.add.image(p.x, p.y, TEX.shrine, 0).setOrigin(0.5, 1).setDepth(p.y);
         chunk.images.push(image);
@@ -177,6 +205,7 @@ export class ChunkManager {
       }
     }
     this.loaded.set(key, chunk);
+    this.floodChunk(chunk);
     this.onLoad?.(cx, cy);
   }
 
@@ -205,6 +234,10 @@ export class ChunkManager {
       const i = this.shrines.indexOf(s);
       if (i >= 0) this.shrines.splice(i, 1);
     }
+    for (const r of c.ruins) {
+      const i = this.ruins.indexOf(r);
+      if (i >= 0) this.ruins.splice(i, 1);
+    }
     for (const img of c.images) img.destroy();
     for (const z of c.zones) this.props.removeSolid(z);
     for (const cp of c.canopies) this.props.removeCanopy(cp);
@@ -223,6 +256,38 @@ export class ChunkManager {
     for (const [key, s] of this.states) {
       if (this.states.size <= MAX_STATES) break;
       if (!s.depleted) this.states.delete(key);
+    }
+  }
+
+  /**
+   * Sets the monsoon flood level (0..1). Loaded chunks are re-flooded only when the level
+   * changes noticeably; new chunks pick it up on load. Floods are walkable shallows only.
+   */
+  setFlood(level: number, riverWidthMultiplier: number): void {
+    const q = Math.round(level * 20) / 20;
+    if (q === this.floodLevel && riverWidthMultiplier === this.floodWidth) return;
+    this.floodLevel = q;
+    this.floodWidth = riverWidthMultiplier;
+    for (const c of this.loaded.values()) this.floodChunk(c);
+  }
+
+  get flood(): number {
+    return this.floodLevel;
+  }
+
+  private floodChunk(c: LoadedChunk): void {
+    for (const [tile, dry] of c.flooded) tile.index = dry;
+    c.flooded.length = 0;
+    if (this.floodLevel <= 0) return;
+    const N = CHUNK_TILES;
+    for (let ly = 0; ly < N; ly++) {
+      for (let lx = 0; lx < N; lx++) {
+        const tile = c.layer.getTileAt(lx, ly);
+        if (!tile || WATER_TILES.includes(tile.index) || SHALLOW_TILES.includes(tile.index)) continue;
+        if (!this.gen.floodAt(c.cx * N + lx, c.cy * N + ly, this.floodLevel, this.floodWidth)) continue;
+        c.flooded.push([tile, tile.index]);
+        tile.index = TILE.shallowsA;
+      }
     }
   }
 
@@ -277,6 +342,7 @@ export class ChunkManager {
     this.loaded.clear();
     this.nodes.length = 0;
     this.shrines.length = 0;
+    this.ruins.length = 0;
     this.pending.length = 0;
   }
 

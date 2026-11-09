@@ -167,6 +167,8 @@ export const WORLD_GEN = {
   ruinCellChunks: 5,
   ruinChancePercent: 55,
   ruinRadius: 10,
+  /** Distance (tiles) from spawn to the Heart of the Forest. */
+  heartDistance: 220,
 } as const;
 
 export const MINIMAP = {

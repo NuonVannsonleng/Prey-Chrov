@@ -7,12 +7,32 @@ import loot from './loot.json';
 import recipes from './recipes.json';
 import resources from './resources.json';
 import shrines from './shrines.json';
+import season from './season.json';
+import tablets from './tablets.json';
+import quests from './quests.json';
+import lore from './lore.json';
 import structures from './structures.json';
 import survival from './survival.json';
 import { validateGameData, type GameData, type ItemDef } from './schema';
 
 /** Raw JSON bundle (also used by tests). */
-export const RAW_GAME_DATA = { items, loot, resources, recipes, structures, survival, biomes, enemies, encounters, combat, shrines };
+export const RAW_GAME_DATA = {
+  items,
+  loot,
+  resources,
+  recipes,
+  structures,
+  survival,
+  biomes,
+  enemies,
+  encounters,
+  combat,
+  shrines,
+  season,
+  tablets,
+  quests,
+  lore,
+};
 
 let cached: GameData | null = null;
 

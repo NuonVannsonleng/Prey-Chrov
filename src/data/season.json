@@ -1,0 +1,15 @@
+{
+  "firstDay": 5,
+  "cycleDays": 5,
+  "lengthDays": 2,
+  "thirstMultiplier": 0.5,
+  "hungerMultiplier": 1.4,
+  "rainDarkness": 0.2,
+  "floodRiverWidth": 2.3,
+  "cold": {
+    "lossPerHour": 17,
+    "recoverPerHour": 30,
+    "damagePerHour": 3,
+    "shelterRadius": 70
+  }
+}

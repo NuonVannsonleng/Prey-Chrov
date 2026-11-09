@@ -1,0 +1,13 @@
+[
+  {
+    "id": "the_five_tablets",
+    "title": "The Five Tablets",
+    "titleKm": "ផ្ទាំងថ្មទាំងប្រាំ",
+    "description": "Ancient ruins hide five stone tablets that tell why the forest is restless. Gather them and learn where to go.",
+    "mandatory": true,
+    "steps": [
+      { "id": "find_tablets", "kind": "collect_tablets", "count": 5, "text": "Find the five stone tablets hidden in the ruins." },
+      { "id": "seek_heart", "kind": "reach_heart", "text": "Seek the Heart of the Forest." }
+    ]
+  }
+]

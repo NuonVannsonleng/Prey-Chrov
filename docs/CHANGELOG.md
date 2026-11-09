@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.5.0 — M5: Wildlife, night spirits, combat and guardian shrines (2026-11-09)
+
+### Added
+- Wild boar, pit viper and tiger by day; Ap and Arak at night. Each has a distinct behaviour and every attack is telegraphed.
+- A finite, pooled encounter system: an off-screen spawn ring, data weights, a gentle night 1 that ramps up later, no spawns in light, water, solids or near shrines, despawning when far away, and spirits fading at dawn.
+- Spirits respect firelight: campfires and held torches push them out, cancel their rushes and fizzle their orbs.
+- Melee combat with arcs, reach, knockback, i-frames and weapon wear. Creatures drop loot, and raw meat can be cooked.
+- Poison, blessing and spirit-ward status effects, shown on the HUD and saved.
+- Neak Ta spirit-house shrines: an offering gives a blessing and ward, then the shrine rests about 20 hours. Shrines are never hostile.
+- `?calm` debug flag for automated tests.
+
+### QA
+- Round 1, by a stand-in for `phaser-qa`: **0 Critical, 6 Warnings**. All six are fixed:
+  1. A reused orb could hit while invisible behind a stale fade tween.
+  2. Vipers could miss a player standing still.
+  3. Knockback was overwritten while chasing.
+  4. Clicks attacked instead of gathering whenever a creature was nearby.
+  5. Warded spirits could finish a wind-up.
+  6. Sleep froze effect timers.
+- Suggestions applied:
+  - Light deterrence now matches the visible radius.
+  - Wounded creatures really retreat.
+  - The spear description was outdated.
+  - Shrine updates no longer allocate per frame.
+  - Creatures and orbs are cleared on death.
+- Deferred: moving AI distances, body sizes and status labels into data.
+- **Note:** the M5 data was written directly, because the content-designer agent hit an API limit, and is flagged for review.
+
+
 ## 0.4.0 — M4: Seeded procedural world, chunks, biomes, minimap (2026-11-09)
 
 ### Added

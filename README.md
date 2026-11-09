@@ -3,7 +3,7 @@
 A 2D top-down survival adventure set in a fictional Cambodian jungle, built with **Phaser 3 + TypeScript + Vite**.
 All art is generated in code as replaceable placeholders.
 
-> Status: **Milestone 4** — an endless seeded jungle: five biomes, rivers with fords, rare ancient ruins, chunk streaming and a minimap, on top of the full first-day survival loop. Add `?seed=1234` to the URL to pick a world. See [docs/MILESTONES.md](docs/MILESTONES.md).
+> Status: **Milestone 5**. The seeded jungle now has wildlife by day (boars, vipers, a rare tiger), Ap and Arak at night (they shun firelight), melee combat, and Neak Ta shrines where you can leave an offering for a blessing. Add `?seed=1234` to the URL to pick a world. See [docs/MILESTONES.md](docs/MILESTONES.md).
 
 ## Run
 
@@ -28,6 +28,7 @@ npm run dev        # http://localhost:5173
 | W A S D | Move |
 | Shift | Sprint |
 | E (hold) / Left click (hold) | Gather the highlighted tree, bamboo, boulder or bush · drink at water · cook at a campfire · sleep in a shelter |
+| Space / Left click near a creature | Attack (held spear/tool damage; spear reaches further) |
 | F | Eat the held food, or place the held campfire / shelter kit (click or F to build, right-click / Esc to cancel) |
 | C | Crafting panel |
 | 1–6 / Mouse wheel | Select hotbar slot |

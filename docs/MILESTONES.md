@@ -8,9 +8,70 @@ Status legend: **Done** · **In progress** · **Not started**
 | M2 | Gathering, pickup and inventory | Done |
 | M3 | Survival, crafting, first night, death | Done |
 | M4 | Seeded procedural world, chunks, biomes, minimap | Done |
-| M5 | Wildlife, night spirits, combat and guardian shrines | Not started |
+| M5 | Wildlife, night spirits, combat and guardian shrines | Done |
 | M6 | Monsoon, ruins, tablets and core quest | Not started |
 | M7 | Persistence, performance and MVP polish | Not started |
+
+---
+
+## M5 — Wildlife, night spirits, combat and guardian shrines
+
+### Implemented (playable)
+
+- **Creatures** (`enemies.json`), each with a readable behaviour and a visible wind-up pose before every attack:
+  - **Wild boar** (day): wanders, paws the ground about 0.7 s, then charges in a straight locked line, so you can sidestep. It flees when badly hurt.
+  - **Pit viper** (day, grass and swamp): rears up, then strikes and **poisons** you (1.2/s for 7 s). Poison refreshes rather than stacks, and wears off.
+  - **Tiger** (rare, from day 3, deep jungle and ruins): circles, then pounces. It hits hard, gives up the chase if you run far enough, and retreats when wounded.
+  - **Ap** (night, flier): orbits, then rushes at you through the air, ignoring trees and water.
+  - **Arak** (night, from day 2): keeps its distance and throws slow violet spirit orbs.
+- **Firelight promise:**
+  - Spirits never enter campfire light or a held torch's light; they get pushed out and their wind-ups are cancelled.
+  - Ap won't rush into light, and orbs fizzle in it.
+  - Standing by your fire at night is safe.
+- **Encounters** (`encounters.json`):
+  - The population is finite and pooled (at most 16 creature objects), spawning off-screen 430–560 px away.
+  - Spawning is weighted by time of day, first-appearance day, biome and per-type caps.
+  - Night 1 allows at most 2 creatures; each day adds 1.5 more, up to 6, scaled by the local biome's night danger.
+  - Creatures never spawn in water, solids, firelight or within 180 px of a shrine.
+  - Creatures far away despawn, and spirits fade away at dawn.
+  - All walking creatures share one collider.
+- **Combat** (`combat.json`):
+  - **Space** or **left-click** near a creature swings toward the aim point. A tree or rock under the cursor still gathers.
+  - Damage comes from the held tool (the spear does 4 and reaches 16 px further).
+  - The swing covers a 110° arc, with knockback and 200 ms creature i-frames. Weapons wear on hits.
+  - When hit, you get 700 ms i-frames, knockback, a blink, a small shake and the red flash.
+  - Creature loot: raw meat (cook it at the campfire), hide, tiger fang (rare) and spirit dust.
+- **Neak Ta shrines** (`shrines.json`):
+  - Small spirit houses: one always stands near spawn, and occasional ones appear in clearings.
+  - Holding food and pressing **E** leaves an offering, which grants a **blessing** (+4 health per hour) and a **spirit ward** (spirits won't attack) for about 7 hours.
+  - Afterwards the shrine rests with fresh flowers for about 20 hours, so it can't be farmed.
+  - Shrines are never hostile or lootable, and creatures never spawn near them.
+- **Status row** under the stat bars shows each effect's icon, name and seconds left: Poisoned, Blessed, Warded.
+- **GameOver** now names wildlife, spirits and poison as causes, with fair tips.
+- Saves include active effects and shrine offering times.
+
+### Verification
+
+- `npm run typecheck` and `npm run build` pass.
+- `npm test`: 117 unit tests. New ones cover poison duration and refresh, blessing regen, effect save round-trips, the swing arc, data fairness (every attack telegraphed, spirits night-only and light-averse, the player outruns everything, no one-shot kills, night 1 ≤ 2 and night 3 higher) and shrines never being hostile.
+- `npm run smoke`: 97 browser checks. The M5 ones:
+  - the boar telegraphs and its charge hits once
+  - a spear kills the boar, it drops meat, and the spear wears
+  - a viper poisons you and the poison wears off
+  - spirits are pushed out of firelight and the player stays unhurt there
+  - an Ap attacks in the dark
+  - spirits fade at dawn
+  - the shrine blessing and ward, the shrine resting, and the ward stopping attacks
+  - the population caps
+- QA: see CHANGELOG.
+
+### Known limitations
+
+- The M5 creature, encounter, combat and shrine data was written directly, because the content-designer agent hit an API usage limit. It still needs a content-designer balance review.
+- Some AI tuning (wind-up distances, body sizes) and status labels are in code, not data.
+- No hearing/stealth yet (M12) and no ranged player weapons.
+- Spirits ignore line of sight; light is the only deterrent.
+- Khmer names ជ្រូកព្រៃ, ខ្លា, អាប, អារក្ស and សាច់ឆៅ need native-speaker review.
 
 ---
 

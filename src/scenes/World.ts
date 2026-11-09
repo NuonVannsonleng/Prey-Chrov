@@ -341,7 +341,7 @@ export class World extends Phaser.Scene {
     const dark = this.darkness() > TORCH_DARKNESS;
     for (const s of this.structures.list) {
       const r = s.def.lightRadius;
-      if (r > 0 && Math.hypot(x - s.x, y - (s.y - 8)) <= r * 0.8 + margin) {
+      if (r > 0 && Math.hypot(x - s.x, y - (s.y - 8)) <= r * 0.9 + margin) {
         this.lightHit.x = s.x;
         this.lightHit.y = s.y - 8;
         this.lightHit.radius = r;
@@ -352,7 +352,7 @@ export class World extends Phaser.Scene {
     const light = held && dark ? itemDef(held.item).light : undefined;
     if (light) {
       const p = this.player;
-      if (Math.hypot(x - p.x, y - (p.y - 16)) <= light.radius * 0.75 + margin) {
+      if (Math.hypot(x - p.x, y - (p.y - 16)) <= light.radius * 0.9 + margin) {
         this.lightHit.x = p.x;
         this.lightHit.y = p.y - 16;
         this.lightHit.radius = light.radius;
@@ -443,8 +443,8 @@ export class World extends Phaser.Scene {
     for (const s of this.chunks.shrines) {
       const last = this.shrineState.get(s.key);
       const resting = last !== undefined && this.clock.totalSeconds - last < cooldown;
-      const frame = resting ? '1' : '0';
-      if (String(s.image.frame.name) !== frame) s.image.setFrame(Number(frame));
+      const frame = resting ? 1 : 0;
+      if (Number(s.image.frame.name) !== frame) s.image.setFrame(frame);
     }
   }
 
@@ -703,7 +703,7 @@ export class World extends Phaser.Scene {
     }
     const msg = def.tool
       ? def.tool.kind === 'spear'
-        ? 'The spear is ready, but there is nothing to fight yet.'
+        ? 'Swing the spear with Space, or click a creature — it reaches further than your hands'
         : `Hold E or click a ${def.tool.kind === 'axe' ? 'tree or bamboo' : 'boulder'} to use your ${def.name}`
       : def.light
         ? 'Torches light up automatically in the dark while held'
@@ -765,6 +765,9 @@ export class World extends Phaser.Scene {
       const secs = this.clock.secondsUntil(sl.wakeHour);
       this.clock.advance(secs);
       this.now += secs * 1000;
+      const slept = this.effects.update(secs, this.clock.secondsPerHour);
+      if (slept.damage > 0) this.survival.damage(Math.min(slept.damage, Math.max(0, this.survival.stats.health - 1)), 'poison');
+      if (slept.heal > 0) this.survival.heal(slept.heal);
       this.survival.sleep();
       this.lastHealth = this.survival.stats.health;
       this.gathering.update(this.now, this.player.x, this.player.y);
@@ -895,6 +898,8 @@ export class World extends Phaser.Scene {
     this.busy = true;
     this.building.cancel();
     this.player.halt();
+    this.encounters.clear();
+    this.projectiles.clear();
     const cause = this.survival.lastDamageCause ?? 'injury';
     const summary = { day: this.clock.dayNumber, time: this.clock.label(), cause };
     const cam = this.cameras.main;
@@ -967,7 +972,9 @@ export class World extends Phaser.Scene {
     if (!pointer.leftButtonDown()) return;
     const c = this.gameData.combat;
     const near = this.encounters.nearest(this.player.x, this.player.y - 10, c.baseReach + c.spearBonusReach + 30);
-    if (near) {
+    const nodeUnder = this.interaction.nodeAt(pointer.worldX, pointer.worldY, this.player.x, this.player.y);
+    const aimingAtCreature = near !== null && Math.hypot(near.x - pointer.worldX, near.cy - pointer.worldY) < 40;
+    if (near && (!nodeUnder || aimingAtCreature)) {
       this.attack(pointer.worldX, pointer.worldY);
       return;
     }
