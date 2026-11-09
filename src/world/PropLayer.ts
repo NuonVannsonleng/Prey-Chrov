@@ -8,6 +8,8 @@ export const FOOTPRINT: Record<ResourceSprite, { w: number; h: number }> = {
   rock: { w: 24, h: 12 },
   bamboo: { w: 22, h: 10 },
   bush: { w: 18, h: 8 },
+  herb_leaf: { w: 12, h: 6 },
+  herb_root: { w: 12, h: 6 },
 };
 
 export interface Canopy {

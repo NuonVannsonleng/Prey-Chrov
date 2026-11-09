@@ -2,10 +2,10 @@ import Phaser from 'phaser';
 import { DEPTH, GATHER } from '../config';
 import type { GameData, ToolKind } from '../data/schema';
 import { ResourceNode, type HitResult } from '../entities/ResourceNode';
-import { TEX, type ResourceSprite } from '../textures';
+import { SWAP_SPRITES, TEX, type ResourceSprite } from '../textures';
 import { hash2, hashString, mulberry32 } from '../utils/random';
 import type { ItemStack } from './Inventory';
-import { rollLoot } from './Loot';
+import { applySeason, rollLoot } from './Loot';
 import { getSettings } from './Settings';
 
 const CHIP_TINT: Record<ResourceSprite, number> = {
@@ -13,6 +13,8 @@ const CHIP_TINT: Record<ResourceSprite, number> = {
   bamboo: 0x9fbf5a,
   rock: 0x9aa0a2,
   bush: 0x5f9a4a,
+  herb_leaf: 0x6fb05a,
+  herb_root: 0x7a3e6a,
 };
 const HP_BAR_MS = 1600;
 
@@ -29,6 +31,8 @@ export class Gathering {
     readonly nodes: readonly ResourceNode[],
     private readonly data: GameData,
     private readonly seed: number,
+    /** Current harvest season (monsoon or dry) for seasonal yields. */
+    private readonly seasonOf: () => 'monsoon' | 'dry' = () => 'dry',
   ) {
     this.chips = scene.add
       .particles(0, 0, TEX.chip, {
@@ -61,12 +65,12 @@ export class Gathering {
     if (result !== 'depleted') return { result, loot: [] };
 
     node.respawnAt = now + node.def.respawnSeconds * 1000;
-    if (node.def.sprite !== 'bush' && !getSettings().reducedMotion) this.scene.cameras.main.shake(70, 0.0015);
+    if (!SWAP_SPRITES[node.def.sprite] && !getSettings().reducedMotion) this.scene.cameras.main.shake(70, 0.0015);
 
     const lootTable = this.data.loot.get(node.def.lootTable);
     if (!lootTable) return { result, loot: [] };
     const rng = mulberry32(hash2(hashString(node.prop.key), node.harvestCount, this.seed));
-    return { result, loot: rollLoot(lootTable, rng) };
+    return { result, loot: applySeason(rollLoot(lootTable, rng), node.def.seasonal?.[this.seasonOf()]) };
   }
 
   /** Regrows due nodes, unless the player is standing in the footprint (retried later). */

@@ -150,5 +150,162 @@
     ],
     "station": "campfire",
     "category": "food"
+  },
+  {
+    "id": "fishing_rod",
+    "output": "fishing_rod",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "bamboo",
+        "qty": 2
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 3
+      },
+      {
+        "item": "stick",
+        "qty": 1
+      }
+    ],
+    "station": "none",
+    "category": "tools"
+  },
+  {
+    "id": "bamboo_tube",
+    "output": "bamboo_tube",
+    "qty": 2,
+    "ingredients": [
+      {
+        "item": "bamboo",
+        "qty": 2
+      }
+    ],
+    "station": "none",
+    "category": "tools"
+  },
+  {
+    "id": "cooking_pot",
+    "output": "cooking_pot_kit",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "stone",
+        "qty": 5
+      },
+      {
+        "item": "wood",
+        "qty": 2
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 2
+      }
+    ],
+    "station": "none",
+    "category": "building"
+  },
+  {
+    "id": "cooked_fish",
+    "output": "cooked_fish",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "raw_fish",
+        "qty": 1
+      }
+    ],
+    "station": "campfire",
+    "category": "food"
+  },
+  {
+    "id": "boiled_water",
+    "output": "boiled_water",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "water_tube",
+        "qty": 1
+      }
+    ],
+    "station": "campfire",
+    "category": "food"
+  },
+  {
+    "id": "vegetable_stew",
+    "output": "vegetable_stew",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "bamboo_shoot",
+        "qty": 1
+      },
+      {
+        "item": "berries",
+        "qty": 2
+      },
+      {
+        "item": "boiled_water",
+        "qty": 1
+      }
+    ],
+    "station": "pot",
+    "category": "food"
+  },
+  {
+    "id": "fish_soup",
+    "output": "fish_soup",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "raw_fish",
+        "qty": 1
+      },
+      {
+        "item": "healing_leaf",
+        "qty": 1
+      },
+      {
+        "item": "boiled_water",
+        "qty": 1
+      }
+    ],
+    "station": "pot",
+    "category": "food"
+  },
+  {
+    "id": "bandage",
+    "output": "bandage",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "healing_leaf",
+        "qty": 2
+      },
+      {
+        "item": "plant_fiber",
+        "qty": 2
+      }
+    ],
+    "station": "none",
+    "category": "medicine"
+  },
+  {
+    "id": "antidote",
+    "output": "antidote",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "bitter_root",
+        "qty": 2
+      },
+      {
+        "item": "boiled_water",
+        "qty": 1
+      }
+    ],
+    "station": "pot",
+    "category": "medicine"
   }
 ]

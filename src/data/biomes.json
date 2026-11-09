@@ -5,17 +5,59 @@
     "nameKm": "វាលស្មៅក្នុងព្រៃ",
     "minimapColor": "#7fa84a",
     "ground": [
-      { "tile": "grass", "weight": 5 },
-      { "tile": "grass_alt", "weight": 3 },
-      { "tile": "grass_flowers", "weight": 1 },
-      { "tile": "path", "weight": 0.4 }
+      {
+        "tile": "grass",
+        "weight": 5
+      },
+      {
+        "tile": "grass_alt",
+        "weight": 3
+      },
+      {
+        "tile": "grass_flowers",
+        "weight": 1
+      },
+      {
+        "tile": "path",
+        "weight": 0.4
+      }
     ],
     "props": [
-      { "kind": "resource", "id": "berry_bush", "density": 6 },
-      { "kind": "resource", "id": "jungle_tree", "density": 7 },
-      { "kind": "resource", "id": "bamboo_clump", "density": 3 },
-      { "kind": "resource", "id": "boulder", "density": 3 },
-      { "kind": "scenery", "id": "fern", "density": 8 }
+      {
+        "kind": "resource",
+        "id": "berry_bush",
+        "density": 6
+      },
+      {
+        "kind": "resource",
+        "id": "jungle_tree",
+        "density": 7
+      },
+      {
+        "kind": "resource",
+        "id": "bamboo_clump",
+        "density": 3
+      },
+      {
+        "kind": "resource",
+        "id": "boulder",
+        "density": 3
+      },
+      {
+        "kind": "scenery",
+        "id": "fern",
+        "density": 8
+      },
+      {
+        "kind": "resource",
+        "id": "healing_herb",
+        "density": 2
+      },
+      {
+        "kind": "resource",
+        "id": "bitter_root_plant",
+        "density": 1
+      }
     ],
     "ambience": "Open sky and warm air; cicadas hum and distant birds call between the trees.",
     "nightDanger": 0.5
@@ -26,17 +68,60 @@
     "nameKm": "ព្រៃជ្រៅ",
     "minimapColor": "#1c3d24",
     "ground": [
-      { "tile": "jungle_floor", "weight": 5 },
-      { "tile": "leaf_litter", "weight": 3 },
-      { "tile": "moss", "weight": 2 }
+      {
+        "tile": "jungle_floor",
+        "weight": 5
+      },
+      {
+        "tile": "leaf_litter",
+        "weight": 3
+      },
+      {
+        "tile": "moss",
+        "weight": 2
+      }
     ],
     "props": [
-      { "kind": "resource", "id": "jungle_tree", "density": 26 },
-      { "kind": "scenery", "id": "big_tree", "density": 7 },
-      { "kind": "scenery", "id": "fern", "density": 24 },
-      { "kind": "resource", "id": "berry_bush", "density": 1.5 },
-      { "kind": "resource", "id": "bamboo_clump", "density": 1 },
-      { "kind": "resource", "id": "boulder", "density": 0.8 }
+      {
+        "kind": "resource",
+        "id": "jungle_tree",
+        "density": 26
+      },
+      {
+        "kind": "scenery",
+        "id": "big_tree",
+        "density": 7
+      },
+      {
+        "kind": "scenery",
+        "id": "fern",
+        "density": 24
+      },
+      {
+        "kind": "resource",
+        "id": "berry_bush",
+        "density": 1.5
+      },
+      {
+        "kind": "resource",
+        "id": "bamboo_clump",
+        "density": 1
+      },
+      {
+        "kind": "resource",
+        "id": "boulder",
+        "density": 0.8
+      },
+      {
+        "kind": "resource",
+        "id": "healing_herb",
+        "density": 3
+      },
+      {
+        "kind": "resource",
+        "id": "bitter_root_plant",
+        "density": 2
+      }
     ],
     "ambience": "A dark canopy swallows the light; the air is thick and damp, and something unseen shifts in the leaves.",
     "nightDanger": 1.5
@@ -47,21 +132,66 @@
     "nameKm": "ព្រៃឫស្សី",
     "minimapColor": "#a8b84a",
     "ground": [
-      { "tile": "moss", "weight": 4 },
-      { "tile": "grass", "weight": 3 },
-      { "tile": "grass_alt", "weight": 2 },
-      { "tile": "path", "weight": 1.5 },
-      { "tile": "leaf_litter", "weight": 1 }
+      {
+        "tile": "moss",
+        "weight": 4
+      },
+      {
+        "tile": "grass",
+        "weight": 3
+      },
+      {
+        "tile": "grass_alt",
+        "weight": 2
+      },
+      {
+        "tile": "path",
+        "weight": 1.5
+      },
+      {
+        "tile": "leaf_litter",
+        "weight": 1
+      }
     ],
     "props": [
-      { "kind": "resource", "id": "bamboo_clump", "density": 22 },
-      { "kind": "resource", "id": "jungle_tree", "density": 8 },
-      { "kind": "scenery", "id": "fern", "density": 9 },
-      { "kind": "resource", "id": "berry_bush", "density": 1.5 },
-      { "kind": "resource", "id": "boulder", "density": 1.5 }
+      {
+        "kind": "resource",
+        "id": "bamboo_clump",
+        "density": 22
+      },
+      {
+        "kind": "resource",
+        "id": "jungle_tree",
+        "density": 8
+      },
+      {
+        "kind": "scenery",
+        "id": "fern",
+        "density": 9
+      },
+      {
+        "kind": "resource",
+        "id": "berry_bush",
+        "density": 1.5
+      },
+      {
+        "kind": "resource",
+        "id": "boulder",
+        "density": 1.5
+      },
+      {
+        "kind": "resource",
+        "id": "healing_herb",
+        "density": 1
+      },
+      {
+        "kind": "resource",
+        "id": "bitter_root_plant",
+        "density": 2
+      }
     ],
     "ambience": "Tall stalks creak and knock together in the breeze, a hollow clatter along narrow green lanes.",
-    "nightDanger": 1.0
+    "nightDanger": 1
   },
   {
     "id": "river_swamp",
@@ -69,18 +199,64 @@
     "nameKm": "វាលភក់ស្ទឹង",
     "minimapColor": "#4a6f6a",
     "ground": [
-      { "tile": "mud", "weight": 6 },
-      { "tile": "moss", "weight": 2 },
-      { "tile": "grass_alt", "weight": 1.5 },
-      { "tile": "leaf_litter", "weight": 1 }
+      {
+        "tile": "mud",
+        "weight": 6
+      },
+      {
+        "tile": "moss",
+        "weight": 2
+      },
+      {
+        "tile": "grass_alt",
+        "weight": 1.5
+      },
+      {
+        "tile": "leaf_litter",
+        "weight": 1
+      }
     ],
     "props": [
-      { "kind": "scenery", "id": "reeds", "density": 22 },
-      { "kind": "resource", "id": "berry_bush", "density": 2.5 },
-      { "kind": "resource", "id": "jungle_tree", "density": 4 },
-      { "kind": "resource", "id": "bamboo_clump", "density": 1.5 },
-      { "kind": "scenery", "id": "fern", "density": 4 },
-      { "kind": "resource", "id": "boulder", "density": 0.5 }
+      {
+        "kind": "scenery",
+        "id": "reeds",
+        "density": 22
+      },
+      {
+        "kind": "resource",
+        "id": "berry_bush",
+        "density": 2.5
+      },
+      {
+        "kind": "resource",
+        "id": "jungle_tree",
+        "density": 4
+      },
+      {
+        "kind": "resource",
+        "id": "bamboo_clump",
+        "density": 1.5
+      },
+      {
+        "kind": "scenery",
+        "id": "fern",
+        "density": 4
+      },
+      {
+        "kind": "resource",
+        "id": "boulder",
+        "density": 0.5
+      },
+      {
+        "kind": "resource",
+        "id": "healing_herb",
+        "density": 2
+      },
+      {
+        "kind": "resource",
+        "id": "bitter_root_plant",
+        "density": 3
+      }
     ],
     "ambience": "Still, brown water and rotting reeds; frogs fall silent as you wade past, and mist clings low.",
     "nightDanger": 1.2
@@ -91,17 +267,54 @@
     "nameKm": "ប្រាសាទបុរាណ",
     "minimapColor": "#8a7f9a",
     "ground": [
-      { "tile": "moss", "weight": 4 },
-      { "tile": "leaf_litter", "weight": 2 },
-      { "tile": "stone_floor", "weight": 1.5 },
-      { "tile": "jungle_floor", "weight": 1.5 }
+      {
+        "tile": "moss",
+        "weight": 4
+      },
+      {
+        "tile": "leaf_litter",
+        "weight": 2
+      },
+      {
+        "tile": "stone_floor",
+        "weight": 1.5
+      },
+      {
+        "tile": "jungle_floor",
+        "weight": 1.5
+      }
     ],
     "props": [
-      { "kind": "scenery", "id": "ruin_rubble", "density": 9 },
-      { "kind": "resource", "id": "boulder", "density": 5 },
-      { "kind": "resource", "id": "berry_bush", "density": 2 },
-      { "kind": "resource", "id": "jungle_tree", "density": 4 },
-      { "kind": "scenery", "id": "fern", "density": 6 }
+      {
+        "kind": "scenery",
+        "id": "ruin_rubble",
+        "density": 9
+      },
+      {
+        "kind": "resource",
+        "id": "boulder",
+        "density": 5
+      },
+      {
+        "kind": "resource",
+        "id": "berry_bush",
+        "density": 2
+      },
+      {
+        "kind": "resource",
+        "id": "jungle_tree",
+        "density": 4
+      },
+      {
+        "kind": "scenery",
+        "id": "fern",
+        "density": 6
+      },
+      {
+        "kind": "resource",
+        "id": "bitter_root_plant",
+        "density": 1
+      }
     ],
     "ambience": "Moss-choked stone and a heavy hush; incense long burnt out still seems to linger, and the wind carries whispers.",
     "nightDanger": 1.3

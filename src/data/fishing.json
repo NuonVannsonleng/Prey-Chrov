@@ -1,0 +1,20 @@
+{
+  "lootTable": "fishing_loot",
+  "biteDelaySeconds": {
+    "min": 1.5,
+    "max": 4
+  },
+  "windowSeconds": 2.6,
+  "zoneWidth": 0.3,
+  "markerCyclesPerSecond": 0.7,
+  "rodWear": 1,
+  "text": {
+    "cast": "You cast your line. Wait for a bite…",
+    "bite": "A bite! Press E (or Space) while the marker is in the green.",
+    "caught": "Caught a fish!",
+    "missed": "The fish slipped off the hook.",
+    "early": "You pulled the line too early.",
+    "needDeep": "Fish swim in deep water. Find the edge of a pond or river.",
+    "escaped": "The fish got away. Try again."
+  }
+}

@@ -25,3 +25,18 @@ export function rollLoot(table: LootTable, rng: () => number): ItemStack[] {
   }
   return [...totals].map(([item, qty]) => ({ item, qty }));
 }
+
+/**
+ * Harvest seasons: scales quantities per item (x < 1 rounds down, x > 1 rounds up) and drops
+ * empty stacks. Items without a multiplier are untouched.
+ */
+export function applySeason(loot: ItemStack[], mods: Readonly<Record<string, number>> | undefined): ItemStack[] {
+  if (!mods) return loot;
+  const out: ItemStack[] = [];
+  for (const s of loot) {
+    const m = mods[s.item];
+    const qty = m === undefined ? s.qty : m < 1 ? Math.floor(s.qty * m) : Math.ceil(s.qty * m);
+    if (qty > 0) out.push({ ...s, qty });
+  }
+  return out;
+}

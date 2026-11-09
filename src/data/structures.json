@@ -9,7 +9,8 @@
     },
     "solid": true,
     "lightRadius": 155,
-    "interaction": "cook"
+    "interaction": "cook",
+    "station": "campfire"
   },
   {
     "id": "bamboo_shelter",
@@ -22,5 +23,18 @@
     "solid": true,
     "lightRadius": 0,
     "interaction": "sleep"
+  },
+  {
+    "id": "cooking_pot",
+    "name": "Cooking Pot",
+    "sprite": "pot",
+    "footprint": {
+      "w": 20,
+      "h": 10
+    },
+    "solid": true,
+    "lightRadius": 0,
+    "interaction": "cook",
+    "station": "pot"
   }
 ]

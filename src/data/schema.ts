@@ -14,19 +14,19 @@ import {
 
 // ---------- Types (JSON shapes) ----------
 
-export const ITEM_CATEGORIES = ['material', 'food', 'tool', 'light', 'structure', 'quest'] as const;
+export const ITEM_CATEGORIES = ['material', 'food', 'tool', 'light', 'structure', 'quest', 'medicine', 'container'] as const;
 export type ItemCategory = (typeof ITEM_CATEGORIES)[number];
 
 export const RARITIES = ['common', 'uncommon', 'rare'] as const;
 export type Rarity = (typeof RARITIES)[number];
 
-export const TOOL_KINDS = ['hand', 'axe', 'pickaxe', 'spear'] as const;
+export const TOOL_KINDS = ['hand', 'axe', 'pickaxe', 'spear', 'rod'] as const;
 export type ToolKind = (typeof TOOL_KINDS)[number];
 
-export const RECIPE_CATEGORIES = ['tools', 'light', 'building', 'food'] as const;
+export const RECIPE_CATEGORIES = ['tools', 'light', 'building', 'food', 'medicine'] as const;
 export type RecipeCategory = (typeof RECIPE_CATEGORIES)[number];
 
-export const STATIONS = ['none', 'campfire'] as const;
+export const STATIONS = ['none', 'campfire', 'pot'] as const;
 export type Station = (typeof STATIONS)[number];
 
 export const STRUCTURE_INTERACTIONS = ['cook', 'sleep'] as const;
@@ -56,6 +56,12 @@ export interface ItemDef {
   places?: string;
   /** Light while held in the dark; burns `burnSeconds` of game time while lit. */
   light?: { radius: number; burnSeconds: number };
+  /** Using (F) treats the player: heals and/or cures status effects (e.g. "poison"). */
+  medicine?: { heal: number; cures: string[] };
+  /** After eating/using one, this item is given back (e.g. the empty bamboo tube). */
+  returns?: string;
+  /** A container: E at water while holding it turns one into this item. */
+  fillsTo?: string;
 }
 
 export interface LootEntry {
@@ -94,6 +100,10 @@ export interface ResourceDef {
   lootTable: string;
   /** Damage multiplier per tool. Missing or 0 = this tool can't gather it. `hand` must be > 0. */
   toolMultipliers: Partial<Record<ToolKind, number>>;
+  /** Plant identification: shown instead of the name until the player has gathered one. */
+  unknownName?: string;
+  /** Harvest seasons: per-item loot multipliers during the monsoon or the dry season. */
+  seasonal?: { monsoon?: Record<string, number>; dry?: Record<string, number> };
 }
 
 export interface Ingredient {
@@ -124,6 +134,24 @@ export interface StructureDef {
   lightRadius: number;
   /** What E does when standing next to it. */
   interaction: StructureInteraction | null;
+  /** Crafting station this structure provides within reach. */
+  station?: Exclude<Station, 'none'>;
+}
+
+/** fishing.json: the fishing minigame (M9). */
+export interface FishingConfig {
+  lootTable: string;
+  /** Seconds between casting and a bite. */
+  biteDelaySeconds: { min: number; max: number };
+  /** Seconds the bite lasts before the fish escapes. */
+  windowSeconds: number;
+  /** Width of the catch zone as a fraction of the bar (0..1). */
+  zoneWidth: number;
+  /** Marker sweeps (there and back) per second. */
+  markerCyclesPerSecond: number;
+  /** Rod durability used per attempt. */
+  rodWear: number;
+  text: { cast: string; bite: string; caught: string; missed: string; early: string; needDeep: string; escaped: string };
 }
 
 /** survival.json: single object with all survival / clock tuning. Rates are per game hour. */
@@ -186,6 +214,7 @@ export interface GameData {
   quests: ReadonlyMap<string, QuestDef>;
   lore: LoreConfig;
   ending: EndingConfig;
+  fishing: FishingConfig;
 }
 
 export interface RawGameData {
@@ -205,6 +234,7 @@ export interface RawGameData {
   quests: unknown;
   lore: unknown;
   ending: unknown;
+  fishing: unknown;
 }
 
 // ---------- Validation ----------
@@ -251,7 +281,7 @@ function collectIds(p: string[], file: string, list: unknown): Rec[] {
   return out;
 }
 
-function validateItems(p: string[], items: Rec[], structureIds: Set<string>): void {
+function validateItems(p: string[], items: Rec[], structureIds: Set<string>, itemIds: Set<string>): void {
   for (const it of items) {
     const w = `item "${String(it['id'])}"`;
     if (!isStr(it['name'])) p.push(`${w}: name required`);
@@ -286,6 +316,15 @@ function validateItems(p: string[], items: Rec[], structureIds: Set<string>): vo
       if (!isRec(light) || !isNum(light['radius']) || num(light['radius']) <= 0 || !isNum(light['burnSeconds']) || num(light['burnSeconds']) <= 0)
         p.push(`${w}: light needs radius > 0 and burnSeconds > 0`);
       if (stack !== 1) p.push(`${w}: light items must have stackSize 1`);
+    }
+    const med = it['medicine'];
+    if (med !== undefined) {
+      if (!isRec(med) || !isNum(med['heal']) || num(med['heal']) < 0 || !Array.isArray(med['cures']) || !(med['cures'] as unknown[]).every((c) => c === 'poison'))
+        p.push(`${w}: medicine needs heal >= 0 and cures (only "poison" is known)`);
+    }
+    for (const k of ['returns', 'fillsTo'] as const) {
+      const v = it[k];
+      if (v !== undefined && !itemIds.has(v as string)) p.push(`${w}: ${k} unknown item ${String(v)}`);
     }
   }
 }
@@ -340,6 +379,16 @@ function validateResources(p: string[], resources: Rec[], lootIds: Set<string>):
       }
       if (!isNum(tm['hand']) || num(tm['hand']) <= 0) p.push(`${w}: toolMultipliers.hand must be > 0`);
     }
+    if (r['unknownName'] !== undefined && !isStr(r['unknownName'])) p.push(`${w}: unknownName must be a non-empty string`);
+    const se = r['seasonal'];
+    if (se !== undefined) {
+      if (!isRec(se)) p.push(`${w}: seasonal must be an object`);
+      else
+        for (const [k, v] of Object.entries(se)) {
+          if (k !== 'monsoon' && k !== 'dry') p.push(`${w}: seasonal.${k} must be monsoon|dry`);
+          if (!isRec(v) || !Object.values(v).every((m) => isNum(m) && m >= 0)) p.push(`${w}: seasonal.${k} must map items to multipliers >= 0`);
+        }
+    }
   }
 }
 
@@ -381,7 +430,25 @@ function validateStructures(p: string[], structures: Rec[]): void {
     const inter = s['interaction'];
     if (inter !== null && !STRUCTURE_INTERACTIONS.includes(inter as StructureInteraction))
       p.push(`${w}: interaction must be null, "cook" or "sleep"`);
+    const st = s['station'];
+    if (st !== undefined && (st === 'none' || !STATIONS.includes(st as Station))) p.push(`${w}: unknown station ${String(st)}`);
   }
+}
+
+function validateFishing(p: string[], f: unknown, lootIds: Set<string>): void {
+  if (!isRec(f)) {
+    p.push('fishing.json: must be an object');
+    return;
+  }
+  if (!lootIds.has(f['lootTable'] as string)) p.push('fishing.lootTable unknown');
+  const d = f['biteDelaySeconds'];
+  if (!isRec(d) || !isNum(d['min']) || !isNum(d['max']) || num(d['min']) <= 0 || num(d['max']) < num(d['min'])) p.push('fishing.biteDelaySeconds needs 0 < min <= max');
+  if (!isNum(f['windowSeconds']) || num(f['windowSeconds']) < 0.8) p.push('fishing.windowSeconds must be >= 0.8 (fairness)');
+  if (!isNum(f['zoneWidth']) || num(f['zoneWidth']) < 0.15 || num(f['zoneWidth']) > 0.8) p.push('fishing.zoneWidth must be 0.15–0.8 (fairness)');
+  if (!isNum(f['markerCyclesPerSecond']) || num(f['markerCyclesPerSecond']) <= 0 || num(f['markerCyclesPerSecond']) > 1.5) p.push('fishing.markerCyclesPerSecond must be 0–1.5');
+  if (!isNum(f['rodWear']) || num(f['rodWear']) < 0) p.push('fishing.rodWear must be >= 0');
+  const t = f['text'];
+  for (const k of ['cast', 'bite', 'caught', 'missed', 'early', 'needDeep', 'escaped']) if (!isRec(t) || !isStr(t[k])) p.push(`fishing.text.${k} required`);
 }
 
 function validateSurvival(p: string[], s: unknown): void {
@@ -613,7 +680,7 @@ export function validateGameData(raw: RawGameData): GameData {
   const ids = (list: Rec[]) => new Set(list.map((i) => i['id']).filter(isStr));
   const itemIds = ids(items);
 
-  validateItems(p, items, ids(structures));
+  validateItems(p, items, ids(structures), itemIds);
   validateLoot(p, loot, itemIds);
   validateResources(p, resources, ids(loot));
   validateRecipes(p, recipes, itemIds);
@@ -623,6 +690,7 @@ export function validateGameData(raw: RawGameData): GameData {
   validateEnemies(p, enemies, ids(loot));
   validateM5Configs(p, raw);
   validateM6(p, raw, tablets, quests, ids(loot));
+  validateFishing(p, raw.fishing, ids(loot));
 
   if (p.length) throw new DataValidationError(p);
 
@@ -643,6 +711,7 @@ export function validateGameData(raw: RawGameData): GameData {
     quests: new Map((quests as unknown as QuestDef[]).map((q) => [q.id, q])),
     lore: raw.lore as LoreConfig,
     ending: raw.ending as EndingConfig,
+    fishing: raw.fishing as FishingConfig,
   };
 
   // Reachability: every item must be gatherable or craftable from gatherable items.
@@ -672,18 +741,41 @@ export function obtainableItems(data: Pick<GameData, 'resources' | 'loot'> & Par
  * Fixed-point closure: gatherable items, plus outputs of recipes whose ingredients are all
  * reachable. Campfire-station recipes count only once the campfire item itself is reachable.
  */
-export function reachableItems(data: Pick<GameData, 'resources' | 'loot' | 'recipes' | 'items'> & Partial<Pick<GameData, 'enemies'>>): Set<string> {
+export function reachableItems(
+  data: Pick<GameData, 'resources' | 'loot' | 'recipes' | 'items'> & Partial<Pick<GameData, 'enemies' | 'structures' | 'fishing'>>,
+): Set<string> {
   const have = obtainableItems(data);
-  const campfireItems = [...data.items.values()].filter((i) => i.places === 'campfire').map((i) => i.id);
+  /** Kits that place a structure providing each station. */
+  const stationKits = (station: string): string[] =>
+    [...data.items.values()]
+      .filter((i) => {
+        if (!i.places) return false;
+        const s = data.structures?.get(i.places);
+        return s ? s.station === station : station === 'campfire' && i.places === 'campfire';
+      })
+      .map((i) => i.id);
+  const add = (id: string | undefined): boolean => {
+    if (!id || have.has(id)) return false;
+    have.add(id);
+    return true;
+  };
   let changed = true;
   while (changed) {
     changed = false;
     for (const r of data.recipes.values()) {
       if (have.has(r.output)) continue;
-      if (r.station === 'campfire' && !campfireItems.some((id) => have.has(id))) continue;
-      if (r.ingredients.every((g) => have.has(g.item))) {
-        have.add(r.output);
-        changed = true;
+      if (r.station !== 'none' && !stationKits(r.station).some((id) => have.has(id))) continue;
+      if (r.ingredients.every((g) => have.has(g.item))) changed = add(r.output) || changed;
+    }
+    for (const it of data.items.values()) {
+      if (!have.has(it.id)) continue;
+      // Filling a container at water; getting the container back after use.
+      changed = add(it.fillsTo) || changed;
+      changed = add(it.returns) || changed;
+      // A fishing rod makes the fishing loot table reachable.
+      if (it.tool?.kind === 'rod' && data.fishing) {
+        const t = data.loot.get(data.fishing.lootTable);
+        if (t) for (const e of [...t.guaranteed, ...(t.rolls.max > 0 ? t.entries : [])]) changed = add(e.item) || changed;
       }
     }
   }

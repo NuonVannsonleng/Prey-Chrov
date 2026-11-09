@@ -28,6 +28,7 @@ export const TEX = {
   arrow: 'tex-arrow',
   heartTree: 'tex-heart-tree',
   roots: 'tex-roots',
+  herbs: 'tex-herbs',
   minimap: 'tex-minimap',
   vignette: 'tex-vignette',
   menuBg: 'tex-menu-bg',
@@ -101,11 +102,22 @@ export const ICON_SIZE = 16;
 export const BUSH_FRAME = { full: 0, picked: 1 } as const;
 
 /** Visual kinds a resource node can use (resources.json `sprite`). */
-export const RESOURCE_SPRITES = ['tree', 'bamboo', 'rock', 'bush'] as const;
+export const RESOURCE_SPRITES = ['tree', 'bamboo', 'rock', 'bush', 'herb_leaf', 'herb_root'] as const;
 export type ResourceSprite = (typeof RESOURCE_SPRITES)[number];
 
 /** Depleted-state frames inside TEX.depleted, one per resource sprite. */
-export const DEPLETED_FRAME: Record<ResourceSprite, number> = { tree: 0, bamboo: 1, rock: 2, bush: 3 };
+export const DEPLETED_FRAME: Record<ResourceSprite, number> = { tree: 0, bamboo: 1, rock: 2, bush: 3, herb_leaf: 3, herb_root: 3 };
+
+/** Herb plants (M9): frames inside TEX.herbs. Herbs swap to a picked frame like bushes. */
+export const HERB_SIZE = { w: 22, h: 18 } as const;
+export const HERB_FRAME = { leafFull: 0, leafPicked: 1, rootFull: 2, rootPicked: 3 } as const;
+
+/** Sprites that stay in place and swap to a picked frame instead of leaving a stump. */
+export const SWAP_SPRITES: Partial<Record<ResourceSprite, { tex: string; full: number; picked: number }>> = {
+  bush: { tex: TEX.bush, full: BUSH_FRAME.full, picked: BUSH_FRAME.picked },
+  herb_leaf: { tex: TEX.herbs, full: HERB_FRAME.leafFull, picked: HERB_FRAME.leafPicked },
+  herb_root: { tex: TEX.herbs, full: HERB_FRAME.rootFull, picked: HERB_FRAME.rootPicked },
+};
 
 /** Item icon frames inside TEX.icons (items.json `icon`). */
 export const ICON_KEYS = [
@@ -130,15 +142,28 @@ export const ICON_KEYS = [
   'hide',
   'fang',
   'spirit_dust',
+  'fish_raw',
+  'fish_cooked',
+  'fishing_rod',
+  'tube_empty',
+  'tube_water',
+  'tube_boiled',
+  'healing_leaf',
+  'bitter_root',
+  'bandage',
+  'antidote',
+  'stew',
+  'pot',
 ] as const;
 export type IconKey = (typeof ICON_KEYS)[number];
 
 /** Placeable structure visuals (structures.json `sprite`), frames inside TEX.structures. */
-export const STRUCTURE_SPRITES = ['campfire', 'shelter'] as const;
+export const STRUCTURE_SPRITES = ['campfire', 'shelter', 'pot'] as const;
 export type StructureSprite = (typeof STRUCTURE_SPRITES)[number];
 export const STRUCTURE_FRAME: Record<StructureSprite, { x: number; w: number; h: number }> = {
   campfire: { x: 0, w: 32, h: 28 },
   shelter: { x: 32, w: 72, h: 60 },
+  pot: { x: 104, w: 28, h: 28 },
 };
 export const LIGHT_TEXTURE_SIZE = 256;
 

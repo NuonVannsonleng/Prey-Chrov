@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import type { ResourceDef, ToolKind } from '../data/schema';
-import { BUSH_FRAME, DEPLETED_FRAME, TEX } from '../textures';
+import { DEPLETED_FRAME, SWAP_SPRITES, TEX } from '../textures';
 import { FOOTPRINT, type Canopy, type PropLayer } from '../world/PropLayer';
 import { ySort } from '../config';
 
@@ -53,15 +53,16 @@ export class ResourceNode {
       case 'bamboo':
         this.image = scene.add.image(x, y, TEX.bamboo, prop.variant % 2);
         break;
-      case 'bush':
-        this.image = scene.add.image(x, y, TEX.bush, BUSH_FRAME.full);
-        break;
+      default: {
+        const swap = SWAP_SPRITES[def.sprite];
+        this.image = scene.add.image(x, y, swap?.tex ?? TEX.bush, swap?.full ?? 0);
+      }
     }
     this.image.setOrigin(0.5, 1).setDepth(ySort(y));
 
     // Bushes swap frames instead of showing a separate stump.
     this.stump =
-      def.sprite === 'bush'
+      SWAP_SPRITES[def.sprite]
         ? null
         : scene.add
             .image(x, y + 2, TEX.depleted, DEPLETED_FRAME[def.sprite])
@@ -126,8 +127,9 @@ export class ResourceNode {
 
   private setDepleted(depleted: boolean): void {
     this.depleted = depleted;
-    if (this.def.sprite === 'bush') {
-      this.image.setFrame(depleted ? BUSH_FRAME.picked : BUSH_FRAME.full);
+    const swap = SWAP_SPRITES[this.def.sprite];
+    if (swap) {
+      this.image.setFrame(depleted ? swap.picked : swap.full);
     } else {
       this.image.setVisible(!depleted);
       this.stump?.setVisible(depleted);
@@ -137,7 +139,7 @@ export class ResourceNode {
     const body = this.zone.body as Phaser.Physics.Arcade.StaticBody | null;
     if (!body) return;
     // Bushes stay solid when picked; everything else becomes walkable.
-    if (this.def.sprite === 'bush') return;
+    if (swap) return;
     if (depleted) this.world.disableBody(body);
     else this.world.add(body);
   }

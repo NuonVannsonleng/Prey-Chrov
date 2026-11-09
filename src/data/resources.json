@@ -1,6 +1,8 @@
 [
-  { "id": "jungle_tree", "name": "Jungle Tree", "verb": "Chop", "sprite": "tree", "hp": 7, "respawnSeconds": 240, "lootTable": "jungle_tree_loot", "toolMultipliers": { "hand": 1, "axe": 3, "pickaxe": 0.5 } },
-  { "id": "bamboo_clump", "name": "Bamboo Clump", "verb": "Cut", "sprite": "bamboo", "hp": 5, "respawnSeconds": 180, "lootTable": "bamboo_clump_loot", "toolMultipliers": { "hand": 1, "axe": 2.5, "pickaxe": 0.5 } },
-  { "id": "boulder", "name": "Boulder", "verb": "Break", "sprite": "rock", "hp": 9, "respawnSeconds": 300, "lootTable": "boulder_loot", "toolMultipliers": { "hand": 1, "axe": 0.5, "pickaxe": 3 } },
-  { "id": "berry_bush", "name": "Berry Bush", "verb": "Pick", "sprite": "bush", "hp": 2, "respawnSeconds": 400, "lootTable": "berry_bush_loot", "toolMultipliers": { "hand": 1, "axe": 2, "pickaxe": 1 } }
+  {"id":"jungle_tree","name":"Jungle Tree","verb":"Chop","sprite":"tree","hp":7,"respawnSeconds":240,"lootTable":"jungle_tree_loot","toolMultipliers":{"hand":1,"axe":3,"pickaxe":0.5}},
+  {"id":"bamboo_clump","name":"Bamboo Clump","verb":"Cut","sprite":"bamboo","hp":5,"respawnSeconds":180,"lootTable":"bamboo_clump_loot","toolMultipliers":{"hand":1,"axe":2.5,"pickaxe":0.5},"seasonal":{"monsoon":{"bamboo_shoot":2}}},
+  {"id":"boulder","name":"Boulder","verb":"Break","sprite":"rock","hp":9,"respawnSeconds":300,"lootTable":"boulder_loot","toolMultipliers":{"hand":1,"axe":0.5,"pickaxe":3}},
+  {"id":"berry_bush","name":"Berry Bush","verb":"Pick","sprite":"bush","hp":2,"respawnSeconds":400,"lootTable":"berry_bush_loot","toolMultipliers":{"hand":1,"axe":2,"pickaxe":1},"seasonal":{"monsoon":{"berries":0.5}}},
+  {"id":"healing_herb","name":"Healing Leaf","unknownName":"Unknown herb","verb":"Pick","sprite":"herb_leaf","hp":1,"respawnSeconds":360,"lootTable":"healing_herb_loot","toolMultipliers":{"hand":1,"axe":1,"pickaxe":1},"seasonal":{"monsoon":{"healing_leaf":1.5}}},
+  {"id":"bitter_root_plant","name":"Bitter Root","unknownName":"Unknown herb","verb":"Dig up","sprite":"herb_root","hp":2,"respawnSeconds":420,"lootTable":"bitter_root_loot","toolMultipliers":{"hand":1,"axe":0.5,"pickaxe":2}}
 ]
