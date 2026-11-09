@@ -21,6 +21,13 @@ export interface SavedStructure {
   type: string;
   x: number;
   y: number;
+  /** M10: stable id, rotation, weathering, chest contents, collector water, outpost name. */
+  uid?: number;
+  rot?: 0 | 1;
+  durability?: number;
+  storage?: Array<{ item: string; qty: number; durability?: number } | null>;
+  water?: number;
+  name?: string;
 }
 
 /** Only nodes that differ from their fresh state are stored (compact diff). */
@@ -191,7 +198,26 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
       const type = str(s['type']);
       const x = finite(s['x'], NaN);
       const y = finite(s['y'], NaN);
-      return type && Number.isFinite(x) && Number.isFinite(y) ? [{ type, x, y }] : [];
+      if (!type || !Number.isFinite(x) || !Number.isFinite(y)) return [];
+      const out: SavedStructure = { type, x, y };
+      const uid = finite(s['uid'], NaN);
+      if (Number.isInteger(uid) && uid > 0) out.uid = uid;
+      if (s['rot'] === 1) out.rot = 1;
+      const dur = finite(s['durability'], NaN);
+      if (Number.isFinite(dur) && dur >= 0) out.durability = dur;
+      const water = finite(s['water'], NaN);
+      if (Number.isFinite(water) && water >= 0) out.water = Math.floor(water);
+      if (typeof s['name'] === 'string' && s['name'].length > 0 && s['name'].length <= 40) out.name = s['name'];
+      if (Array.isArray(s['storage'])) {
+        out.storage = (s['storage'] as unknown[]).slice(0, 24).map((it) => {
+          if (!isRec(it) || typeof it['item'] !== 'string') return null;
+          const qty = Math.floor(finite(it['qty'], 0));
+          if (qty <= 0) return null;
+          const d = it['durability'];
+          return typeof d === 'number' && Number.isFinite(d) && d > 0 ? { item: it['item'], qty, durability: d } : { item: it['item'], qty };
+        });
+      }
+      return [out];
     }),
     nodes: (Array.isArray(rec['nodes']) ? rec['nodes'] : []).flatMap((n: unknown) => {
       if (!isRec(n)) return [];

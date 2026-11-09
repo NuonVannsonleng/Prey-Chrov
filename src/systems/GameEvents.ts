@@ -4,6 +4,19 @@ import type { QuestView } from './Quest';
 import type { TabletDef } from '../data/schema';
 import type { AmbienceLevels, SfxId } from './Audio';
 
+/** A storage chest's contents (World → UI). */
+export interface StorageView {
+  uid: number;
+  title: string;
+  slots: ReadonlyArray<Readonly<ItemStack> | null>;
+}
+
+export interface OutpostInfo {
+  name: string;
+  x: number;
+  y: number;
+}
+
 export interface PlayerTick {
   x: number;
   y: number;
@@ -52,7 +65,18 @@ export interface GameEventMap {
   /** Crafting stations within reach changed (e.g. near a campfire). */
   'craft:stations': string[];
   /** UI should open the crafting panel (E at a campfire). */
-  'ui:open-crafting': void;
+  /** Open crafting on a tab ('food' at a campfire or pot, 'building' at a workbench). */
+  'ui:open-crafting': string;
+  /** Storage chests (M10). */
+  'storage:open': StorageView;
+  'storage:changed': StorageView;
+  /** Move a stack between chest and pack; slot -1 from 'chest' = take all. */
+  'storage:move': { uid: number; from: 'chest' | 'player'; slot: number };
+  'storage:close': void;
+  /** World → UI: the chest can no longer be used (moved away, died, dismantled). */
+  'storage:dismiss': void;
+  /** Outpost flags for the minimap and journal. */
+  'outposts:changed': OutpostInfo[];
   /** World entered/left structure placement mode; UI routes Esc to cancel it. */
   'placement:mode': boolean;
   'placement:cancel': void;

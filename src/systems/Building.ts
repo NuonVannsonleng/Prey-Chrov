@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
-import { BUILD, ySort } from '../config';
+import { BUILD, DEPTH, ySort } from '../config';
 import { TEX } from '../textures';
 import { gameEvents } from './GameEvents';
-import type { Structures } from './Structures';
+import { frameOf, type Structures } from './Structures';
 
 /**
  * Structure placement mode: a tinted ghost follows the mouse (clamped to reach) and
@@ -14,6 +14,8 @@ export class Building {
   /** Inventory slot holding the kit being placed. */
   slot = -1;
   valid = false;
+  /** Quarter-turn rotation for rotatable structures (R). */
+  rot: 0 | 1 = 0;
   x = 0;
   y = 0;
   private readonly ghost: Phaser.GameObjects.Image;
@@ -31,8 +33,18 @@ export class Building {
     this.active = true;
     this.slot = slot;
     this.structureId = structureId;
-    this.ghost.setFrame(def.sprite).setVisible(true);
+    if (!def.rotatable) this.rot = 0;
+    this.ghost.setFrame(frameOf(def, this.rot)).setVisible(true);
     gameEvents.emit('placement:mode', true);
+  }
+
+  /** R during placement: rotate walls a quarter turn. */
+  rotate(): boolean {
+    const def = this.structures.def(this.structureId);
+    if (!this.active || !def?.rotatable) return false;
+    this.rot = this.rot === 1 ? 0 : 1;
+    this.ghost.setFrame(frameOf(def, this.rot));
+    return true;
   }
 
   cancel(): void {
@@ -56,10 +68,15 @@ export class Building {
     }
     this.x = Math.round(playerX + dx);
     this.y = Math.round(playerY + dy);
-    this.valid = this.structures.canPlace(this.structureId, this.x, this.y, playerX, playerY, playerBody);
+    const def = this.structures.def(this.structureId);
+    if (def?.snap) {
+      this.x = Math.round(this.x / def.snap) * def.snap;
+      this.y = Math.round(this.y / def.snap) * def.snap;
+    }
+    this.valid = this.structures.canPlace(this.structureId, this.x, this.y, playerX, playerY, playerBody, this.rot);
     this.ghost
       .setPosition(this.x, this.y)
-      .setDepth(ySort(this.y))
+      .setDepth(def?.overhead ? DEPTH.canopy + ySort(this.y) - DEPTH.actors : ySort(this.y))
       .setTint(this.valid ? BUILD.validTint : BUILD.invalidTint);
   }
 }

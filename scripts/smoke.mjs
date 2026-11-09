@@ -1181,6 +1181,159 @@ try {
   const savedPlants = await page.evaluate(() => JSON.parse(localStorage.getItem('preychrov.save')).knownPlants);
   check('identified plants are saved', Array.isArray(savedPlants) && savedPlants.includes('healing_herb'), JSON.stringify(savedPlants));
 
+  // ---------- M10: building, storage and persistent outposts ----------
+  await setClock(5, 10);
+  await evalW7('w.encounters.clear(); w.survival.stats.health = 100;');
+  // A clear building spot near spawn: no solids within a generous box.
+  const findClear = (near) =>
+    evalW7(
+      `const c = w.chunks;
+      for (let r = 0; r < 40; r++) for (let a = 0; a < 16; a++) {
+        const x = Math.round(arg.x + Math.cos(a / 16 * Math.PI * 2) * r * 32), y = Math.round(arg.y + Math.sin(a / 16 * Math.PI * 2) * r * 32);
+        if (w.physics.overlapRect(x - 110, y - 90, 220, 150, false, true).length) continue;
+        let wet = false;
+        for (let dy = -96; dy <= 64 && !wet; dy += 16) for (let dx = -112; dx <= 112 && !wet; dx += 16) if (c.isDeepWater(x + dx, y + dy) || c.isShallow(x + dx, y + dy)) wet = true;
+        if (wet) continue;
+        if (w.structures.records.some((s) => Math.hypot(s.x - x, s.y - y) < 260)) continue;
+        return { x, y };
+      }
+      return null;`,
+      near,
+    );
+  const spawn10 = await evalW7('return { x: w.spawn.x, y: w.spawn.y };');
+  const campA = await findClear({ x: spawn10.x + 260, y: spawn10.y - 260 });
+  check('found a clear spot for camp A', !!campA, JSON.stringify(campA));
+  await teleport(campA.x, campA.y);
+  await sleep(500);
+  await evalW7(
+    'const inv = w.inventory.inventory; const s = inv.snapshot().map(() => null); s[0] = { item: "bamboo_wall_kit", qty: 4 }; s[1] = { item: "storage_chest_kit", qty: 2 }; s[2] = { item: "outpost_flag_kit", qty: 2 }; s[3] = { item: "thatch_roof_kit", qty: 1 }; s[4] = { item: "rain_collector_kit", qty: 1 }; s[5] = { item: "bamboo_bed_kit", qty: 1 }; s[6] = { item: "wood", qty: 7 }; s[7] = { item: "stone_axe", qty: 1, durability: 33 }; s[8] = { item: "bamboo", qty: 5 }; s[9] = { item: "workbench_kit", qty: 1 }; s[10] = { item: "berries", qty: 4 }; inv.restore(s); w.inventory.selected = 0; w.inventory.broadcast();',
+  );
+  // Real placement: F starts placing a wall, R rotates it, a click to the right places it (snapped).
+  await page.keyboard.press('KeyF');
+  await sleep(150);
+  await page.keyboard.press('KeyR');
+  await sleep(100);
+  const rotated = await evalW7('return { active: w.building.active, rot: w.building.rot, frame: w.building.ghost.frame.name };');
+  check('R rotates a wall during placement', rotated.active && rotated.rot === 1 && rotated.frame === 'wall_v', JSON.stringify(rotated));
+  await page.mouse.move(640 + 120, 360 - 10);
+  await sleep(200);
+  const ghost = await evalW7('return { x: w.building.x, y: w.building.y, valid: w.building.valid };');
+  await clickGame(640 + 120, 360 - 10);
+  await sleep(250);
+  const wallPlaced = await evalW7('const s = w.structures.records.find((r) => r.def.id === "bamboo_wall"); return s ? { x: s.x, y: s.y, rot: s.rot } : null;');
+  check('walls snap to the grid and place rotated', !!wallPlaced && wallPlaced.rot === 1 && wallPlaced.x % 8 === 0 && wallPlaced.y % 8 === 0, JSON.stringify({ ghost, wallPlaced }));
+  await page.keyboard.press('Escape');
+  await sleep(150);
+  // The rest of camp A (direct placement keeps the test independent of terrain).
+  await evalW7(`
+    const s = w.structures, a = arg;
+    s.place('storage_chest', a.x - 60, a.y - 30);
+    s.place('outpost_flag', a.x + 70, a.y - 40, { name: 'Outpost 1' });
+    s.place('thatch_roof', a.x - 60, a.y - 10);
+    s.place('rain_collector', a.x + 40, a.y + 40, { water: 0 });
+    s.place('bamboo_bed', a.x - 30, a.y + 50);
+    s.place('workbench', a.x + 80, a.y + 20);
+    w.emitStructures(); w.emitOutposts();`, campA);
+  await sleep(300);
+  // Open the chest with E and store by clicking slots.
+  await teleport(campA.x - 60, campA.y - 8);
+  await sleep(300);
+  await hold(['KeyW'], 80);
+  await sleep(150);
+  const chestPrompt = await evalW7('return ui.prompt.text;');
+  await page.keyboard.press('KeyE');
+  await sleep(250);
+  const storageOpen = await evalW7('return { open: ui.storage.isOpen, modal: w.modalOpen };');
+  check('E at a chest opens the storage panel', /Open the storage chest/.test(chestPrompt) && storageOpen.open && storageOpen.modal, JSON.stringify({ chestPrompt, storageOpen }));
+  const clickSlot = async (which, i) => {
+    const pos = await evalW7('const s = (arg[0] === "chest" ? ui.storage.chestSlots : ui.storage.playerSlots)[arg[1]]; return { x: s.x, y: s.y };', [which, i]);
+    const p = await toPageXY(pos.x, pos.y);
+    await page.mouse.click(p.x, p.y);
+    await sleep(150);
+  };
+  await clickSlot('player', 6); // wood
+  await clickSlot('player', 7); // stone axe (with durability)
+  await page.screenshot({ path: OUT + '/33-storage.png' });
+  await clickSlot('chest', 0); // take the wood back out…
+  await clickSlot('player', 6); // …and store it again
+  const chestA = await evalW7('const c = w.structures.records.find((r) => r.def.id === "storage_chest"); return c.storage.snapshot();');
+  check('clicking stacks moves them between pack and chest (durability kept)', chestA.some((s) => s && s.item === 'wood' && s.qty === 7) && chestA.some((s) => s && s.item === 'stone_axe' && s.durability === 33), JSON.stringify(chestA));
+  await page.keyboard.press('Escape');
+  await sleep(200);
+  check('Esc closes the storage panel', !(await evalW7('return ui.storage.isOpen || w.modalOpen;')));
+
+  // Weathering: a monsoon day breaks an unroofed wall; the roofed chest area is protected; collector fills.
+  await evalW7('w.weather.monsoon = true; w.weatherStructures(80);');
+  const weathered = await evalW7(`
+    const r = w.structures.records;
+    const wall = r.find((s) => s.def.id === 'bamboo_wall'), col = r.find((s) => s.def.id === 'rain_collector'), roof = r.find((s) => s.def.id === 'thatch_roof');
+    return { wall: wall.durability, broken: w.structures.isBroken(wall), solid: !!wall.zone, water: col.water, roof: roof.durability };`);
+  check('the monsoon weathers an unroofed wall until it breaks (no longer solid); collectors fill', weathered.broken && !weathered.solid && weathered.water === 4 && weathered.roof === 16, JSON.stringify(weathered));
+  await evalW7('w.weather.monsoon = false; const wall = w.structures.records.find((s) => s.def.id === "bamboo_wall"); w.repairStructure(wall);');
+  const repaired = await evalW7('const wall = w.structures.records.find((s) => s.def.id === "bamboo_wall"); return { d: wall.durability, solid: !!wall.zone, bamboo: w.inventory.inventory.count("bamboo") };');
+  check('R repairs a structure for one of its main material', repaired.d === 72 && repaired.solid && repaired.bamboo === 4, JSON.stringify(repaired));
+  // Rainwater into a tube.
+  await evalW7('w.inventory.inventory.add("bamboo_tube", 1); const i = w.inventory.inventory.snapshot().findIndex((s) => s && s.item === "bamboo_tube"); w.inventory.selected = i; w.inventory.broadcast(); const col = w.structures.records.find((s) => s.def.id === "rain_collector"); w.collectRain(col);');
+  check('a rain collector fills a held tube with clean rainwater', (await evalW7('return w.inventory.inventory.count("rain_water");')) === 1);
+  // Dismantle needs X twice and refunds about half.
+  const benchRefund = await evalW7(`
+    const b = w.structures.records.find((s) => s.def.id === 'workbench');
+    const wood0 = w.inventory.inventory.count('wood');
+    w.dismantle(b); const armed = w.structures.records.includes(b);
+    w.dismantle(b); const gone = !w.structures.records.includes(b);
+    return { armed, gone, wood: w.inventory.inventory.count('wood') - wood0 };`);
+  check('X twice dismantles a structure and refunds about half its materials', benchRefund.armed && benchRefund.gone && benchRefund.wood === 3, JSON.stringify(benchRefund));
+
+  // Camp B in a different chunk.
+  const campB = await findClear({ x: campA.x + 1500, y: campA.y + 300 });
+  check('found a clear spot for camp B (another chunk)', !!campB && Math.floor(campB.x / 1024) !== Math.floor(campA.x / 1024), JSON.stringify(campB));
+  await teleport(campB.x, campB.y);
+  await sleep(800);
+  await evalW7(`
+    const s = w.structures, b = arg;
+    const chest = s.place('storage_chest', b.x, b.y - 20);
+    chest.storage.add('berries', 4); chest.storage.add('rain_water', 1);
+    s.place('outpost_flag', b.x + 50, b.y, { name: 'Outpost 2' });
+    s.place('bamboo_wall', b.x - 48, b.y + 32, { rot: 1, durability: 40 });
+    s.place('bamboo_wall', b.x - 48, b.y + 72, { durability: 0 });
+    // A roof centred exactly on the chest's anchor (QA: must survive reload).
+    s.place('thatch_roof', b.x, b.y - 20);
+    w.emitStructures(); w.emitOutposts();`, campB);
+  await sleep(300);
+  const outposts = await evalW7('return { map: ui.minimap.outposts.length, journal: ui.journal.outpostLine };');
+  check('outposts appear on the minimap and in the journal', outposts.map === 2 && /Outpost 1/.test(outposts.journal) && /Outpost 2/.test(outposts.journal), JSON.stringify(outposts));
+  check('no creatures spawn near an outpost flag', (await evalW7('return w.outpostDistance(arg.x, arg.y) < 600 && !w.encounters.validSpot(w.gameData.enemies.get("wild_boar"), arg.x + 200, arg.y);', campB)) === true);
+
+  // Leave both camps (their chunks unload), save, reload and Continue.
+  const camps = () =>
+    evalW7(`return w.structures.records.filter((s) => s.uid).map((s) => ({ type: s.def.id, x: s.x, y: s.y, rot: s.rot, uid: s.uid, d: s.durability, water: s.water, name: s.name, storage: s.storage ? JSON.stringify(s.storage.snapshot()) : null })).sort((a, b) => a.uid - b.uid);`);
+  await teleport(campA.x - 6000, campA.y + 4000);
+  await sleep(1500);
+  const unloaded = await evalW7('return w.structures.list.filter((s) => s.def.id === "storage_chest").length;');
+  check('walking away unloads both camps (records stay)', unloaded === 0);
+  const before10 = await camps();
+  await evalW7('w.save();');
+  await page.reload();
+  await waitScene('Menu', 15000);
+  await sleep(800);
+  await clickGame(640, 500);
+  await waitScene('World');
+  await sleep(900);
+  const after10 = await camps();
+  check('reload recovers both camps exactly: structures, rotation, weathering, chest items, water, outpost names', JSON.stringify(after10) === JSON.stringify(before10) && before10.length >= 9, JSON.stringify({ n: before10.length, diff: JSON.stringify(after10) === JSON.stringify(before10) ? '' : JSON.stringify(after10).slice(0, 400) }));
+  await teleport(campB.x, campB.y + 40);
+  await sleep(1200);
+  const campBLive = await evalW7('return w.structures.list.filter((s) => Math.hypot(s.x - arg.x, s.y - arg.y) < 200).map((s) => s.def.id).sort().join(",");', campB);
+  check('returning to camp B rebuilds it in the world (roof on the chest anchor kept)', campBLive === 'bamboo_wall,bamboo_wall,outpost_flag,storage_chest,thatch_roof', campBLive);
+  const brokenWall = await evalW7('const wl = w.structures.list.find((s) => s.def.id === "bamboo_wall" && s.durability === 0); return wl ? { solid: !!wl.zone, broken: w.structures.isBroken(wl) } : null;');
+  check('a broken wall stays non-solid after reload', !!brokenWall && brokenWall.broken && !brokenWall.solid, JSON.stringify(brokenWall));
+  const chestB = await evalW7('const c = w.structures.list.find((s) => s.def.id === "storage_chest" && Math.hypot(s.x - arg.x, s.y - arg.y) < 200); return c ? c.storage.count("berries") : -1;', campB);
+  check('the chest under the roof kept its items', chestB === 4, String(chestB));
+  await page.screenshot({ path: OUT + '/34-camp-b.png' });
+  await teleport(campA.x, campA.y + 20);
+  await sleep(1200);
+  await page.screenshot({ path: OUT + '/35-camp-a.png' });
+
   await page.evaluate(() => localStorage.clear());
 
   check('no console errors', errors.length === 0, errors.slice(0, 5).join(' | '));

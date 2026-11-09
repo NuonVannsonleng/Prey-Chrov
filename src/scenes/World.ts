@@ -5,7 +5,7 @@ import type { GameData, ItemDef, Station, ToolKind } from '../data/schema';
 import { Player, type PlayerKeys } from '../entities/Player';
 import type { ResourceNode } from '../entities/ResourceNode';
 import { Building } from '../systems/Building';
-import { Encounters } from '../systems/Encounters';
+import { Encounters, OUTPOST_MAX, OUTPOST_SPACING } from '../systems/Encounters';
 import { Projectiles } from '../systems/Projectiles';
 import { StatusEffects, type EffectId } from '../systems/StatusEffects';
 import type { Enemy } from '../entities/Enemy';
@@ -25,7 +25,7 @@ import { Pickups } from '../systems/Pickups';
 import { PlayerInventory } from '../systems/PlayerInventory';
 import { readSave, writeSave, type SaveData } from '../systems/Save';
 import { buildSave, clampSelected, sanitizeInventory } from '../systems/SaveGame';
-import { Structures } from '../systems/Structures';
+import { Structures, footprintOf, type Structure } from '../systems/Structures';
 import { Survival } from '../systems/Survival';
 import { TILE } from '../textures';
 import { FloatingText } from '../ui/FloatingText';
@@ -142,7 +142,15 @@ export class World extends Phaser.Scene {
     if (e.code === 'KeyF') this.pendingUse = true;
     else if (e.code === 'Space') this.pendingAttack = true;
     else if (e.code === 'KeyE') this.pendingInteract = true;
+    else if (e.code === 'KeyR') this.pendingRotate = true;
+    else if (e.code === 'KeyX') this.pendingDismantle = true;
   });
+  private pendingRotate = false;
+  private pendingDismantle = false;
+  /** X must be pressed twice on the same structure to dismantle it. */
+  private dismantleArmed = { uid: -1, until: 0 };
+  private openChestUid = -1;
+  private lastWearHour = -1;
   private readonly playerRect = new Phaser.Geom.Rectangle();
   private readonly tick: PlayerTick = { x: 0, y: 0, speed: 0, sprinting: false };
   private readonly survivalTick: SurvivalTick = {
@@ -218,6 +226,7 @@ export class World extends Phaser.Scene {
       biomeAt: (tx, ty) => this.gen.biomeAt(tx, ty),
       lightAt: (x, y, m) => this.lightAt(x, y, m),
       shrineDistance: (x, y) => this.shrineDistance(x, y),
+      outpostDistance: (x, y) => this.outpostDistance(x, y),
       hitPlayer: (enemy, dmg) => this.enemyHitsPlayer(enemy, dmg),
       fireOrb: (enemy, dx, dy) => {
         const pr = enemy.def.projectile;
@@ -277,6 +286,10 @@ export class World extends Phaser.Scene {
       if (open) this.building.cancel();
     });
     onSceneEvent(this, 'placement:cancel', () => this.building.cancel());
+    onSceneEvent(this, 'storage:move', (req) => this.moveStorage(req.uid, req.from, req.slot));
+    onSceneEvent(this, 'storage:close', () => {
+      this.openChestUid = -1;
+    });
     onSceneEvent(this, 'ui:ready', () => {
       gameEvents.emit('objectives:changed', this.objectives.view());
       gameEvents.emit('craft:stations', [...this.stations]);
@@ -286,6 +299,7 @@ export class World extends Phaser.Scene {
       this.nextWeatherAt = 0;
       this.nextQuestTargetAt = 0;
       this.emitStructures();
+      this.emitOutposts();
     });
     this.scene.launch(SCENES.ui);
 
@@ -311,6 +325,11 @@ export class World extends Phaser.Scene {
     this.pendingUse = false;
     this.pendingInteract = false;
     this.pendingAttack = false;
+    this.pendingRotate = false;
+    this.pendingDismantle = false;
+    this.dismantleArmed = { uid: -1, until: 0 };
+    this.openChestUid = -1;
+    this.lastWearHour = -1;
     this.playerInvulnUntil = 0;
     this.nextAttackAt = 0;
     this.nextEffectsEmitAt = 0;
@@ -391,7 +410,12 @@ export class World extends Phaser.Scene {
       if (this.fishing.phase !== 'idle') {
         this.updateFishing(this.pendingInteract || this.pendingAttack);
       } else {
-        this.setPrompt(this.promptFor(target.kind === 'structure' ? target.structure.def.interaction : target.kind, target));
+        this.setPrompt(target.kind === 'structure' ? this.structurePrompt(target.structure) : this.promptFor(target.kind, target));
+        if (this.pendingRotate) {
+          if (this.building.active) this.building.rotate();
+          else if (target.kind === 'structure') this.repairStructure(target.structure);
+        }
+        if (this.pendingDismantle && !this.building.active && target.kind === 'structure') this.dismantle(target.structure);
         const pressed = this.pendingInteract;
         if (this.pendingAttack) this.attack(p.x + p.facingVec.x * 20, p.y - 10 + p.facingVec.y * 20);
         if (this.pendingUse) this.useHeld();
@@ -409,6 +433,16 @@ export class World extends Phaser.Scene {
     this.pendingUse = false;
     this.pendingInteract = false;
     this.pendingAttack = false;
+    this.pendingRotate = false;
+    this.pendingDismantle = false;
+    this.updateRoofs();
+    if (this.openChestUid >= 0) {
+      const c = this.structures.byUid(this.openChestUid);
+      if (!c || Math.hypot(c.x - p.x, c.y - p.y) > 120) {
+        this.openChestUid = -1;
+        gameEvents.emit('storage:dismiss');
+      }
+    }
     this.renderLighting();
     this.emitTicks(cfg);
   }
@@ -439,6 +473,12 @@ export class World extends Phaser.Scene {
       }
     }
     return null;
+  }
+
+  private outpostDistance(x: number, y: number): number {
+    let best = Infinity;
+    for (const s of this.structures.records) if (s.def.outpost) best = Math.min(best, Math.hypot(s.x - x, s.y - y));
+    return best;
   }
 
   private shrineDistance(x: number, y: number): number {
@@ -569,6 +609,12 @@ export class World extends Phaser.Scene {
     for (const s of this.structures.list) if (s.def.lightRadius > 0) fire = Math.max(fire, 1 - Math.hypot(s.x - this.player.x, s.y - this.player.y) / 220);
     gameEvents.emit('ambience', { day: 1 - dark, night: dark, rain: this.weather.monsoon ? 1 : 0, fire: Math.max(0, fire) });
     this.chunks.setFlood(this.weather.flood, this.gameData.season.floodRiverWidth);
+    const hour = Math.floor(this.clock.totalSeconds / this.clock.secondsPerHour);
+    if (hour !== this.lastWearHour) {
+      const steps = this.lastWearHour < 0 ? 0 : Math.max(0, Math.min(48, hour - this.lastWearHour));
+      this.lastWearHour = hour;
+      if (steps > 0 && this.weather.monsoon) this.weatherStructures(steps);
+    }
     const key = `${this.weather.label}|${this.weather.monsoon}|${this.chunks.flood}`;
     if (key === this.weatherKey) return;
     const started = this.weather.monsoon && this.weatherKey !== '' && !this.weatherKey.includes('|true|');
@@ -582,7 +628,9 @@ export class World extends Phaser.Scene {
     const cold = this.gameData.season.cold;
     for (const s of this.structures.list) {
       const d = Math.hypot(s.x - x, s.y - y);
+      if (this.structures.isBroken(s)) continue;
       if (s.def.interaction === 'sleep' && d <= cold.shelterRadius) return true;
+      if (s.def.shelterRadius && Math.hypot(s.x - x, this.structures.centerY(s) - y) <= s.def.shelterRadius) return true;
       if (s.def.lightRadius > 0 && d <= s.def.lightRadius * 0.6) return true;
     }
     return false;
@@ -886,7 +934,7 @@ export class World extends Phaser.Scene {
 
   private updateStations(): void {
     this.structures.stationsNear(this.player.x, this.player.y, this.stations);
-    const key = (this.stations.has('campfire') ? 1 : 0) + (this.stations.has('pot') ? 2 : 0);
+    const key = (this.stations.has('campfire') ? 1 : 0) + (this.stations.has('pot') ? 2 : 0) + (this.stations.has('workbench') ? 4 : 0);
     if (key === this.stationsKey) return;
     this.stationsKey = key;
     gameEvents.emit('craft:stations', [...this.stations]);
@@ -978,8 +1026,30 @@ export class World extends Phaser.Scene {
       return;
     }
     if (target.kind === 'structure' && pressed) {
-      if (target.structure.def.interaction === 'cook') gameEvents.emit('ui:open-crafting');
-      else if (target.structure.def.interaction === 'sleep') this.trySleep();
+      const s = target.structure;
+      if (this.structures.isBroken(s)) {
+        gameEvents.emit('toast', { text: `The ${s.def.name.toLowerCase()} is broken — press R to repair it`, tone: 'info' });
+        return;
+      }
+      switch (s.def.interaction) {
+        case 'cook':
+          gameEvents.emit('ui:open-crafting', 'food');
+          break;
+        case 'craft':
+          gameEvents.emit('ui:open-crafting', 'building');
+          break;
+        case 'sleep':
+          this.trySleep(s);
+          break;
+        case 'storage':
+          this.openStorage(s);
+          break;
+        case 'collect':
+          this.collectRain(s);
+          break;
+        default:
+          break;
+      }
     }
   }
 
@@ -1298,7 +1368,25 @@ export class World extends Phaser.Scene {
     }
     const taken = this.inventory.inventory.takeFromSlot(b.slot, 1);
     if (!taken) return b.cancel();
-    const placed = this.structures.place(b.structureId, b.x, b.y);
+    const def = this.structures.def(b.structureId);
+    let outpostName: string | null = null;
+    if (def?.outpost) {
+      const flags = this.structures.records.filter((s) => s.def.outpost);
+      if (flags.length >= OUTPOST_MAX) {
+        this.inventory.inventory.add(taken.item, 1);
+        gameEvents.emit('toast', { text: `You can keep up to ${OUTPOST_MAX} outposts — dismantle one first`, tone: 'info' });
+        return b.cancel();
+      }
+      if (flags.some((s) => Math.hypot(s.x - b.x, s.y - b.y) < OUTPOST_SPACING)) {
+        this.inventory.inventory.add(taken.item, 1);
+        gameEvents.emit('toast', { text: 'Too close to another outpost — outposts must be far apart', tone: 'info' });
+        return b.cancel();
+      }
+      let n = 1;
+      while (flags.some((s) => s.name === `Outpost ${n}`)) n++;
+      outpostName = `Outpost ${n}`;
+    }
+    const placed = this.structures.place(b.structureId, b.x, b.y, { rot: b.rot, name: outpostName });
     if (!placed) {
       this.inventory.inventory.add(taken.item, 1);
       return b.cancel();
@@ -1310,10 +1398,14 @@ export class World extends Phaser.Scene {
     this.floating.show(b.x, b.y - 30, `Built ${placed.def.name}`, '#8ec26a');
     if (placed.def.station === 'campfire') this.completeObjective('campfire');
     if (placed.def.interaction === 'sleep') this.completeObjective('shelter');
+    if (placed.def.outpost) {
+      this.emitOutposts();
+      gameEvents.emit('toast', { text: `${placed.name} is marked on your map. No new creatures appear close to it.`, tone: 'info' });
+    }
     if (!this.inventory.inventory.get(b.slot)) b.cancel();
   }
 
-  private trySleep(): void {
+  private trySleep(bed?: Structure): void {
     const sl = this.gameData.survival.sleep;
     if (!inHourWindow(this.clock.hour, sl.fromHour, sl.untilHour)) {
       gameEvents.emit('toast', { text: `Too early to sleep — rest from ${hourLabel(sl.fromHour)} until ${hourLabel(sl.untilHour)}`, tone: 'info' });
@@ -1334,6 +1426,10 @@ export class World extends Phaser.Scene {
       if (slept.damage > 0) this.survival.damage(Math.min(slept.damage, Math.max(0, this.survival.stats.health - 1)), 'poison');
       if (slept.heal > 0) this.survival.heal(slept.heal);
       this.survival.sleep();
+      if (bed?.def.sleepBonus) {
+        this.survival.heal(bed.def.sleepBonus.health);
+        this.survival.stats.warmth = 100;
+      }
       this.lastHealth = this.survival.stats.health;
       this.gathering.update(this.now, this.player.x, this.player.y);
       this.completeObjective('sleep');
@@ -1397,6 +1493,218 @@ export class World extends Phaser.Scene {
     return 1;
   }
 
+  // ---------- Building and outposts (M10) ----------
+
+  private emitOutposts(): void {
+    gameEvents.emit(
+      'outposts:changed',
+      this.structures.records.filter((s) => s.def.outpost).map((s) => ({ name: s.name ?? s.def.name, x: s.x, y: s.y })),
+    );
+  }
+
+  /** The recipe that makes a structure's kit (for refunds and repairs). */
+  private kitRecipe(s: Structure): { kit: string; ingredients: ReadonlyArray<{ item: string; qty: number }>; qty: number } | null {
+    const kit = [...this.gameData.items.values()].find((i) => i.places === s.def.id);
+    if (!kit) return null;
+    const r = [...this.gameData.recipes.values()].find((x) => x.output === kit.id);
+    return r ? { kit: kit.id, ingredients: r.ingredients, qty: r.qty } : { kit: kit.id, ingredients: [], qty: 1 };
+  }
+
+  private structurePrompt(s: Structure): string {
+    const d = s.def;
+    const parts: string[] = [];
+    if (this.structures.isBroken(s)) parts.push(`${d.name} (broken)`);
+    else
+      switch (d.interaction) {
+        case 'cook':
+          parts.push(`E — Cook at the ${d.name.toLowerCase()}`);
+          break;
+        case 'craft':
+          parts.push(`E — Use the ${d.name.toLowerCase()}`);
+          break;
+        case 'storage':
+          parts.push(`E — Open the ${d.name.toLowerCase()}`);
+          break;
+        case 'sleep': {
+          const sl = this.gameData.survival.sleep;
+          parts.push(inHourWindow(this.clock.hour, sl.fromHour, sl.untilHour) ? 'E — Sleep until morning (saves)' : `${d.name} — sleep from ${hourLabel(sl.fromHour)}`);
+          break;
+        }
+        case 'collect': {
+          const held = this.inventory.held;
+          const canFill = held ? itemDef(held.item).fillsTo !== undefined : false;
+          parts.push(`${d.name} ${s.water}/${d.rainCapacity ?? 0}${canFill ? ' · E — Fill your tube' : ' · hold a bamboo tube'}`);
+          break;
+        }
+        default:
+          parts.push(s.name ?? d.name);
+      }
+    if (d.durability) {
+      const pct = Math.round((s.durability / d.durability) * 100);
+      if (pct < 75) parts.push(`${pct}% · R — Repair`);
+      else if (pct < 100) parts.push(`${pct}%`);
+    }
+    parts.push('X — Dismantle');
+    return parts.join(' · ');
+  }
+
+  /** X twice: remove a structure and get about half its materials back (chests must be empty). */
+  private dismantle(s: Structure): void {
+    if (s.storage && s.storage.snapshot().some((x) => x !== null)) {
+      gameEvents.emit('toast', { text: 'Empty the chest before dismantling it', tone: 'info' });
+      return;
+    }
+    if (this.dismantleArmed.uid !== s.uid || this.now > this.dismantleArmed.until) {
+      this.dismantleArmed = { uid: s.uid, until: this.now + 2500 };
+      gameEvents.emit('toast', { text: `Press X again to dismantle the ${s.def.name.toLowerCase()} (returns about half its materials)`, tone: 'info' });
+      return;
+    }
+    this.dismantleArmed = { uid: -1, until: 0 };
+    const r = this.kitRecipe(s);
+    const refund: Array<{ item: string; qty: number }> = [];
+    if (r) {
+      r.ingredients.forEach((g, i) => {
+        const q = Math.floor(g.qty / r.qty / 2);
+        const qty = i === 0 ? Math.max(1, q) : q;
+        if (qty > 0) refund.push({ item: g.item, qty });
+      });
+    }
+    this.structures.remove(s);
+    for (const g of refund) {
+      const left = this.inventory.add(g.item, g.qty);
+      if (left > 0 && !this.dropInFront(g.item, left)) this.pickups.spawn(g.item, left, s.x, s.y, this.now, 0, 6, false);
+    }
+    this.inventory.broadcast();
+    this.emitStructures();
+    if (s.def.outpost) this.emitOutposts();
+    gameEvents.emit('sfx', 'chop');
+    this.floating.show(s.x, s.y - 24, refund.length ? `+${refund.map((g) => `${g.qty} ${itemDef(g.item).name}`).join(', ')}` : 'Dismantled', '#8ec26a');
+  }
+
+  /** R near a weathered structure: one of its main material restores it fully. */
+  private repairStructure(s: Structure): void {
+    const max = s.def.durability ?? 0;
+    if (!max || s.durability >= max * 0.75) return;
+    const main = this.kitRecipe(s)?.ingredients[0];
+    if (main && this.inventory.inventory.count(main.item) < 1) {
+      gameEvents.emit('toast', { text: `Repairing needs 1 ${itemDef(main.item).name}`, tone: 'info' });
+      return;
+    }
+    if (s.def.solid && this.structures.isBroken(s)) {
+      const f = footprintOf(s.def, s.rot);
+      if (this.physics.overlapRect(s.x - f.w / 2, s.y - f.h, f.w, f.h, true, false).length > 0) {
+        gameEvents.emit('toast', { text: 'Step out of the way to repair it', tone: 'info' });
+        return;
+      }
+    }
+    if (main) this.inventory.inventory.remove(main.item, 1);
+    s.durability = max;
+    this.structures.refresh(s);
+    this.inventory.broadcast();
+    gameEvents.emit('sfx', 'build');
+    this.floating.show(s.x, s.y - 26, 'Repaired', '#8ec26a');
+  }
+
+  /** Monsoon weathering: unroofed structures wear (roofs always); rain collectors fill. */
+  private weatherStructures(hours: number): void {
+    const p = this.player;
+    let brokeNear = 0;
+    let lastName = '';
+    for (const s of this.structures.records) {
+      const d = s.def;
+      if (d.rainCapacity && !this.structures.isBroken(s)) s.water = Math.min(d.rainCapacity, s.water + hours);
+      if (!d.durability || this.structures.isBroken(s)) continue;
+      if (!d.wearsAlways && this.isRoofed(s)) continue;
+      s.durability = Math.max(0, s.durability - hours);
+      if (s.durability > 0) continue;
+      this.structures.refresh(s);
+      if (Math.hypot(s.x - p.x, s.y - p.y) < 700) {
+        brokeNear++;
+        lastName = d.name.toLowerCase();
+      }
+    }
+    if (brokeNear > 0) {
+      gameEvents.emit('toast', {
+        text: brokeNear === 1 ? `Your ${lastName} gave way in the rain — repair it with R` : `${brokeNear} of your structures gave way in the rain — repair them with R`,
+        tone: 'warn',
+      });
+    }
+  }
+
+  private isRoofed(s: Structure): boolean {
+    for (const r of this.structures.records) {
+      if (r === s || !r.def.shelterRadius || this.structures.isBroken(r)) continue;
+      if (Math.hypot(r.x - s.x, this.structures.centerY(r) - this.structures.centerY(s)) <= r.def.shelterRadius) return true;
+    }
+    return false;
+  }
+
+  /** Roofs fade while the player is underneath. */
+  private updateRoofs(): void {
+    const p = this.player;
+    for (const s of this.structures.list) {
+      if (!s.def.overhead || !s.image) continue;
+      const f = footprintOf(s.def, s.rot);
+      const under = Math.abs(p.x - s.x) < f.w / 2 + 4 && p.y < s.y + 6 && p.y > s.y - f.h - 12;
+      const base = this.structures.isBroken(s) ? 0.55 : 1;
+      const a = under ? 0.3 : base;
+      if (s.image.alpha !== a) s.image.setAlpha(a);
+    }
+  }
+
+  private storageView(s: Structure): { uid: number; title: string; slots: ReturnType<NonNullable<Structure['storage']>['snapshot']> } {
+    return { uid: s.uid, title: s.def.name, slots: s.storage?.snapshot() ?? [] };
+  }
+
+  private openStorage(s: Structure): void {
+    if (!s.storage) return;
+    this.openChestUid = s.uid;
+    gameEvents.emit('sfx', 'chest');
+    gameEvents.emit('storage:open', this.storageView(s));
+  }
+
+  /** Moves stacks between an open chest and the pack; never loses items (leftovers stay put). */
+  private moveStorage(uid: number, from: 'chest' | 'player', slot: number): void {
+    const s = this.structures.byUid(uid);
+    if (!s?.storage || uid !== this.openChestUid) return;
+    if (Math.hypot(s.x - this.player.x, s.y - this.player.y) > 120) return;
+    const chest = s.storage;
+    const pack = this.inventory.inventory;
+    const transfer = (src: typeof chest, dst: typeof chest, i: number) => {
+      const st = src.get(i);
+      if (!st) return;
+      const left = dst.add(st.item, st.qty, st.durability);
+      const moved = st.qty - left;
+      if (moved > 0) src.takeFromSlot(i, moved);
+    };
+    if (from === 'chest') {
+      if (slot < 0) for (let i = 0; i < chest.size; i++) transfer(chest, pack, i);
+      else transfer(chest, pack, slot);
+    } else transfer(pack, chest, slot);
+    this.inventory.broadcast();
+    gameEvents.emit('storage:changed', this.storageView(s));
+  }
+
+  private collectRain(s: Structure): void {
+    const held = this.inventory.held;
+    const def = held ? itemDef(held.item) : null;
+    const item = s.def.collectItem;
+    if (!item || !def?.fillsTo) {
+      gameEvents.emit('toast', { text: `Hold a bamboo tube to collect rainwater (${s.water}/${s.def.rainCapacity ?? 0})`, tone: 'info' });
+      return;
+    }
+    if (s.water <= 0) {
+      gameEvents.emit('toast', { text: 'The collector is empty — it fills during the monsoon rains', tone: 'info' });
+      return;
+    }
+    if (!this.inventory.inventory.takeFromSlot(this.inventory.selected, 1)) return;
+    s.water--;
+    this.giveBack(item);
+    this.inventory.broadcast();
+    gameEvents.emit('sfx', 'drink');
+    this.floating.show(this.player.x, this.player.y - 34, `+1 ${itemDef(item).name}`, '#4fc2b4');
+  }
+
   private emitStructures(): void {
     gameEvents.emit(
       'structures:changed',
@@ -1425,9 +1733,20 @@ export class World extends Phaser.Scene {
     // Node diffs must exist before chunks load so harvested spots stay harvested.
     this.chunks.restoreNodes(save.nodes, this.now);
     const refundTypes: string[] = [...save.refundStructures];
+    let droppedStored = 0;
     for (const st of save.structures) {
-      if (this.structures.hasAt(st.x, st.y)) continue;
-      if (!this.structures.place(st.type, st.x, st.y)) refundTypes.push(st.type);
+      if (this.structures.hasSaved(st.type, st.x, st.y, st.uid)) continue;
+      const storage = st.storage?.map((it) => {
+        if (it && !this.gameData.items.has(it.item)) droppedStored++;
+        return it && this.gameData.items.has(it.item) ? it : null;
+      });
+      if (!this.structures.place(st.type, st.x, st.y, { rot: st.rot, uid: st.uid, durability: st.durability, storage, water: st.water, name: st.name ?? null }))
+        refundTypes.push(st.type);
+    }
+    if (droppedStored > 0) {
+      this.time.delayedCall(700, () =>
+        gameEvents.emit('toast', { text: `${droppedStored} unknown stored stack(s) from an older version were removed`, tone: 'warn' }),
+      );
     }
     this.placePlayer(ps.x, ps.y);
     // Refunds go to the inventory first, then the ground at the player's feet; anything that
@@ -1464,6 +1783,7 @@ export class World extends Phaser.Scene {
     for (const s of save.shrines) this.shrineState.set(s.key, s.lastOffering);
     for (const k of save.openedChests) this.openedChests.add(k);
     this.quest = new QuestLog(this.gameData, save.tabletsRead, save.heartReached, this.gen.tabletSites().length, save.restored);
+    this.lastWearHour = -1;
     this.encounters.calmed = this.quest.restored;
     this.stats = { ...save.stats };
     this.kills = save.stats.kills;
@@ -1490,6 +1810,10 @@ export class World extends Phaser.Scene {
     if (this.busy) return;
     this.busy = true;
     this.stopFishing();
+    if (this.openChestUid >= 0) {
+      this.openChestUid = -1;
+      gameEvents.emit('storage:dismiss');
+    }
     this.building.cancel();
     this.player.halt();
     this.encounters.clear();

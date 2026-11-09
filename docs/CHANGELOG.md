@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.0 — M10: Building and persistent outposts (2026-11-09)
+
+### Added
+- Workbench, plus bamboo walls (rotate with R, snap together), thatch roofs (weather protection), storage chests (12 slots, safe and persistent), rain collectors (clean rainwater), bamboo beds (better sleep) and outpost flags (map markers, no new spawns nearby).
+- Monsoon weathering with broken states, R to repair and X twice to dismantle (refunds half).
+- Outposts on the minimap and in the journal (distance and direction).
+- Structures keep their id, rotation, durability, chest contents, water and name through chunk unloads and saves.
+
+### Fixed
+- Restoring a save deduplicates structures by id, so a roof over a chest no longer drops the chest.
+
 ## 0.9.0 — M9: Cooking, fishing, medicine and ecology (2026-11-09)
 
 ### Added

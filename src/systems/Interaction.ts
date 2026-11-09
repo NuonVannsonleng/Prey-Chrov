@@ -74,17 +74,20 @@ export class Interaction {
       }
     }
 
-    // Structures with an interaction (campfire: cook, shelter: sleep).
+    // Structures: use (cook, sleep, storage...) or, for walls and flags, repair / dismantle.
+    // Overhead roofs are only targeted when nothing else is near (they cover everything).
     for (const st of this.structures) {
-      if (!st.def.interaction) continue;
+      const fw = st.rot === 1 && st.def.rotatable ? st.def.footprint.h : st.def.footprint.w;
+      const fh = st.rot === 1 && st.def.rotatable ? st.def.footprint.w : st.def.footprint.h;
       const tx = st.x;
-      const ty = st.y - Math.min(10, st.def.footprint.h);
+      const ty = st.y - Math.min(10, fh);
       const dx = tx - cx;
       const dy = ty - cy;
       const d = Math.hypot(dx, dy);
-      if (d > GATHER.reach + st.def.footprint.w / 2) continue;
+      if (d > GATHER.reach + fw / 2) continue;
       const facing = d > 0 ? (dx * fx + dy * fy) / d : 1;
-      const score = d - st.def.footprint.w / 2 - facing * FACING_BIAS;
+      // Walls, flags and roofs (no E action) only win when nothing else is in reach.
+      const score = st.def.interaction ? d - fw / 2 - facing * FACING_BIAS : d - facing * FACING_BIAS + (st.def.overhead ? 40 : 24);
       if (score < bestScore) {
         bestScore = score;
         this.structureTarget ??= { kind: 'structure', structure: st, x: 0, y: 0 };

@@ -14,6 +14,8 @@ export interface EncounterServices {
   lightAt(x: number, y: number, margin: number): { x: number; y: number; radius: number } | null;
   /** Distance to the nearest Neak Ta shrine (no spawns near shrines). */
   shrineDistance(x: number, y: number): number;
+  /** Distance to the nearest outpost flag (no spawns close to one). */
+  outpostDistance?(x: number, y: number): number;
   hitPlayer(enemy: Enemy, damage: number): void;
   fireOrb(enemy: Enemy, dirX: number, dirY: number): void;
   onKilled(enemy: Enemy): void;
@@ -29,6 +31,11 @@ export interface EncounterFrame {
 }
 
 const MAX_POOL = 16;
+/** No creature appears within this distance of an outpost flag (wider than the spawn ring). */
+export const OUTPOST_SAFE_RADIUS = 600;
+/** Outposts are camps, not a portable bubble: at most this many, this far apart. */
+export const OUTPOST_MAX = 4;
+export const OUTPOST_SPACING = 1200;
 const NIGHT_DARKNESS = 0.5;
 const DAWN_DARKNESS = 0.35;
 
@@ -180,6 +187,7 @@ export class Encounters {
     const s = this.services;
     if (s.isDeepWater(x, y - 4)) return false;
     if (s.shrineDistance(x, y) < 180) return false;
+    if ((s.outpostDistance?.(x, y) ?? Infinity) < OUTPOST_SAFE_RADIUS) return false;
     if (s.lightAt(x, y - 10, 40)) return false;
     if (!def.flying && this.scene.physics.overlapRect(x - 14, y - 12, 28, 12, false, true).length > 0) return false;
     return true;

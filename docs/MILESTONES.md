@@ -13,6 +13,90 @@ Status legend: **Done** · **In progress** · **Not started**
 | M7 | Persistence, performance and MVP polish | Done |
 | M8 | Complete the first main story and ending | Done |
 | M9 | Cooking, fishing, medicine and ecological depth | Done |
+| M10 | Better building and persistent outposts | Done |
+
+---
+
+## M10 — Better building and persistent outposts
+
+### Implemented (playable)
+
+- **Workbench** (6 wood, 2 stone, 2 fibre): a station for the advanced builds. E at it opens crafting on the Building tab.
+- **New structures:**
+
+  | Structure | Cost | What it does |
+  | --- | --- | --- |
+  | **Bamboo wall** (×2) | 3 bamboo, 1 fibre | **Rotatable with R** during placement. Snaps to an 8 px grid and sits flush against other walls. |
+  | **Thatch roof** | 4 bamboo, 6 leaves, 2 fibre | A weather protection volume (radius 56): keeps you warm and dry and protects structures beneath from weathering. Drawn above you, and fades while you stand under it. |
+  | **Storage chest** | 6 wood, 2 bamboo, 2 fibre | **Safe storage** with 12 slots. Click a stack to move it, or use **Take all**. Contents (including tool durability) persist when you walk away and through saves. |
+  | **Rain collector** | 4 bamboo, 4 leaves, 2 fibre | Fills by one unit per hour of monsoon rain (holds 4). Hold a bamboo tube and press E for clean **rainwater**, which also stands in for boiled water in pot recipes. |
+  | **Bamboo bed** | 6 bamboo, 4 leaves, 1 hide | Sleeping here heals an extra 25 and warms you fully. |
+  | **Outpost flag** | 3 sticks, 2 fibre, 2 leaves (workbench) | Names the camp ("Outpost 1"…). It shows on the minimap, pinned to the edge with a pointer when far away, and in the journal with distance and direction. **No new creatures appear within 600 px of a flag**, so even a single flag and chest make a safe camp. Up to 4 outposts, at least 1200 px apart, so a flag is a camp rather than something you carry around. |
+
+- **Placement:**
+  - The preview ghost is tinted valid or invalid.
+  - R rotates walls.
+  - Walls snap to the grid.
+  - Roofs may stand over anything except other roofs.
+  - Everything else keeps an 8 px walking gap and stays off water, the player and the spawn point.
+- **Durability and weathering:** walls, roofs, beds and rain collectors have durability measured in hours of monsoon rain.
+  - Each rainy hour wears structures that aren't under a roof (measured from the centre of the roof). Roofs always wear.
+  - A structure that reaches 0 is **broken**: faded, not solid and not usable.
+  - **R** repairs it fully for one of its main material once it is below 75%, never while someone stands in its footprint.
+  - Chests, campfires, pots, shelters and flags never weather.
+- **Refund rules (X, pressed twice to confirm):**
+  - Dismantling returns half of each ingredient, rounded down, with at least 1 of the main material.
+  - A chest must be emptied first, so nothing can be lost.
+- **Prompts** show the use, durability % and the R/X actions, for example `E — Open the storage chest · X — Dismantle`.
+- **Persistence:** every structure has a stable id, and stores its rotation, durability, chest contents, collector water and outpost name. These survive chunk unloading and save/reload. Older saves (type/x/y only) still load.
+
+### Verification
+
+- `npm run typecheck` and `npm run build` pass.
+- `npm test`: 148 unit tests. New ones cover:
+  - kit reachability
+  - workbench gating
+  - rotation frames and footprints
+  - structure fields surviving `parseSave`, with junk sanitised
+  - old structure records loading
+- `npm run smoke`: 171 browser checks. The M10 ones, which **include the roadmap test**:
+  - R rotates a wall
+  - snapped, rotated placement by click
+  - E opens the chest panel; clicking stacks moves them (durability kept); Esc closes it
+  - monsoon weathering breaks an unroofed wall (no longer solid) while collectors fill
+  - R repairs for 1 bamboo
+  - rainwater fills a tube
+  - X twice dismantles a structure and refunds half
+  - camp B in another chunk
+  - outposts on the minimap and in the journal
+  - no spawns near a flag
+  - walking away unloads both camps
+  - **save → reload → Continue recovers all 11 structures exactly**: type, position, rotation, durability, chest contents, water and names
+  - camp B rebuilds when you return, with a **roof placed on the chest's exact anchor** and the chest's items intact
+  - a broken wall stays non-solid after reload
+- QA stand-in review: build, 148 tests and 169/169 smoke passed. Fixed afterwards:
+  - **Critical:** a reload could silently drop a structure that shared another's position, such as a roof centred on a chest, and with it the chest's items. Restoring now deduplicates by stable id.
+  - **Warnings:**
+    - flags worked as a cheap portable "no spawns" bubble; they now need the workbench and are limited to 4 outposts at least 1200 px apart, and the text now says "no new creatures"
+    - roof protection was measured from the roof's base, not its centre
+    - walls took the E target away from bushes next to them
+    - every wall that broke showed its own toast; now there is one summary
+    - a repair could close a wall on top of the player or a creature
+    - the repair prompt showed at 99%
+    - outpost names could repeat
+    - the chest panel had a fixed size
+    - the chest panel stayed open after being knocked away or dying
+    - removed chest items were not counted in the old-save notice
+    -  was not validated
+    - the roof ghost was drawn at the wrong depth
+  - **Suggestion:** walls now snap to an 8 px grid for cleaner corners.
+  - Re-verified with the full smoke run (171/171).
+
+### Known limitations
+
+- Existing creatures can still walk into an outpost; only new spawns are blocked there.
+- One rotation axis: walls are horizontal or vertical, with no diagonals.
+- Moving stacks in the chest is click-only: there is no drag, shift-click or half-stack yet.
 
 ---
 

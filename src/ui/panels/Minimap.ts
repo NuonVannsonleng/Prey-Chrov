@@ -51,6 +51,13 @@ export class Minimap {
     this.image.setVisible(true);
   }
 
+  private outposts: ReadonlyArray<{ name: string; x: number; y: number }> = [];
+
+  setOutposts(list: ReadonlyArray<{ name: string; x: number; y: number }>): void {
+    this.outposts = list;
+    this.lastTx = Number.NaN;
+  }
+
   setStructures(list: Array<{ x: number; y: number; kind: string }>): void {
     this.structures = list;
     this.lastTx = Number.NaN;
@@ -147,6 +154,15 @@ export class Minimap {
       const [x, y] = toScreen(s.x / TILE_SIZE, s.y / TILE_SIZE);
       if (!inside(x, y)) continue;
       g.fillStyle(s.kind === 'fire' ? 0xe8893a : s.kind === 'cook' ? 0xc89a6a : 0x8ec26a, 1).fillRect(x - 2, y - 2, 4, 4);
+    }
+    // Outposts: a flag; beyond the map edge, a flag pinned to the border pointing the way.
+    for (const o of this.outposts) {
+      let [x, y] = toScreen(o.x / TILE_SIZE, o.y / TILE_SIZE);
+      const edge = !inside(x, y);
+      x = Math.max(this.left + 4, Math.min(this.left + size - 4, x));
+      y = Math.max(this.top + 6, Math.min(this.top + size - 3, y));
+      g.fillStyle(0x071210, 1).fillRect(x - 1, y - 7, 2, 8);
+      g.fillStyle(edge ? 0xb58a3e : 0xe6b866, 1).fillTriangle(x + 1, y - 7, x + 6, y - 5, x + 1, y - 3);
     }
     const [px, py] = toScreen(ptx, pty);
     g.fillStyle(0xffffff, 1).fillCircle(px, py, 3);

@@ -14,6 +14,8 @@ const H = 600;
 export class JournalPanel {
   private readonly root: Phaser.GameObjects.Container;
   private readonly questText: Phaser.GameObjects.Text;
+  private questBody = '';
+  private outpostLine = '';
   private readonly tabletTitles: Phaser.GameObjects.Text[] = [];
   private readonly tabletBodies: Phaser.GameObjects.Text[] = [];
 
@@ -81,9 +83,37 @@ export class JournalPanel {
     this.root.setVisible(false);
   }
 
+  /** Outposts listed under the quest with distance and direction from the player. */
+  setOutposts(list: ReadonlyArray<{ name: string; x: number; y: number }>, from?: { x: number; y: number }): void {
+    this.lastOutposts = list;
+    if (from) this.lastFrom = from;
+    const f = this.lastFrom;
+    this.outpostLine = list.length
+      ? `\n\nOutposts: ${list
+          .map((o) => {
+            if (!f) return o.name;
+            const dx = o.x - f.x;
+            const dy = o.y - f.y;
+            const m = Math.round(Math.hypot(dx, dy) / 32);
+            return `${o.name} (${m} m ${compass(dx, dy)})`;
+          })
+          .join(' · ')}`
+      : '';
+    this.questText.setText(this.questBody + this.outpostLine);
+  }
+
+  private lastOutposts: ReadonlyArray<{ name: string; x: number; y: number }> = [];
+  private lastFrom: { x: number; y: number } | null = null;
+
+  /** Refresh distances when the journal opens. */
+  refreshFrom(x: number, y: number): void {
+    this.setOutposts(this.lastOutposts, { x, y });
+  }
+
   render(q: QuestView): void {
     const steps = q.steps.map((s) => `${s.done ? '✓' : '○'}  ${s.text}${s.progress ? `  (${s.progress})` : ''}`).join('\n');
-    this.questText.setText(`${q.title}${q.titleKm ? ` · ${q.titleKm}` : ''}\n${q.description}\n\n${steps}`);
+    this.questBody = `${q.title}${q.titleKm ? ` · ${q.titleKm}` : ''}\n${q.description}\n\n${steps}`;
+    this.questText.setText(this.questBody + this.outpostLine);
     const byOrder = new Map<number, TabletDef>(q.tablets.map((t) => [t.order, t]));
     for (let i = 0; i < 5; i++) {
       const t = byOrder.get(i + 1);
@@ -91,6 +121,13 @@ export class JournalPanel {
       this.tabletBodies[i]?.setText(t ? t.text : 'Not yet found. Ruins on the minimap (◆) may hold it.');
     }
   }
+}
+
+function compass(dx: number, dy: number): string {
+  if (Math.hypot(dx, dy) < 48) return 'here';
+  const dirs = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'];
+  const a = Math.atan2(dy, dx);
+  return dirs[(Math.round(a / (Math.PI / 4)) + 8) % 8] ?? '';
 }
 
 /** Large modal shown when a tablet is read. */
