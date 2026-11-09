@@ -10,6 +10,7 @@ import { ConfirmDialog } from '../ui/components/ConfirmDialog';
 import { Toast } from '../ui/components/Toast';
 import { CraftingPanel } from '../ui/panels/CraftingPanel';
 import { StoragePanel } from '../ui/panels/StoragePanel';
+import { CharacterPanel } from '../ui/panels/CharacterPanel';
 import { Hotbar } from '../ui/panels/Hotbar';
 import { InventoryPanel } from '../ui/panels/InventoryPanel';
 import { Minimap } from '../ui/panels/Minimap';
@@ -28,6 +29,7 @@ const HINTS = [
   ['I', 'Inventory'],
   ['C', 'Crafting'],
   ['J', 'Journal (quest, tablets)'],
+  ['K', 'Character (gear, skills)'],
   ['Q', 'Drop one (Ctrl: stack)'],
   ['R · X', 'Rotate / repair · dismantle'],
   ['Esc', 'Close / pause'],
@@ -44,6 +46,7 @@ export class UI extends Phaser.Scene {
   private panel!: InventoryPanel;
   private crafting!: CraftingPanel;
   private storage!: StoragePanel;
+  private character!: CharacterPanel;
   private status!: StatusHud;
   private minimap!: Minimap;
   private journal!: JournalPanel;
@@ -127,6 +130,7 @@ export class UI extends Phaser.Scene {
     );
     this.crafting = new CraftingPanel(this);
     this.storage = new StoragePanel(this);
+    this.character = new CharacterPanel(this);
     this.journal = new JournalPanel(this);
     this.tabletView = new TabletView(this);
     this.toast = new Toast(this);
@@ -166,6 +170,10 @@ export class UI extends Phaser.Scene {
       this.syncModal();
     });
     onSceneEvent(this, 'storage:changed', (v) => this.storage.setChest(v));
+    onSceneEvent(this, 'character:changed', (v) => {
+      this.character.render(v);
+      this.crafting.setKnowledge(v.knowledge);
+    });
     onSceneEvent(this, 'storage:dismiss', () => {
       if (this.storage.isOpen) this.closeStorage();
     });
@@ -234,7 +242,7 @@ export class UI extends Phaser.Scene {
     }
     this.weather.update(time);
     if (this.tabletView.isOpen !== this.modal && this.tabletView.isOpen) this.syncModal();
-    if (!this.tabletView.isOpen && this.modal && !this.panel.isOpen && !this.crafting.isOpen && !this.journal.isOpen && !this.storage.isOpen && !this.dialog) this.syncModal();
+    if (!this.tabletView.isOpen && this.modal && !this.panel.isOpen && !this.crafting.isOpen && !this.journal.isOpen && !this.storage.isOpen && !this.character.isOpen && !this.dialog) this.syncModal();
     if (!this.debugOn || time - this.lastDebugUpdate < 200) return;
     this.lastDebugUpdate = time;
     const t = this.lastTick;
@@ -251,6 +259,7 @@ export class UI extends Phaser.Scene {
       if (this.dialog) this.dialog.cancel();
       else if (this.tabletView.isOpen) this.closeTablet();
       else if (this.storage.isOpen) this.closeStorage();
+      else if (this.character.isOpen) this.setCharacter(false);
       else if (this.journal.isOpen) this.setJournal(false);
       else if (this.crafting.isOpen) this.setCrafting(false);
       else if (this.panel.isOpen) this.setPanel(false);
@@ -274,13 +283,23 @@ export class UI extends Phaser.Scene {
       if (event.code === 'KeyE') this.time.delayedCall(0, () => this.closeStorage());
       return;
     }
+    if (event.code === 'KeyK') {
+      if (this.panel.isOpen) this.setPanel(false);
+      if (this.crafting.isOpen) this.setCrafting(false);
+      if (this.journal.isOpen) this.setJournal(false);
+      this.setCharacter(!this.character.isOpen);
+      return;
+    }
+    if (this.character.isOpen && /^Digit[1-6]$/.test(event.code)) return;
     if (event.code === 'KeyJ') {
+      if (this.character.isOpen) this.setCharacter(false);
       if (this.panel.isOpen) this.setPanel(false);
       if (this.crafting.isOpen) this.setCrafting(false);
       this.setJournal(!this.journal.isOpen);
       return;
     }
     if (event.code === 'KeyI') {
+      if (this.character.isOpen) this.setCharacter(false);
       if (this.crafting.isOpen) this.setCrafting(false);
       this.setPanel(!this.panel.isOpen);
       return;
@@ -292,6 +311,7 @@ export class UI extends Phaser.Scene {
     }
     if (event.code === 'KeyC') {
       if (this.panel.isOpen) this.setPanel(false);
+      if (this.character.isOpen) this.setCharacter(false);
       this.setCrafting(!this.crafting.isOpen);
       return;
     }
@@ -341,6 +361,12 @@ export class UI extends Phaser.Scene {
     this.syncModal();
   }
 
+  private setCharacter(open: boolean): void {
+    if (open) this.character.open();
+    else this.character.close();
+    this.syncModal();
+  }
+
   private closeStorage(): void {
     this.storage.close();
     gameEvents.emit('storage:close');
@@ -360,9 +386,10 @@ export class UI extends Phaser.Scene {
   }
 
   private syncModal(): void {
-    const modal = this.panel.isOpen || this.crafting.isOpen || this.journal.isOpen || this.tabletView.isOpen || this.storage.isOpen || this.dialog !== null;
+    const modal = this.panel.isOpen || this.crafting.isOpen || this.journal.isOpen || this.tabletView.isOpen || this.storage.isOpen || this.character.isOpen || this.dialog !== null;
     if (modal === this.modal) return;
     this.modal = modal;
+    this.toast.setLow(modal);
     gameEvents.emit('ui:modal', modal);
   }
 

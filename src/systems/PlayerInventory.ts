@@ -18,6 +18,8 @@ export function freshDurability(item: string): number | undefined {
 export class PlayerInventory {
   readonly inventory = new Inventory(itemStackSize);
   selected = 0;
+  /** Recipe knowledge check (M11); everything is known by default. */
+  knows: (unlock: string | undefined) => boolean = () => true;
 
   constructor(
     scene: Phaser.Scene,
@@ -54,6 +56,10 @@ export class PlayerInventory {
   private craft(recipeId: string): void {
     const recipe = getGameData().recipes.get(recipeId);
     if (!recipe) return;
+    if (!this.knows(recipe.unlock)) {
+      gameEvents.emit('toast', { text: `You haven't learned how to make the ${itemDef(recipe.output).name} yet`, tone: 'info' });
+      return;
+    }
     const res = craft(recipe, this.inventory, this.stations(), freshDurability);
     const name = itemDef(recipe.output).name;
     if (res.ok) {
@@ -64,7 +70,7 @@ export class PlayerInventory {
       return;
     }
     const why =
-      res.reason === 'station' ? 'You need to be near a campfire' : res.reason === 'no-room' ? 'No room in your inventory' : 'Missing materials';
+      res.reason === 'station' ? `You need to be near ${recipe.station === 'pot' ? 'a cooking pot' : recipe.station === 'workbench' ? 'a workbench' : 'a campfire'}` : res.reason === 'no-room' ? 'No room in your inventory' : 'Missing materials';
     gameEvents.emit('toast', { text: `Can't craft ${name}: ${why}`, tone: 'warn' });
   }
 

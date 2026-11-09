@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0 — M11: Gear, upgrades and progression (2026-11-09)
+
+### Added
+- Tier-2 tools (flint axe and pickaxe, fang spear) and tool repairs at the workbench (R).
+- Body and feet gear: hide vest (-25% damage), leaf rain cape (half warmth lost in rain), bark sandals (faster, less slowed).
+- Character panel (K) with worn gear, the five skills and current bonuses, and knowledge.
+- Skills that grow from discoveries plus a small daily-capped amount (no grind), with measurable effects.
+- Knowledge unlocks recipes when you own an item or reach a skill level; locked recipes say how.
+
 ## 0.10.0 — M10: Building and persistent outposts (2026-11-09)
 
 ### Added

@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { CAMERA, DEBUG_HOOKS, DEPTH, GATHER, PICKUP, SCENES, WATER, WORLD_GEN } from '../config';
 import { getGameData, itemDef } from '../data/gameData';
-import type { GameData, ItemDef, Station, ToolKind } from '../data/schema';
+import type { GameData, ItemDef, SeasonConfig, Station, ToolKind } from '../data/schema';
+import type { ItemStack } from '../systems/Inventory';
 import { Player, type PlayerKeys } from '../entities/Player';
 import type { ResourceNode } from '../entities/ResourceNode';
 import { Building } from '../systems/Building';
@@ -18,6 +19,7 @@ import { GameClock, darknessAt, inHourWindow, phaseOf } from '../systems/Clock';
 import { gameEvents, onSceneEvent, type ClockTick, type PlayerTick, type SurvivalTick } from '../systems/GameEvents';
 import { Gathering } from '../systems/Gathering';
 import { FishingSession } from '../systems/Fishing';
+import { Progression } from '../systems/Progression';
 import { Interaction } from '../systems/Interaction';
 import { Lighting } from '../systems/Lighting';
 import { Objectives } from '../systems/Objectives';
@@ -119,6 +121,16 @@ export class World extends Phaser.Scene {
   /** Where the player stood when casting, and where the bobber floats. */
   private readonly fishAt = { x: 0, y: 0, spotX: 0, spotY: 0 };
   private fishTipShown = false;
+  /** M11: skills and knowledge, worn gear. */
+  private progression!: Progression;
+  private readonly equipment: { body: ItemStack | null; feet: ItemStack | null } = { body: null, feet: null };
+  private readonly survivalMods = { thirst: 1, hunger: 1 };
+  /** Skill effects, recomputed on load and level-up (not per frame). */
+  private fx = { foragingExtraChance: 0, toolWear: 1, drain: 1, combatDamage: 0, speed: 1 };
+  private feetGear: ItemDef['gear'] | undefined;
+  private coldWorn: SeasonConfig['cold'] | null = null;
+  private lastDayNumber = 0;
+  private nextKnowledgeAt = 0;
   private weather: Forecast = { monsoon: false, monsoonDay: 0, daysUntil: 0, flood: 0, label: '' };
   private nextWeatherAt = 0;
   private nextQuestTargetAt = 0;
@@ -202,6 +214,11 @@ export class World extends Phaser.Scene {
     this.fishBar = this.add.graphics().setDepth(DEPTH.floatingText - 3).setVisible(false);
     this.knownPlants.clear();
     this.fishTipShown = false;
+    this.progression = new Progression(this.gameData.progression);
+    this.equipment.body = null;
+    this.equipment.feet = null;
+    this.coldWorn = null;
+    this.nextKnowledgeAt = 0;
 
     this.floating = new FloatingText(this);
     this.interaction = new Interaction(this, this.chunks.nodes, (x, y) => this.chunks.tileAtWorld(x, y), this.structures.list, this.chunks.shrines, this.chunks.ruins, this.chunks.roots, () => this.chunks.heart);
@@ -244,8 +261,11 @@ export class World extends Phaser.Scene {
       this,
       (item, qty, durability) => this.dropInFront(item, qty, durability),
       () => this.stations,
-      (_recipe, output) => {
+      (recipeId, output) => {
         this.stats.crafted++;
+        if (!this.grant('craft_first', recipeId)) this.grant('craft', null);
+        const r = this.gameData.recipes.get(recipeId);
+        if (r?.category === 'food' && r.station !== 'none') this.grant('cook', null);
         if (itemDef(output).tool?.kind === 'axe') this.completeObjective('craft_axe');
       },
     );
@@ -267,6 +287,10 @@ export class World extends Phaser.Scene {
 
     if (save) this.applySave(save);
     else this.chunks.loadAllAround(this.spawn.x, this.spawn.y, this.now);
+    this.inventory.knows = (u) => this.progression.knows(u);
+    this.applyProgressionEffects();
+    this.applyGear();
+    this.lastDayNumber = this.clock.dayNumber;
     this.lastHealth = this.survival.stats.health;
     this.wasHungry = this.survival.hungry;
     this.wasThirsty = this.survival.thirsty;
@@ -300,7 +324,9 @@ export class World extends Phaser.Scene {
       this.nextQuestTargetAt = 0;
       this.emitStructures();
       this.emitOutposts();
+      this.emitCharacter();
     });
+    onSceneEvent(this, 'equipment:unequip', (slot) => this.unequip(slot));
     this.scene.launch(SCENES.ui);
 
     this.events.on(Phaser.Scenes.Events.RESUME, this.onResume, this);
@@ -368,8 +394,12 @@ export class World extends Phaser.Scene {
     p.step(this.keys, dt, this.now, inputOn, this.survival.canSprint, this.terrainSpeed(p.x, p.y));
     this.clock.advance(dt / 1000);
     this.updateWeather();
-    this.survival.update(dt / 1000, this.clock.secondsPerHour, p.sprinting, weatherModifiers(this.weather, this.gameData.season));
-    this.survival.updateWarmth(dt / 1000, this.clock.secondsPerHour, this.weather.monsoon && !this.isSheltered(p.x, p.y), this.gameData.season.cold);
+    const wm = weatherModifiers(this.weather, this.gameData.season);
+    const drain = this.fx.drain;
+    this.survivalMods.hunger = wm.hunger * drain;
+    this.survivalMods.thirst = wm.thirst * drain;
+    this.survival.update(dt / 1000, this.clock.secondsPerHour, p.sprinting, this.survivalMods);
+    this.survival.updateWarmth(dt / 1000, this.clock.secondsPerHour, this.weather.monsoon && !this.isSheltered(p.x, p.y), this.coldWorn ?? this.gameData.season.cold);
     const fx = this.effects.update(dt / 1000, this.clock.secondsPerHour);
     if (fx.damage > 0) this.survival.damage(fx.damage, 'poison');
     if (fx.heal > 0) this.survival.heal(fx.heal);
@@ -413,6 +443,7 @@ export class World extends Phaser.Scene {
         this.setPrompt(target.kind === 'structure' ? this.structurePrompt(target.structure) : this.promptFor(target.kind, target));
         if (this.pendingRotate) {
           if (this.building.active) this.building.rotate();
+          else if (target.kind === 'structure' && target.structure.def.station === 'workbench' && this.heldToolWorn()) this.repairHeldTool();
           else if (target.kind === 'structure') this.repairStructure(target.structure);
         }
         if (this.pendingDismantle && !this.building.active && target.kind === 'structure') this.dismantle(target.structure);
@@ -494,7 +525,7 @@ export class World extends Phaser.Scene {
     const p = this.player;
     const held = this.inventory.held;
     const tool = held ? itemDef(held.item).tool : undefined;
-    const damage = tool ? tool.damage : c.handDamage;
+    const damage = (tool ? tool.damage : c.handDamage) + this.fx.combatDamage;
     const reach = c.baseReach + (tool?.kind === 'spear' ? c.spearBonusReach : 0);
     const ox = p.x;
     const oy = p.y - 10;
@@ -508,7 +539,7 @@ export class World extends Phaser.Scene {
     gameEvents.emit('sfx', hits.length > 0 ? 'enemy_hit' : 'swing');
     for (const e of hits) this.floating.show(e.x, e.cy - 14, `-${damage}`, '#ffffff');
     if (hits.length > 0 && tool && tool.kind !== 'rod') {
-      if (this.inventory.inventory.wear(this.inventory.selected, 1) === 'broke') {
+      if (this.inventory.inventory.wear(this.inventory.selected, this.fx.toolWear) === 'broke') {
         gameEvents.emit('toast', { text: `Your ${itemDef(held?.item ?? '').name} broke`, tone: 'warn' });
       }
       this.inventory.broadcast();
@@ -532,6 +563,8 @@ export class World extends Phaser.Scene {
     const c = this.gameData.combat;
     const p = this.player;
     this.playerInvulnUntil = this.now + c.playerIFramesMs;
+    const armour = this.equipment.body ? (itemDef(this.equipment.body.item).gear?.damageReduction ?? 0) : 0;
+    damage = Math.max(1, Math.round(damage * (1 - armour) * 10) / 10);
     this.survival.damage(damage, cause);
     gameEvents.emit('sfx', 'hurt');
     const dx = p.x - fromX;
@@ -549,6 +582,7 @@ export class World extends Phaser.Scene {
 
   private onEnemyKilled(enemy: Enemy): void {
     this.kills++;
+    if (!this.grant('defeat_first', enemy.def.id)) this.grant('defeat', null);
     this.stats.kills++;
     const table = this.gameData.loot.get(enemy.def.lootTable);
     this.floating.show(enemy.x, enemy.cy - 20, enemy.def.kind === 'spirit' ? 'The spirit fades' : `${enemy.def.name} down`, '#e6b866');
@@ -587,6 +621,7 @@ export class World extends Phaser.Scene {
     this.inventory.inventory.takeFromSlot(this.inventory.selected, 1);
     this.inventory.broadcast();
     this.shrineState.set(key, this.clock.totalSeconds);
+    this.grant('shrine', key);
     const seconds = cfg.blessing.durationHours * this.clock.secondsPerHour;
     this.effects.apply('blessing', seconds, { regenPerHour: cfg.blessing.regenPerHour });
     if (cfg.blessing.spiritWard) this.effects.apply('ward', seconds);
@@ -609,6 +644,23 @@ export class World extends Phaser.Scene {
     for (const s of this.structures.list) if (s.def.lightRadius > 0) fire = Math.max(fire, 1 - Math.hypot(s.x - this.player.x, s.y - this.player.y) / 220);
     gameEvents.emit('ambience', { day: 1 - dark, night: dark, rain: this.weather.monsoon ? 1 : 0, fire: Math.max(0, fire) });
     this.chunks.setFlood(this.weather.flood, this.gameData.season.floodRiverWidth);
+    const dayNow = this.clock.dayNumber;
+    if (dayNow > this.lastDayNumber) {
+      const prev = this.lastDayNumber;
+      this.lastDayNumber = dayNow;
+      if (prev > 0) {
+        // Surviving teaches most in the first week; after that nights give nothing new.
+        if (dayNow <= 8) this.grant('survive_night', dayNow);
+        if (forecast(prev, 12, this.gameData.season).monsoon) this.grant('monsoon_day', prev);
+      }
+    }
+    // The biome you start in isn't a discovery.
+    const biome = this.gen.biomeAt(Math.floor(this.player.x / 32), Math.floor(this.player.y / 32));
+    if (biome !== this.gen.biomeAt(Math.floor(this.spawn.x / 32), Math.floor(this.spawn.y / 32))) this.grant('biome', biome);
+    if (this.now >= this.nextKnowledgeAt) {
+      this.nextKnowledgeAt = this.now + 1000;
+      this.checkKnowledge();
+    }
     const hour = Math.floor(this.clock.totalSeconds / this.clock.secondsPerHour);
     if (hour !== this.lastWearHour) {
       const steps = this.lastWearHour < 0 ? 0 : Math.max(0, Math.min(48, hour - this.lastWearHour));
@@ -654,6 +706,7 @@ export class World extends Phaser.Scene {
     const table = this.gameData.loot.get('ruin_chest');
     if (!table) return;
     this.openedChests.add(key);
+    this.grant('chest', key);
     this.player.swing(x, y - 8, this.now, GATHER.swingMs * 2);
     const rng = mulberry32(hash2(hashString(key), 99, this.seed));
     for (const stack of rollLoot(table, rng)) {
@@ -667,6 +720,7 @@ export class World extends Phaser.Scene {
     const tablet = this.gameData.tablets.find((t) => t.id === id);
     if (!tablet) return;
     const isNew = this.quest.readTablet(id);
+    if (isNew) this.grant('tablet', id);
     gameEvents.emit('tablet:read', tablet);
     gameEvents.emit('sfx', 'tablet');
     if (isNew) {
@@ -1080,13 +1134,22 @@ export class World extends Phaser.Scene {
     }
     if (result === 'needs-tool') this.floating.show(node.targetX, node.targetY - 20, 'Needs a tool', '#e6b866');
     if (kind !== 'hand' && (result === 'hit' || result === 'depleted')) {
-      if (this.inventory.inventory.wear(this.inventory.selected, 1) === 'broke') {
+      if (this.inventory.inventory.wear(this.inventory.selected, this.fx.toolWear) === 'broke') {
         gameEvents.emit('toast', { text: `Your ${itemDef(held?.item ?? '').name} broke`, tone: 'warn' });
       }
       this.inventory.broadcast();
     }
+    if (result === 'depleted') {
+      if (!this.grant('gather_first', node.def.id)) this.grant('gather', null);
+      const first = loot[0];
+      if (first && Math.random() < this.fx.foragingExtraChance) {
+        first.qty++;
+        this.floating.show(node.targetX, node.targetY - 30, 'Skilled harvest +1', '#8ec26a');
+      }
+    }
     if (result === 'depleted' && node.def.unknownName && !this.knownPlants.has(node.def.id)) {
       this.knownPlants.add(node.def.id);
+      this.grant('identify', node.def.id);
       const first = loot[0] ? itemDef(loot[0].item) : null;
       gameEvents.emit('toast', { text: `Identified: ${node.def.name}${first ? ` — ${first.description}` : ''}`, tone: 'info' });
     }
@@ -1116,6 +1179,10 @@ export class World extends Phaser.Scene {
     }
     if (def.medicine) {
       this.useMedicine(def);
+      return;
+    }
+    if (def.gear) {
+      this.equip(def);
       return;
     }
     if (def.food) {
@@ -1308,7 +1375,7 @@ export class World extends Phaser.Scene {
     this.stopFishing();
     this.nextActAt = this.now + 500;
     this.pendingInteract = false;
-    if ((caught || wear) && this.inventory.inventory.wear(this.inventory.selected, cfg.rodWear) === 'broke') {
+    if ((caught || wear) && this.inventory.inventory.wear(this.inventory.selected, cfg.rodWear * this.fx.toolWear) === 'broke') {
       gameEvents.emit('toast', { text: 'Your fishing rod broke', tone: 'warn' });
     }
     if (caught) {
@@ -1397,6 +1464,8 @@ export class World extends Phaser.Scene {
     gameEvents.emit('sfx', 'build');
     this.floating.show(b.x, b.y - 30, `Built ${placed.def.name}`, '#8ec26a');
     if (placed.def.station === 'campfire') this.completeObjective('campfire');
+    this.grant('build_first', placed.def.id);
+    if (placed.def.outpost) this.grant('outpost', placed.name);
     if (placed.def.interaction === 'sleep') this.completeObjective('shelter');
     if (placed.def.outpost) {
       this.emitOutposts();
@@ -1464,6 +1533,8 @@ export class World extends Phaser.Scene {
         shrines: this.shrineState,
         openedChests: this.openedChests,
         knownPlants: this.knownPlants,
+        progression: this.progression.serialize(),
+        equipment: { body: this.equipment.body ? { item: this.equipment.body.item, qty: 1 } : null, feet: this.equipment.feet ? { item: this.equipment.feet.item, qty: 1 } : null },
         quest: { tabletsRead: this.quest.tabletsRead, heartReached: this.quest.heartReached, restored: this.quest.restored },
         stats: this.stats,
         now: this.now,
@@ -1488,9 +1559,147 @@ export class World extends Phaser.Scene {
   /** Wading through shallows is slow; mud a little slow. */
   private terrainSpeed(x: number, y: number): number {
     const t = this.chunks.tileAtWorld(x, y - 4);
-    if (t === TILE.shallowsA) return 0.6;
-    if (t === TILE.mud) return 0.85;
-    return 1;
+    const base = t === TILE.shallowsA ? 0.6 : t === TILE.mud ? 0.85 : 1;
+    const feet = this.feetGear;
+    const slow = (1 - base) * (feet?.terrain ?? 1);
+    return (1 - slow) * (this.fx.speed + (feet?.speed ?? 0));
+  }
+
+  // ---------- Progression and gear (M11) ----------
+
+  /** Grants XP for a source (one-time per key, or daily-capped). True if anything was granted. */
+  private grant(source: string, key: string | number | null): boolean {
+    const a = this.progression.award(source, key, this.clock.dayNumber);
+    if (!a) return false;
+    const skill = this.gameData.progression.skills.find((s) => s.id === a.skill);
+    this.floating.show(this.player.x + 18, this.player.y - 48, `+${a.xp} ${skill?.name ?? a.skill}`, '#c58be0');
+    if (a.levelUp !== null) {
+      gameEvents.emit('toast', { text: `${skill?.name ?? a.skill} rose to level ${a.levelUp}: ${skill?.effect ?? ''}`, tone: 'info' });
+      gameEvents.emit('sfx', 'shrine');
+      this.applyProgressionEffects();
+      this.checkKnowledge();
+    }
+    this.emitCharacter();
+    return true;
+  }
+
+  /** Learns any knowledge whose condition is met (an item owned, or a skill level reached). */
+  private checkKnowledge(): void {
+    const inv = this.inventory.inventory;
+    const owned = (id: string) =>
+      inv.count(id) > 0 ||
+      this.equipment.body?.item === id ||
+      this.equipment.feet?.item === id ||
+      this.structures.records.some((s) => (s.storage?.count(id) ?? 0) > 0);
+    for (const k of this.progression.learnable(owned)) {
+      if (!this.progression.learn(k.id)) continue;
+      const recipes = [...this.gameData.recipes.values()].filter((r) => r.unlock === k.id).map((r) => itemDef(r.output).name);
+      gameEvents.emit('toast', { text: `Learned ${k.name}: ${k.text}${recipes.length ? ` New at the workbench: ${recipes.join(', ')}.` : ''}`, tone: 'info' });
+      this.emitCharacter();
+    }
+  }
+
+  private applyProgressionEffects(): void {
+    this.fx = this.progression.effects();
+  }
+
+  private applyGear(): void {
+    const body = this.equipment.body ? itemDef(this.equipment.body.item).gear : undefined;
+    const cold = this.gameData.season.cold;
+    this.coldWorn = body?.rainWarmth !== undefined ? { ...cold, lossPerHour: cold.lossPerHour * body.rainWarmth } : null;
+    this.feetGear = this.equipment.feet ? itemDef(this.equipment.feet.item).gear : undefined;
+  }
+
+  private equip(def: ItemDef): void {
+    const gear = def.gear;
+    if (!gear) return;
+    const taken = this.inventory.inventory.takeFromSlot(this.inventory.selected, 1);
+    if (!taken) return;
+    const old = this.equipment[gear.slot];
+    this.equipment[gear.slot] = { item: taken.item, qty: 1 };
+    if (old) this.giveBack(old.item);
+    this.applyGear();
+    this.inventory.broadcast();
+    this.emitCharacter();
+    gameEvents.emit('sfx', 'craft');
+    this.floating.show(this.player.x, this.player.y - 34, `Wearing ${def.name}`, '#8ec26a');
+  }
+
+  private unequip(slot: 'body' | 'feet'): void {
+    const e = this.equipment[slot];
+    if (!e) return;
+    if (this.inventory.inventory.capacityFor(e.item) < 1) {
+      gameEvents.emit('toast', { text: 'No room in your pack to take it off', tone: 'warn' });
+      return;
+    }
+    this.inventory.inventory.add(e.item, 1);
+    this.equipment[slot] = null;
+    this.applyGear();
+    this.inventory.broadcast();
+    this.emitCharacter();
+  }
+
+  private heldToolWorn(): boolean {
+    const held = this.inventory.held;
+    const tool = held ? itemDef(held.item).tool : undefined;
+    return !!tool && held?.durability !== undefined && held.durability < tool.durability * 0.95;
+  }
+
+  /** R at a workbench: restore half of a held tool's durability for 1 of its main material. */
+  private repairHeldTool(): void {
+    const held = this.inventory.held;
+    const def = held ? itemDef(held.item) : null;
+    const tool = def?.tool;
+    if (!held || !def || !tool || held.durability === undefined) {
+      gameEvents.emit('toast', { text: 'Hold a worn tool and press R at the workbench to repair it', tone: 'info' });
+      return;
+    }
+    const max = tool.durability;
+    if (held.durability >= max * 0.95) {
+      gameEvents.emit('toast', { text: `Your ${def.name} doesn't need repairs`, tone: 'info' });
+      return;
+    }
+    const recipeMain = [...this.gameData.recipes.values()].find((r) => r.output === held.item)?.ingredients[0];
+    const main = tool.repairItem ? { item: tool.repairItem, qty: 1 } : recipeMain;
+    if (main && this.inventory.inventory.count(main.item) < 1) {
+      gameEvents.emit('toast', { text: `Repairing the ${def.name} needs 1 ${itemDef(main.item).name}`, tone: 'info' });
+      return;
+    }
+    const slot = this.inventory.selected;
+    const value = Math.min(max, held.durability + Math.ceil(tool.durability / 2));
+    if (main) this.inventory.inventory.remove(main.item, 1);
+    this.inventory.inventory.setDurability(slot, value);
+    this.inventory.broadcast();
+    gameEvents.emit('sfx', 'build');
+    this.floating.show(this.player.x, this.player.y - 34, `${def.name} repaired`, '#8ec26a');
+  }
+
+  /** What a skill gives right now, in plain words. */
+  private effectNow(id: string): string {
+    const f = this.fx;
+    switch (id) {
+      case 'foraging':
+        return f.foragingExtraChance > 0 ? `now ${Math.round(f.foragingExtraChance * 100)}% chance of an extra harvest` : 'no bonus yet';
+      case 'crafting':
+        return f.toolWear < 1 ? `now tools wear ${Math.round((1 - f.toolWear) * 100)}% slower` : 'no bonus yet';
+      case 'survival':
+        return f.drain < 1 ? `now ${Math.round((1 - f.drain) * 100)}% less hunger and thirst` : 'no bonus yet';
+      case 'combat':
+        return f.combatDamage > 0 ? `now +${f.combatDamage} melee damage` : 'no bonus yet';
+      case 'exploration':
+        return f.speed > 1 ? `now +${Math.round((f.speed - 1) * 100)}% walking speed` : 'no bonus yet';
+      default:
+        return '';
+    }
+  }
+
+  private emitCharacter(): void {
+    const cfg = this.gameData.progression;
+    gameEvents.emit('character:changed', {
+      equipment: { body: this.equipment.body, feet: this.equipment.feet },
+      skills: cfg.skills.map((s) => ({ id: s.id, name: s.name, level: this.progression.level(s.id), xp: this.progression.xp[s.id], toNext: this.progression.toNext(s.id), effect: s.effect, now: this.effectNow(s.id) })),
+      knowledge: [...this.progression.knowledge],
+    });
   }
 
   // ---------- Building and outposts (M10) ----------
@@ -1519,9 +1728,13 @@ export class World extends Phaser.Scene {
         case 'cook':
           parts.push(`E — Cook at the ${d.name.toLowerCase()}`);
           break;
-        case 'craft':
+        case 'craft': {
           parts.push(`E — Use the ${d.name.toLowerCase()}`);
+          const held = this.inventory.held;
+          const tool = held ? itemDef(held.item).tool : undefined;
+          if (tool && held?.durability !== undefined && held.durability < tool.durability * 0.95) parts.push('R — Repair held tool');
           break;
+        }
         case 'storage':
           parts.push(`E — Open the ${d.name.toLowerCase()}`);
           break;
@@ -1779,6 +1992,12 @@ export class World extends Phaser.Scene {
     }
     this.objectives = new Objectives(save.objectives);
     for (const k of save.knownPlants) this.knownPlants.add(k);
+    this.progression = new Progression(this.gameData.progression, save.progression);
+    for (const slot of ['body', 'feet'] as const) {
+      const e = save.equipment[slot];
+      const def = e ? this.gameData.items.get(e.item) : undefined;
+      this.equipment[slot] = e && def?.gear?.slot === slot ? { item: e.item, qty: 1 } : null;
+    }
     this.effects.restore(save.effects.map((e) => ({ ...e, id: e.id as EffectId })));
     for (const s of save.shrines) this.shrineState.set(s.key, s.lastOffering);
     for (const k of save.openedChests) this.openedChests.add(k);

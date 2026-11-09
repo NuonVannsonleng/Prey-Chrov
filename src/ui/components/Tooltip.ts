@@ -45,6 +45,7 @@ export class Tooltip extends Phaser.GameObjects.Container {
     if (def.fillsTo) extra.push('Hold it and press E at water to fill');
     if (def.returns) extra.push(`Gives back a ${itemDef(def.returns).name} when used`);
     if (def.tool?.kind === 'rod') extra.push('Hold it and press E at deep water to fish');
+    if (def.gear) extra.push(`Wear it (F) — ${def.gear.slot === 'body' ? 'body' : 'feet'} slot; see Character (K)`);
     const tail = extra.length ? `\n${extra.join('\n')}` : '';
     this.bodyText.setText(`${def.description}\n\n${rarity}${stack.qty} / ${def.stackSize} in stack${tail}`);
     const h = this.bodyText.y + this.bodyText.height + 12;

@@ -114,6 +114,14 @@ export class Inventory {
     return 'broke';
   }
 
+  /** Sets a slot item's durability (repairs). */
+  setDurability(slot: number, value: number): boolean {
+    const s = this.slots[slot];
+    if (!s || s.durability === undefined || !(value > 0)) return false;
+    s.durability = value;
+    return true;
+  }
+
   /** Takes up to `qty` from one slot. Returns the removed stack, or null. */
   takeFromSlot(slot: number, qty: number): ItemStack | null {
     const s = this.slots[slot];

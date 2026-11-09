@@ -1334,6 +1334,79 @@ try {
   await sleep(1200);
   await page.screenshot({ path: OUT + '/35-camp-a.png' });
 
+  // ---------- M11: equipment, gear upgrades and progression ----------
+  await setClock(6, 10);
+  await evalW7('w.encounters.clear(); w.survival.stats.health = 100;');
+  const home11 = await findClear({ x: spawn10.x - 300, y: spawn10.y + 300 });
+  await teleport(home11.x, home11.y);
+  await sleep(500);
+  await evalW7(
+    'const inv = w.inventory.inventory; const s = inv.snapshot().map(() => null); s[0] = { item: "hide", qty: 4 }; s[1] = { item: "plant_fiber", qty: 12 }; s[2] = { item: "flint", qty: 4 }; s[3] = { item: "wood", qty: 4 }; s[4] = { item: "tiger_fang", qty: 1 }; s[5] = { item: "bamboo", qty: 4 }; inv.restore(s); w.inventory.selected = 0; w.inventory.broadcast(); w.progression.knowledge.delete("flint_working"); w.progression.xp.crafting = 0; w.applyProgressionEffects(); w.nextKnowledgeAt = 0; w.nextWeatherAt = 0;',
+  );
+  await evalW7('w.structures.place("workbench", w.player.x + 40, w.player.y - 30); w.emitStructures();');
+  await sleep(1400);
+  const know = await evalW7('return [...w.progression.knowledge].sort().join(",");');
+  check('owning a hide and a tiger fang teaches tanning and fang craft (knowledge, not time)', /fang_craft/.test(know) && /tanning/.test(know) && !/flint_working/.test(know), know);
+  await page.keyboard.press('KeyC');
+  await sleep(200);
+  await evalW7('ui.crafting.showRecipe("flint_axe");');
+  await sleep(150);
+  await page.screenshot({ path: OUT + '/36-gear-tab.png' });
+  const lockedText = await evalW7('const r = ui.crafting.rows.find((r) => r.recipe.id === "flint_axe"); return r.name.text + " | " + r.needs.text;');
+  await craft('flint_axe');
+  const lockedAxe = await evalW7('return w.inventory.inventory.count("flint_axe");');
+  check('an unlearned recipe is shown locked with its hint and cannot be crafted', /learn Flint working/.test(lockedText) && lockedAxe === 0, lockedText);
+  // Reaching Crafting 1 teaches flint working; crafted tools gain the crafting durability bonus.
+  await evalW7('w.progression.xp.crafting = w.gameData.progression.levels[0]; w.applyProgressionEffects(); w.checkKnowledge();');
+  await craft('flint_axe');
+  await craft('hide_vest');
+  await sleep(150);
+  const made11 = await evalW7('const i = w.inventory.inventory; const a = i.snapshot().find((s) => s && s.item === "flint_axe"); return { axe: a && a.durability, vest: i.count("hide_vest"), wear: w.fx.toolWear };');
+  check('Crafting 1 unlocks flint tools (full 160 durability) and tools wear 10% slower', made11.axe === 160 && made11.vest === 1 && Math.abs(made11.wear - 0.9) < 1e-9, JSON.stringify(made11));
+  await page.keyboard.press('Escape');
+  await sleep(150);
+  // Wear the vest (F) and take a hit.
+  const vestSlot = await slotOf('hide_vest');
+  await evalW7('w.inventory.inventory.move(arg, 5); w.inventory.selected = 5; w.inventory.broadcast();', vestSlot);
+  await page.keyboard.press('KeyF');
+  await sleep(200);
+  const hit = await evalW7('const h0 = w.survival.stats.health; w.playerInvulnUntil = 0; w.hurtPlayer(12, "wildlife", w.player.x + 20, w.player.y); return { worn: w.equipment.body && w.equipment.body.item, lost: Math.round((h0 - w.survival.stats.health) * 10) / 10, pack: w.inventory.inventory.count("hide_vest") };');
+  check('F wears the hide vest; it measurably reduces damage (12 → 9)', hit.worn === 'hide_vest' && hit.lost === 9 && hit.pack === 0, JSON.stringify(hit));
+  // Repair a worn tool at the workbench (R) for one flint.
+  const flintSlot = await slotOf('flint_axe');
+  await evalW7('w.inventory.inventory.move(arg, 4); w.inventory.selected = 4; w.inventory.inventory.setDurability(4, 20); w.inventory.broadcast();', flintSlot);
+  const flint0 = await evalW7('return w.inventory.inventory.count("flint");');
+  await evalW7('w.repairHeldTool();');
+  const rep11 = await evalW7('return { d: w.inventory.inventory.get(4).durability, flint: w.inventory.inventory.count("flint") };');
+  check('R at the workbench repairs a held tool by half its durability for one main material', rep11.d === 100 && rep11.flint === flint0 - 1, JSON.stringify({ flint0, rep11 }));
+  // No grind: repeats are capped per day.
+  const repeats = await evalW7('let n = 0; for (let i = 0; i < 10; i++) if (w.grant("defeat", null)) n++; return n;');
+  check('repeat XP is capped per in-game day (no grinding)', repeats <= 3, String(repeats));
+  // Character panel.
+  await page.keyboard.press('KeyK');
+  await sleep(250);
+  const charText = await evalW7('return { open: ui.character.isOpen, gear: ui.character.gearText.body.text, skills: ui.character.skillsText.text };');
+  await page.screenshot({ path: OUT + '/37-character.png' });
+  check('K shows worn gear and the five skills', charText.open && /Hide Vest/.test(charText.gear) && /Exploration/.test(charText.skills), JSON.stringify(charText).slice(0, 200));
+  await page.keyboard.press('KeyK');
+  await sleep(150);
+  // Reload keeps everything and nothing can be re-earned.
+  const prog = () => evalW7('return JSON.stringify({ p: w.progression.serialize(), body: w.equipment.body, axe: w.inventory.inventory.snapshot().find((s) => s && s.item === "flint_axe") });');
+  const prog0 = await prog();
+  await evalW7('w.save();');
+  await page.reload();
+  await waitScene('Menu', 15000);
+  await sleep(800);
+  await clickGame(640, 500);
+  await waitScene('World');
+  await sleep(900);
+  const prog1 = await prog();
+  const p0 = JSON.parse(prog0);
+  const p1 = JSON.parse(prog1);
+  check('reload keeps skills, knowledge, worn gear and upgraded tool durability', JSON.stringify(p0.p.xp) === JSON.stringify(p1.p.xp) && JSON.stringify(p0.p.knowledge) === JSON.stringify(p1.p.knowledge) && p1.body && p1.body.item === 'hide_vest' && p1.axe && p1.axe.durability === 100, prog1.slice(0, 300));
+  const again = await evalW7('return w.grant("craft_first", "flint_axe") || w.grant("craft_first", "hide_vest");');
+  check('one-time XP cannot be earned again after a reload', again === false);
+
   await page.evaluate(() => localStorage.clear());
 
   check('no console errors', errors.length === 0, errors.slice(0, 5).join(' | '));

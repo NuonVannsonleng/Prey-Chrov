@@ -25,6 +25,8 @@ export interface WorldState {
   shrines: ReadonlyMap<string, number>;
   openedChests: ReadonlySet<string>;
   knownPlants: ReadonlySet<string>;
+  progression: SaveData['progression'];
+  equipment: SaveData['equipment'];
   quest: { tabletsRead: readonly string[]; heartReached: boolean; restored: boolean };
   stats: { kills: number; crafted: number; built: number; gathered: number };
   /** World game-time clock in ms (node respawn timers are relative to it). */
@@ -60,6 +62,8 @@ export function buildSave(w: WorldState): SaveData {
     shrines: [...w.shrines].map(([key, lastOffering]) => ({ key, lastOffering })),
     openedChests: [...w.openedChests],
     knownPlants: [...w.knownPlants],
+    progression: w.progression,
+    equipment: w.equipment,
     tabletsRead: [...w.quest.tabletsRead],
     heartReached: w.quest.heartReached,
     restored: w.quest.restored,

@@ -6,17 +6,18 @@ import { gameEvents, type InventoryView } from '../../systems/GameEvents';
 import { TEX } from '../../textures';
 import { Button } from '../components/Button';
 
-const ROW_H = 58;
+const ROW_H = 50;
 const W = 640;
 
 /** Recipe tabs (keeps the panel on screen as the recipe list grows). */
 const TABS: Array<{ id: string; label: string; categories: RecipeCategory[] }> = [
   { id: 'tools', label: 'Tools & light', categories: ['tools', 'light'] },
+  { id: 'gear', label: 'Gear', categories: ['gear'] },
   { id: 'building', label: 'Building', categories: ['building'] },
   { id: 'food', label: 'Food & water', categories: ['food'] },
   { id: 'medicine', label: 'Medicine', categories: ['medicine'] },
 ];
-const STATION_NAMES: Record<string, string> = { campfire: 'a campfire', pot: 'a cooking pot' };
+const STATION_NAMES: Record<string, string> = { campfire: 'a campfire', pot: 'a cooking pot', workbench: 'a workbench' };
 
 interface Row {
   recipe: RecipeDef;
@@ -37,6 +38,7 @@ export class CraftingPanel {
   private readonly rows: Row[] = [];
   private view: InventoryView | null = null;
   private stations = new Set<string>();
+  private knowledge = new Set<string>();
   private tab = 'tools';
   private readonly tabButtons: Array<{ id: string; button: Button }> = [];
   private top = 0;
@@ -64,7 +66,7 @@ export class CraftingPanel {
       .setOrigin(1, 0);
     this.root.add(tabHint);
     TABS.forEach((t, i) => {
-      const button = new Button(scene, left + 24 + 70 + i * 148, top + 92, { label: t.label, width: 140, height: 32, fontSize: 16, onActivate: () => this.setTab(t.id) });
+      const button = new Button(scene, left + 24 + 58 + i * 120, top + 92, { label: t.label, width: 114, height: 32, fontSize: 14, onActivate: () => this.setTab(t.id) });
       this.tabButtons.push({ id: t.id, button });
       this.root.add(button);
     });
@@ -143,6 +145,11 @@ export class CraftingPanel {
     if (this.isOpen) this.refresh();
   }
 
+  setKnowledge(known: readonly string[]): void {
+    this.knowledge = new Set(known);
+    if (this.isOpen) this.refresh();
+  }
+
   setStations(stations: readonly string[]): void {
     this.stations = new Set(stations);
     if (this.isOpen) this.refresh();
@@ -159,16 +166,19 @@ export class CraftingPanel {
       const r = row.recipe;
       const out = itemDef(r.output);
       const stationOk = r.station === 'none' || this.stations.has(r.station);
+      const learned = !r.unlock || this.knowledge.has(r.unlock);
       const parts = r.ingredients.map((g) => {
         const have = this.count(g.item);
         return `${itemDef(g.item).name} ${Math.min(have, 999)}/${g.qty}${have >= g.qty ? ' ✓' : ' ✗'}`;
       });
       const enough = r.ingredients.every((g) => this.count(g.item) >= g.qty);
-      const lock = stationOk ? '' : `   🔒 needs ${STATION_NAMES[r.station] ?? r.station} nearby`;
-      row.name.setText(`${out.name}${r.qty > 1 ? ` ×${r.qty}` : ''}${lock}`).setColor(stationOk ? CSS.text : CSS.textDim);
-      row.needs.setText(parts.join('    ')).setColor(enough ? '#8ec26a' : CSS.textDim);
+      const k = r.unlock ? getGameData().progression.knowledge.find((x) => x.id === r.unlock) : undefined;
+      const lock = !learned ? '   🔒' : stationOk ? '' : `   🔒 needs ${STATION_NAMES[r.station] ?? r.station} nearby`;
+      row.name.setText(`${out.name}${r.qty > 1 ? ` ×${r.qty}` : ''}${lock}`).setColor(stationOk && learned ? CSS.text : CSS.textDim);
+      if (!learned) row.needs.setText(`Not learned yet — learn ${k?.name ?? r.unlock}: ${k?.hint ?? ''}`).setColor(CSS.gold);
+      else row.needs.setText(parts.join('    ')).setColor(enough ? '#8ec26a' : CSS.textDim);
       // Stays clickable so a blocked craft explains itself (missing materials / station).
-      row.button.setAlpha(enough && stationOk ? 1 : 0.5);
+      row.button.setAlpha(enough && stationOk && learned ? 1 : 0.5);
     }
   }
 }

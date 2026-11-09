@@ -14,6 +14,96 @@ Status legend: **Done** · **In progress** · **Not started**
 | M8 | Complete the first main story and ending | Done |
 | M9 | Cooking, fishing, medicine and ecological depth | Done |
 | M10 | Better building and persistent outposts | Done |
+| M11 | Equipment, gear upgrades and meaningful progression | Done |
+
+---
+
+## M11 — Equipment, gear upgrades and meaningful progression
+
+### Implemented (playable)
+
+- **Tool tiers:** each tier-2 tool beats its stone counterpart on durability and damage. They are made at the workbench and listed on the Tools tab.
+  - **Flint axe:** 160 durability, damage 3.
+  - **Flint pickaxe:** 150 durability, damage 3.
+  - **Fang spear:** damage 6.
+- **Repairs:** hold a worn tool and press **R at the workbench**. It restores half the tool's durability, up to its maximum, for one of its main material (flint for flint tools; bamboo for the fang spear, so a repair never costs a rare fang). Structures keep their own R repair from M10.
+- **Equipment slots (body, feet):**
+
+  | Item | Slot | Effect |
+  | --- | --- | --- |
+  | **Hide vest** | Body | Takes 25% off every hit (minimum 1) |
+  | **Leaf rain cape** | Body | Halves warmth lost in the rain |
+  | **Bark sandals** | Feet | +6% speed, and mud and shallows slow you half as much |
+
+  Body is a real choice between the vest and the cape. F wears a piece of gear (swapping out what you had on). The **Character panel (K)** shows worn gear with its exact effects; click a piece to take it off.
+- **Skills:** Foraging, Crafting, Survival, Combat and Exploration, each up to level 3 (3, 8 and 15 XP).
+
+  | Skill | Effect per level |
+  | --- | --- |
+  | Foraging | +10% chance of an extra harvest |
+  | Crafting | -10% wear on your tools |
+  | Survival | -6% hunger and thirst drain |
+  | Combat | +1 melee damage |
+  | Exploration | +4% walking speed |
+
+- **No grind.** Every XP source is either a **one-time first** or a **small repeat capped per in-game day**, and the data validator enforces it.
+  - One-time firsts include a new kind of harvest, an identified plant, a new recipe or structure, a new foe, a tablet, a ruin chest, a new biome, an outpost, a shrine, each of your first nights survived and each monsoon day endured.
+  - Capped repeats are steady gathering, crafting, cooking and fights won.
+  - Firsts and caps are saved, so a reload never earns anything twice.
+  - Level-ups show a toast that names the new effect.
+- **Knowledge, not time gates:** recipes unlock through what you discover. A toast names what you learned and what is now craftable.
+
+  | Knowledge | Learned by | Unlocks |
+  | --- | --- | --- |
+  | Tanning | Owning a hide | Hide vest |
+  | Fang craft | Owning a tiger fang | Fang spear |
+  | Flint working | Crafting level 1 | Flint tools |
+  | Leaf weaving | Survival level 1 | Rain cape |
+  | Trail craft | Exploration level 1 | Sandals |
+
+  Knowledge counts items in your pack, your chests and your worn gear. Locked recipes appear in the crafting tabs with a 🔒 and say exactly how to learn them.
+- **UI:** the Gear tab, the Character panel (K) showing each skill's per-level effect and **what it gives you now**, tooltips for wearable gear, and toasts that drop above the hotbar while a panel covers the top of the screen.
+
+### Verification
+
+- `npm run typecheck` and `npm run build` pass.
+- `npm test`: 156 unit tests. New ones cover:
+  - one-time awards surviving a save round trip
+  - daily caps surviving a reload and resetting the next day
+  - level thresholds
+  - every source being unique or capped
+  - every skill changing a game number
+  - tier-2 tools beating stone ones
+  - gear effects
+  - knowledge triggers and saving
+- `npm run smoke`: 180 browser checks. The M11 ones:
+  - owning a hide or fang teaches tanning or fang craft
+  - a locked recipe shows its hint and can't be crafted
+  - Crafting 1 unlocks flint tools (full durability, 10% slower wear)
+  - F wears the vest, and a 12-damage hit costs 9
+  - R at the workbench repairs a tool for 1 flint
+  - repeat XP is capped
+  - K shows gear and skills
+  - **reload keeps skills, knowledge, worn gear and tool durability**
+  - one-time XP can't be re-earned after a reload
+- QA stand-in review: build, 156 tests and 180/180 smoke passed, with no Critical findings. Fixed afterwards:
+  - **Warnings:**
+    - the Crafting bonus showed tools above 100% ("176 / 160") and let repairs exceed the maximum; it now slows wear instead, and repairs cap at the item's maximum
+    - repairing the fang spear cost a rare tiger fang; it now costs bamboo
+    - knowledge ignored chests and worn gear
+    - the spawn biome gave free Exploration XP, and night XP never ended; it now covers the first week only
+    - the Character panel didn't show current totals
+    - tier-2 tools were hidden on the Gear tab
+  - **Suggestions:**
+    - skill effects and feet gear are cached instead of recomputed every frame
+    - R at a workbench repairs a held tool only when one is worn
+    - dead code was removed
+  - Re-verified with the full smoke run (180/180).
+
+### Known limitations
+
+- Levels stop at 3 per skill: progression is intentionally short and flat.
+- Two gear slots (body, feet). There are no head or hand slots yet.
 
 ---
 

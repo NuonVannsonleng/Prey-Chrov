@@ -11,6 +11,12 @@ export interface StorageView {
   slots: ReadonlyArray<Readonly<ItemStack> | null>;
 }
 
+export interface CharacterView {
+  equipment: { body: Readonly<ItemStack> | null; feet: Readonly<ItemStack> | null };
+  skills: Array<{ id: string; name: string; level: number; xp: number; toNext: number | null; effect: string; now: string }>;
+  knowledge: string[];
+}
+
 export interface OutpostInfo {
   name: string;
   x: number;
@@ -75,6 +81,9 @@ export interface GameEventMap {
   'storage:close': void;
   /** World → UI: the chest can no longer be used (moved away, died, dismantled). */
   'storage:dismiss': void;
+  /** M11: worn gear, skills and knowledge for the character panel and crafting locks. */
+  'character:changed': CharacterView;
+  'equipment:unequip': 'body' | 'feet';
   /** Outpost flags for the minimap and journal. */
   'outposts:changed': OutpostInfo[];
   /** World entered/left structure placement mode; UI routes Esc to cancel it. */

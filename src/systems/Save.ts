@@ -79,6 +79,10 @@ export interface SaveData {
   openedChests: string[];
   /** Plant identification: resource ids the player has gathered at least once (M9). */
   knownPlants: string[];
+  /** M11: skills, one-time awards, daily caps and knowledge. */
+  progression: { xp: Record<string, number>; firsts: string[]; daily: { day: number; counts: Record<string, number> }; knowledge: string[] };
+  /** M11: worn gear. */
+  equipment: { body: { item: string; qty: number } | null; feet: { item: string; qty: number } | null };
   /** Key tablet ids read. */
   tabletsRead: string[];
   /** Main quest: the Heart of the Forest has been reached. */
@@ -254,6 +258,21 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
     }),
     openedChests: (Array.isArray(rec['openedChests']) ? rec['openedChests'] : []).filter((o): o is string => typeof o === 'string'),
     knownPlants: (Array.isArray(rec['knownPlants']) ? rec['knownPlants'] : []).filter((o): o is string => typeof o === 'string'),
+    progression: ((pr: unknown) => {
+      const r = isRec(pr) ? pr : {};
+      const xp: Record<string, number> = {};
+      if (isRec(r['xp'])) for (const [k, v] of Object.entries(r['xp'])) if (typeof v === 'number' && Number.isFinite(v) && v > 0) xp[k] = Math.floor(v);
+      const strs = (v: unknown) => (Array.isArray(v) ? v.filter((o): o is string => typeof o === 'string') : []);
+      const d = isRec(r['daily']) ? r['daily'] : {};
+      const counts: Record<string, number> = {};
+      if (isRec(d['counts'])) for (const [k, v] of Object.entries(d['counts'])) if (typeof v === 'number' && Number.isFinite(v) && v > 0) counts[k] = Math.floor(v);
+      return { xp, firsts: strs(r['firsts']), daily: { day: Math.floor(finite(d['day'], 0)), counts }, knowledge: strs(r['knowledge']) };
+    })(rec['progression']),
+    equipment: ((eq: unknown) => {
+      const r = isRec(eq) ? eq : {};
+      const one = (v: unknown) => (isRec(v) && typeof v['item'] === 'string' ? { item: v['item'], qty: 1 } : null);
+      return { body: one(r['body']), feet: one(r['feet']) };
+    })(rec['equipment']),
     tabletsRead: (Array.isArray(rec['tabletsRead']) ? rec['tabletsRead'] : []).filter((o): o is string => typeof o === 'string'),
     heartReached: rec['heartReached'] === true,
     restored: rec['restored'] === true,

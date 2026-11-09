@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { CSS, FONTS, GAME_WIDTH } from '../../config';
+import { CSS, FONTS, GAME_WIDTH, GAME_HEIGHT } from '../../config';
 import type { ToastTone } from '../../systems/GameEvents';
 
 /** Single short message at the top centre; a new message replaces the current one. */
@@ -19,6 +19,11 @@ export class Toast {
       .setOrigin(0.5)
       .setDepth(1000)
       .setAlpha(0);
+  }
+
+  /** Toasts move down above the hotbar while a panel covers the top of the screen. */
+  setLow(low: boolean): void {
+    this.text.setY(low ? GAME_HEIGHT - 150 : 104);
   }
 
   show(message: string, tone: ToastTone = 'info'): void {
