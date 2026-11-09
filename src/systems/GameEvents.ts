@@ -74,6 +74,8 @@ export interface GameEventMap {
   'sfx': SfxId;
   /** Ambience mix levels 0..1 (sent a few times a second). */
   'ambience': AmbienceLevels;
+  /** Pause/menus: silence ambience loops. */
+  'audio:duck': boolean;
   /** The game was saved (autosave, pause or sleep). */
   'game:saved': { auto: boolean };
 }

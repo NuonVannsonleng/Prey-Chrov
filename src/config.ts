@@ -109,11 +109,26 @@ export const WATER = {
 export const DEPTH = {
   ground: -1,
   targetRing: 0.5,
-  canopy: 100000,
-  darkness: 140000,
-  floatingText: 150000,
-  debug: 200000,
+  /** Y-sorted world objects live in [actors, actors + 1000) — see ySort(). */
+  actors: 10,
+  /** Canopies are y-sorted among themselves in [canopy, canopy + 1000). */
+  canopy: 2000,
+  darkness: 5000,
+  floatingText: 6000,
+  debug: 7000,
 } as const;
+
+const Y_SORT_RANGE = 5_000_000;
+
+/**
+ * Depth for a y-sorted world object at feet position y. Raw y can't be used: north of the
+ * origin it is negative and would sort under the ground layer. Maps |y| < 5,000,000 px into a
+ * band of 1000 depth units (0.0001 per px, ample float precision).
+ */
+export function ySort(y: number): number {
+  const c = Math.max(-Y_SORT_RANGE, Math.min(Y_SORT_RANGE, y));
+  return DEPTH.actors + (c + Y_SORT_RANGE) / 10_000;
+}
 
 export const BUILD = {
   /** Max distance from the player's feet to a placed structure's base. */

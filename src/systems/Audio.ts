@@ -44,6 +44,8 @@ class AudioEngine {
   private readonly loops = new Map<keyof AmbienceLevels, GainNode>();
   private lastPlayed = new Map<SfxId, number>();
   private unlocked = false;
+  private ducked = false;
+  private lastLevels: AmbienceLevels = { day: 0, night: 0, rain: 0, fire: 0 };
 
   /** Call once at boot: waits for the first click/key to create the AudioContext. */
   install(): void {
@@ -55,6 +57,13 @@ class AudioEngine {
     };
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
+    // Browsers may suspend the context later (interruptions, a rejected first resume): every
+    // gesture tries to bring it back.
+    const revive = () => {
+      if (this.ctx && this.ctx.state !== 'running') void this.ctx.resume().catch(() => undefined);
+    };
+    window.addEventListener('pointerdown', revive);
+    window.addEventListener('keydown', revive);
     onSettings(() => this.applyVolumes());
   }
 
@@ -142,12 +151,21 @@ class AudioEngine {
 
   /** Crossfades ambience layers (call a few times a second). */
   setAmbience(levels: AmbienceLevels): void {
+    this.lastLevels = { ...levels };
     const ctx = this.ctx;
     if (!ctx) return;
+    const scale = this.ducked ? 0 : 1;
     const peak: AmbienceLevels = { day: 0.06, night: 0.05, rain: 0.22, fire: 0.08 };
     for (const k of Object.keys(peak) as Array<keyof AmbienceLevels>) {
-      this.loops.get(k)?.gain.setTargetAtTime(Math.max(0, Math.min(1, levels[k])) * peak[k], ctx.currentTime, 0.6);
+      this.loops.get(k)?.gain.setTargetAtTime(Math.max(0, Math.min(1, levels[k])) * peak[k] * scale, ctx.currentTime, this.ducked ? 0.15 : 0.6);
     }
+  }
+
+  /** Silences the ambience loops (pause, menus) while UI sounds stay live. */
+  duck(on: boolean): void {
+    if (this.ducked === on) return;
+    this.ducked = on;
+    this.setAmbience(this.lastLevels);
   }
 
   // ---------- One-shots ----------
@@ -258,7 +276,8 @@ class AudioEngine {
     src.connect(f);
     f.connect(g);
     g.connect(this.sfx);
-    src.start(t, Math.random() * 1.5);
+    // The noise buffer is 2 s long: keep the whole burst inside it.
+    src.start(t, Math.random() * Math.max(0, 1.95 - dur));
     src.stop(t + dur + 0.02);
   }
 }

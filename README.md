@@ -3,7 +3,7 @@
 A 2D top-down survival adventure set in a fictional Cambodian jungle, built with **Phaser 3 + TypeScript + Vite**.
 All art is generated in code as replaceable placeholders.
 
-> Status: **Milestone 6**. Survive days and nights, creatures and Ap/Arak spirits, and the monsoon (days 5–6, 10–11…). Then explore ancient ruins for the five stone tablets, which reveal the way to the Heart of the Forest. Add `?seed=1234` to the URL to pick a world. See [docs/MILESTONES.md](docs/MILESTONES.md).
+> Status: **Milestone 7 (playable MVP)**. Survive days, nights, creatures, Ap/Arak spirits and the monsoon, then find the five stone tablets and seek the Heart of the Forest. The game autosaves; Settings has volume, reduced motion and reduced flashes. Sound is synthesised in code and starts after your first click or key. Add `?seed=1234` to the URL to pick a world. See [docs/MILESTONES.md](docs/MILESTONES.md).
 
 ## Run
 

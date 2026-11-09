@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { BUILD, CHUNK_TILES, STATION_REACH, TILE_SIZE } from '../config';
+import { BUILD, CHUNK_TILES, STATION_REACH, TILE_SIZE, ySort } from '../config';
 import type { Station, StructureDef } from '../data/schema';
 import { TEX } from '../textures';
 import type { PropLayer } from '../world/PropLayer';
@@ -86,10 +86,10 @@ export class Structures {
 
   private materialize(s: Structure): void {
     const { def, x, y } = s;
-    s.image = this.scene.add.image(x, y, TEX.structures, def.sprite).setOrigin(0.5, 1).setDepth(y);
+    s.image = this.scene.add.image(x, y, TEX.structures, def.sprite).setOrigin(0.5, 1).setDepth(ySort(y));
     if (def.solid) s.zone = this.props.addSolid(x, y, def.footprint);
     if (def.interaction === 'cook' && def.lightRadius > 0) {
-      s.flame = this.scene.add.sprite(x, y - 7, TEX.flame, 0).setOrigin(0.5, 1).setDepth(y + 0.5);
+      s.flame = this.scene.add.sprite(x, y - 7, TEX.flame, 0).setOrigin(0.5, 1).setDepth(ySort(y + 0.5));
       s.flame.play(FLAME_ANIM);
     }
     this.list.push(s);

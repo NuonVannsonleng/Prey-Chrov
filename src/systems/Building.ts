@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { BUILD } from '../config';
+import { BUILD, ySort } from '../config';
 import { TEX } from '../textures';
 import { gameEvents } from './GameEvents';
 import type { Structures } from './Structures';
@@ -59,7 +59,7 @@ export class Building {
     this.valid = this.structures.canPlace(this.structureId, this.x, this.y, playerX, playerY, playerBody);
     this.ghost
       .setPosition(this.x, this.y)
-      .setDepth(this.y)
+      .setDepth(ySort(this.y))
       .setTint(this.valid ? BUILD.validTint : BUILD.invalidTint);
   }
 }

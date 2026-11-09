@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { CANOPY, DEPTH } from '../config';
+import { CANOPY, DEPTH, ySort } from '../config';
 import { CANOPY_SIZE, TEX, type ResourceSprite } from '../textures';
 
 /** Collider footprints (px) at each gatherable prop's base. */
@@ -46,7 +46,7 @@ export class PropLayer {
   addCanopy(trunkX: number, trunkBaseY: number, variant: number, scale = 1, lift = 70): Canopy {
     const cx = trunkX;
     const cy = trunkBaseY - lift * scale;
-    const image = this.scene.add.image(cx, cy, TEX.canopy, variant).setScale(scale).setDepth(DEPTH.canopy + trunkBaseY);
+    const image = this.scene.add.image(cx, cy, TEX.canopy, variant).setScale(scale).setDepth(DEPTH.canopy + ySort(trunkBaseY) - DEPTH.actors);
     const hw = CANOPY_SIZE.w * 0.4 * scale;
     const hh = CANOPY_SIZE.h * 0.4 * scale;
     const canopy = { image, left: cx - hw, right: cx + hw, top: cy - hh, bottom: cy + hh + 12 };

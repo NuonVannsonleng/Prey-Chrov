@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER } from '../config';
+import { PLAYER, ySort } from '../config';
 import { approachVelocity, targetVelocity, type MoveInput, type Vec2 } from '../systems/Movement';
 import { PLAYER_DIRS, TEX, playerFrameName, type PlayerDir } from '../textures';
 
@@ -106,7 +106,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.playAnim(`player-idle-${this.facing}`);
       this.anims.timeScale = 1;
     }
-    this.setDepth(this.y);
+    this.setDepth(ySort(this.y));
   }
 
   /** Shows the swing/reach pose toward a world point for `durationMs`. */

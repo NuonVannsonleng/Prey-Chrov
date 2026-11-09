@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { EnemyDef } from '../data/schema';
 import { CREATURE_POSE, TEX } from '../textures';
+import { ySort } from '../config';
 
 export type EnemyState = 'wander' | 'chase' | 'telegraph' | 'attack' | 'recover' | 'flee' | 'fade';
 
@@ -189,7 +190,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         if (now >= this.stateUntil || dist > d.leashRadius) this.setAi('wander', now);
         break;
     }
-    this.setDepth(this.y);
+    this.setDepth(ySort(this.y));
     this.setFlipX(this.body.velocity.x < -5 || (this.aiState === 'telegraph' && ux < 0));
   }
 

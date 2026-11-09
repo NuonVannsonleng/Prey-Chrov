@@ -35,6 +35,7 @@ const game = new Phaser.Game({
 audio.install();
 gameEvents.on('sfx', (id) => audio.play(id));
 gameEvents.on('ambience', (levels) => audio.setAmbience(levels));
+gameEvents.on('audio:duck', (on) => audio.duck(on));
 
 if (DEBUG_HOOKS) {
   (window as unknown as { __preyChrov: Phaser.Game; __preyAudio: typeof audio }).__preyChrov = game;

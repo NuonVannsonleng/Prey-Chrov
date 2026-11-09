@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { ResourceDef, ToolKind } from '../data/schema';
 import { BUSH_FRAME, DEPLETED_FRAME, TEX } from '../textures';
 import { FOOTPRINT, type Canopy, type PropLayer } from '../world/PropLayer';
+import { ySort } from '../config';
 
 export type HitResult = 'ignored' | 'hit' | 'depleted' | 'needs-tool';
 
@@ -56,7 +57,7 @@ export class ResourceNode {
         this.image = scene.add.image(x, y, TEX.bush, BUSH_FRAME.full);
         break;
     }
-    this.image.setOrigin(0.5, 1).setDepth(y);
+    this.image.setOrigin(0.5, 1).setDepth(ySort(y));
 
     // Bushes swap frames instead of showing a separate stump.
     this.stump =
@@ -65,7 +66,7 @@ export class ResourceNode {
         : scene.add
             .image(x, y + 2, TEX.depleted, DEPLETED_FRAME[def.sprite])
             .setOrigin(0.5, 1)
-            .setDepth(y - 1)
+            .setDepth(ySort(y - 1))
             .setVisible(false);
 
     this.zone = props.addSolid(x, y, FOOTPRINT[def.sprite]);

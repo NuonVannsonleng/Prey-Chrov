@@ -10,7 +10,64 @@ Status legend: **Done** · **In progress** · **Not started**
 | M4 | Seeded procedural world, chunks, biomes, minimap | Done |
 | M5 | Wildlife, night spirits, combat and guardian shrines | Done |
 | M6 | Monsoon, ruins, tablets and core quest | Done |
-| M7 | Persistence, performance and MVP polish | Not started |
+| M7 | Persistence, performance and MVP polish | Done |
+
+---
+
+## M7 — Persistence, performance and MVP polish
+
+### Implemented (playable)
+
+- **Saving:**
+  - Versioned save (v2) with the sleep save plus an **autosave** every minute of play and whenever the game pauses (Esc, alt-tab, hidden tab, or quitting to the menu from pause). A small "Saved ✓" indicator confirms it.
+  - The save covers the seed, player position and stats (health, food, water, stamina, warmth), the inventory with durability, the selected hotbar slot (equipment), structures, resource-node diffs, world time (the season is derived from it), status effects, shrine offering times, opened chests, tablets read, Heart progress and the first-day checklist.
+- **Safe loading:**
+  - Corrupt saves show "damaged" on the menu, with Continue disabled and New journey still working.
+  - Newer saves are refused with a message.
+  - Partial saves fall back to defaults field by field.
+  - v1 saves migrate. Unknown items and structures are removed or refunded with a notice.
+- **Settings** (pause menu and main menu):
+  - Master, effects and ambience volume (10% steps).
+  - **Reduced motion:** no screen shake, fewer rain streaks.
+  - **Reduced flashes:** no lightning flash, softer hurt flash.
+  - **Show help on start.**
+  - Settings persist separately from the save and are parsed safely.
+- **Procedural audio** (Web Audio, no asset files):
+  - Effects: chopping, stone, leaves, pickup, craft, build, swing, hit, hurt, drink, eat, stone chest, tablet hum, shrine bell, thunder, UI clicks.
+  - Ambience layers (day wind, night insects, rain, campfire crackle) crossfade from game state.
+  - The AudioContext is created only after the first click or key, so it is autoplay-safe.
+  - Identical sounds are rate-limited.
+- **Performance:**
+  - Creatures (max 16), spirit orbs (32) and pickups (cap 400) are pooled.
+  - Far creatures are culled (despawned).
+  - Chunks stream and release everything on unload.
+  - Re-flooding is spread across frames.
+  - The cost of `World.update` is measured and shown in F3; smoke asserts under 8 ms average in headless Edge.
+- **Polish:** hit shake (respects reduced motion), chips, floating text, red hurt flash, toasts placed below the forecast.
+
+### Verification
+
+- `npm run typecheck` and `npm run build` pass.
+- `npm test`: 130 unit tests, including settings parsing and the save migrations.
+- `npm run smoke`: 123 browser checks (`SMOKE_PORT` picks the port). The M7 ones:
+  - audio unlocks after input
+  - World update under 8 ms
+  - pausing autosaves
+  - the settings panel changes and persists a value, and Esc backs out, then resumes
+  - a corrupt save is explained on the menu and New journey still works
+  - a v1 save migrates through Continue (day, health, items, refunded kit)
+- Across the earlier checks: Continue restores a session; there's no growth across Menu ↔ World restarts or a long chunk walk; the production build is served.
+- QA stand-in review: no Critical findings. Two Warnings were fixed after it: ambience kept playing while paused or in menus (now ducked on pause and silenced on leaving the world), and a suspended AudioContext was never resumed (now every click or key revives it). Suggestions fixed too: a stray autosave-timer reset, autosaves into a near-death fight (now skipped at low health or with a hostile close by), a silent autosave failure (now one warning), an unused spirit cue (now plays when a spirit appears) and clipped thunder.
+- Found while building M8 and fixed before the M8 commit: objects north of the world origin (negative y) were depth-sorted **under the ground layer** — player, trees, structures and creatures disappeared there. All world objects now use a bounded `ySort()` depth.
+
+### Release gate (M7)
+
+You can explore an endless seeded jungle, gather, craft tools, a campfire and a shelter, and survive days and nights. You can avoid or fight wildlife and night spirits (firelight keeps spirits away) and endure the monsoon's floods and cold. Ruins hold chests and the five tablets, and reading them reveals the Heart of the Forest, which you can travel to and reach. **The Heart's finale (final interaction, ending and credits) is M8**, the completion pass. Until then the game says plainly that the Heart's story continues in the next chapter.
+
+### Known limitations
+
+- One save slot (slot management is M16).
+- No input rebinding yet (M16).
 
 ---
 

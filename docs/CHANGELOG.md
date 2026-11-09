@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.7.0 — M7: Persistence, performance and MVP polish (2026-11-09)
+
+### Added
+- Autosave every minute and on pause, blur or a hidden tab, plus the sleep save, with a "Saved ✓" indicator.
+- Settings: three volumes, reduced motion, reduced flashes, show help. They persist separately from the save.
+- Procedural Web Audio effects and ambience, enabled after the first input.
+- An update-time measure in F3, plus a performance smoke check.
+- Smoke checks for a corrupt save, a v1 migration, settings and autosave.
+
+### Fixed (QA follow-ups)
+- Ambience is ducked while paused and silenced when leaving the world.
+- A suspended AudioContext resumes on the next click or key.
+- Thunder is no longer clipped; the spirit cue plays when a spirit appears.
+- Autosave skips near-death moments (low health or a hostile close by) and warns once if storage fails.
+- Removed a stray autosave-timer reset.
+- **Depth sorting:** objects at negative y (north of the origin) drew under the ground. World objects now use a bounded `ySort()` depth band.
+- Loading a save made while pressed flush against a solid no longer moves you back to spawn.
+
 ## 0.6.0 — M6: Monsoon, ruins, tablets and core quest (2026-11-09)
 
 ### Added

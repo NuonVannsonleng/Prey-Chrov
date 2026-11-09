@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PICKUP } from '../config';
+import { PICKUP, ySort } from '../config';
 import type { IconKey } from '../textures';
 import { TEX } from '../textures';
 
@@ -131,7 +131,7 @@ export class Pickups {
       .setScale(0.4)
       .setVisible(true)
       .setActive(true)
-      .setDepth(ty);
+      .setDepth(ySort(ty));
     this.scene.tweens.add({ targets: p.image, x: tx, y: ty, scale: 1, duration: 260, ease: 'Back.easeOut' });
     return true;
   }
@@ -167,7 +167,7 @@ export class Pickups {
       }
       if (now >= p.settleAt) {
         img.y = p.baseY - 1.5 - Math.sin(now / 260 + p.phase) * 1.5;
-        img.setDepth(p.baseY);
+        img.setDepth(ySort(p.baseY));
       }
     }
   }

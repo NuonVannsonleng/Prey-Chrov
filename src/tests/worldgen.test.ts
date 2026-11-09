@@ -158,3 +158,16 @@ describe('WorldGen safety guarantees', () => {
     }
   });
 });
+
+describe('depth sorting', () => {
+  it('y-sorted objects always draw above the ground and below canopies, north or south', async () => {
+    const { DEPTH, ySort } = await import('../config');
+    for (const y of [-4_000_000, -7000, -1, 0, 1, 7000, 4_000_000]) {
+      expect(ySort(y)).toBeGreaterThan(DEPTH.ground);
+      expect(ySort(y)).toBeGreaterThan(DEPTH.targetRing);
+      expect(ySort(y)).toBeLessThan(DEPTH.canopy);
+    }
+    expect(ySort(-6500)).toBeLessThan(ySort(-6499.5));
+    expect(DEPTH.canopy + ySort(4_000_000) - DEPTH.actors).toBeLessThan(DEPTH.darkness);
+  });
+});
