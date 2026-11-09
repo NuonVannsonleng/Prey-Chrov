@@ -14,6 +14,7 @@ import lore from './lore.json';
 import ending from './ending.json';
 import fishing from './fishing.json';
 import progression from './progression.json';
+import stealth from './stealth.json';
 import structures from './structures.json';
 import survival from './survival.json';
 import { validateGameData, type GameData, type ItemDef } from './schema';
@@ -38,6 +39,7 @@ export const RAW_GAME_DATA = {
   ending,
   fishing,
   progression,
+  stealth,
 };
 
 let cached: GameData | null = null;

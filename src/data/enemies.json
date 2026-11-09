@@ -20,8 +20,22 @@
     "lootTable": "boar_loot",
     "avoidsLight": false,
     "flying": false,
-    "spawn": { "weight": 5, "minDay": 1, "maxAlive": 2, "biomes": { "clearing": 3, "bamboo_grove": 3, "deep_jungle": 2 } },
-    "charge": { "speed": 320, "durationMs": 650 }
+    "spawn": {
+      "weight": 5,
+      "minDay": 1,
+      "maxAlive": 2,
+      "biomes": {
+        "clearing": 3,
+        "bamboo_grove": 3,
+        "deep_jungle": 2
+      }
+    },
+    "charge": {
+      "speed": 320,
+      "durationMs": 650
+    },
+    "hearing": 1,
+    "territory": 300
   },
   {
     "id": "pit_viper",
@@ -43,8 +57,23 @@
     "lootTable": "viper_loot",
     "avoidsLight": false,
     "flying": false,
-    "spawn": { "weight": 4, "minDay": 1, "maxAlive": 2, "biomes": { "river_swamp": 4, "bamboo_grove": 2, "ancient_ruins": 2, "clearing": 1 } },
-    "poison": { "damagePerSecond": 1.2, "seconds": 7 }
+    "spawn": {
+      "weight": 4,
+      "minDay": 1,
+      "maxAlive": 2,
+      "biomes": {
+        "river_swamp": 4,
+        "bamboo_grove": 2,
+        "ancient_ruins": 2,
+        "clearing": 1
+      }
+    },
+    "poison": {
+      "damagePerSecond": 1.2,
+      "seconds": 7
+    },
+    "hearing": 0.6,
+    "territory": 120
   },
   {
     "id": "tiger",
@@ -67,8 +96,22 @@
     "lootTable": "tiger_loot",
     "avoidsLight": false,
     "flying": false,
-    "spawn": { "weight": 1, "minDay": 3, "maxAlive": 1, "biomes": { "deep_jungle": 2, "ancient_ruins": 1, "bamboo_grove": 0.5 } },
-    "charge": { "speed": 380, "durationMs": 450 }
+    "spawn": {
+      "weight": 1,
+      "minDay": 3,
+      "maxAlive": 1,
+      "biomes": {
+        "deep_jungle": 2,
+        "ancient_ruins": 1,
+        "bamboo_grove": 0.5
+      }
+    },
+    "charge": {
+      "speed": 380,
+      "durationMs": 450
+    },
+    "hearing": 1.2,
+    "territory": 420
   },
   {
     "id": "ap",
@@ -91,8 +134,24 @@
     "lootTable": "ap_loot",
     "avoidsLight": true,
     "flying": true,
-    "spawn": { "weight": 5, "minDay": 1, "maxAlive": 3, "biomes": { "clearing": 1, "deep_jungle": 2, "bamboo_grove": 1, "river_swamp": 1, "ancient_ruins": 2 } },
-    "charge": { "speed": 330, "durationMs": 600 }
+    "spawn": {
+      "weight": 5,
+      "minDay": 1,
+      "maxAlive": 3,
+      "biomes": {
+        "clearing": 1,
+        "deep_jungle": 2,
+        "bamboo_grove": 1,
+        "river_swamp": 1,
+        "ancient_ruins": 2
+      }
+    },
+    "charge": {
+      "speed": 330,
+      "durationMs": 600
+    },
+    "hearing": 1.1,
+    "patrolRadius": 110
   },
   {
     "id": "arak",
@@ -115,7 +174,24 @@
     "lootTable": "arak_loot",
     "avoidsLight": true,
     "flying": false,
-    "spawn": { "weight": 3, "minDay": 2, "maxAlive": 2, "biomes": { "deep_jungle": 2, "river_swamp": 2, "ancient_ruins": 3, "bamboo_grove": 1, "clearing": 1 } },
-    "projectile": { "speed": 170, "damage": 8, "range": 220 }
+    "spawn": {
+      "weight": 3,
+      "minDay": 2,
+      "maxAlive": 2,
+      "biomes": {
+        "deep_jungle": 2,
+        "river_swamp": 2,
+        "ancient_ruins": 3,
+        "bamboo_grove": 1,
+        "clearing": 1
+      }
+    },
+    "projectile": {
+      "speed": 170,
+      "damage": 8,
+      "range": 220
+    },
+    "hearing": 1,
+    "patrolRadius": 90
   }
 ]

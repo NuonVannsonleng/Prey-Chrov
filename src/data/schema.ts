@@ -85,6 +85,21 @@ export const SKILL_IDS = ['foraging', 'crafting', 'survival', 'combat', 'explora
 export type SkillId = (typeof SKILL_IDS)[number];
 
 /** progression.json (M11): skills, XP sources (no grind: unique firsts and small daily-capped repeats) and knowledge. */
+/** stealth.json (M12): noise, cover, awareness, stuck handling, elites, ambushes, spawn tuning. */
+export interface StealthConfig {
+  crouchSpeed: number;
+  noise: { still: number; crouch: number; walk: number; sprint: number; action: number };
+  coverRadius: number;
+  sight: { hidden: number; crouch: number; night: number };
+  awareness: { seeRise: number; hearRise: number; decay: number; investigateAt: number; loseAt: number };
+  investigateSeconds: number;
+  stuck: { checkMs: number; minMove: number; giveUpMs: number };
+  elite: { minDay: number; chance: number; perDay: number; max: number; hp: number; damage: number };
+  ambush: { minDay: number; chancePerNight: number; warningSeconds: number; min: number; max: number; ringMin: number; ringMax: number };
+  distanceDanger: Array<{ tiles: number; mult: number }>;
+  monsoonSpiritWeight: number;
+}
+
 export interface ProgressionConfig {
   /** Cumulative XP needed for levels 1, 2, 3. */
   levels: number[];
@@ -270,6 +285,7 @@ export interface GameData {
   ending: EndingConfig;
   fishing: FishingConfig;
   progression: ProgressionConfig;
+  stealth: StealthConfig;
 }
 
 export interface RawGameData {
@@ -291,6 +307,7 @@ export interface RawGameData {
   ending: unknown;
   fishing: unknown;
   progression: unknown;
+  stealth: unknown;
 }
 
 // ---------- Validation ----------
@@ -511,6 +528,35 @@ function validateStructures(p: string[], structures: Rec[]): void {
     const sb = s['sleepBonus'];
     if (sb !== undefined && (!isRec(sb) || !isNum(sb['health']) || num(sb['health']) < 0)) p.push(`${w}: sleepBonus.health must be >= 0`);
   }
+}
+
+function validateStealth(p: string[], s: unknown): void {
+  if (!isRec(s)) {
+    p.push('stealth.json: must be an object');
+    return;
+  }
+  const pos = (v: unknown) => isNum(v) && num(v) > 0;
+  const frac = (v: unknown) => isNum(v) && num(v) > 0 && num(v) <= 1;
+  if (!frac(s['crouchSpeed'])) p.push('stealth.crouchSpeed must be 0–1');
+  const n = s['noise'];
+  if (!isRec(n) || !['crouch', 'walk', 'sprint', 'action'].every((k) => pos(n[k])) || !isNum(n['still'])) p.push('stealth.noise needs still, crouch, walk, sprint, action');
+  else if (!(num(n['crouch']) < num(n['walk']) && num(n['walk']) < num(n['sprint']))) p.push('stealth.noise: crouch < walk < sprint (stealth must be quieter)');
+  if (!pos(s['coverRadius'])) p.push('stealth.coverRadius must be > 0');
+  const sg = s['sight'];
+  if (!isRec(sg) || !frac(sg['hidden']) || !frac(sg['crouch']) || !frac(sg['night'])) p.push('stealth.sight multipliers must be 0–1');
+  const a = s['awareness'];
+  if (!isRec(a) || !['seeRise', 'hearRise', 'decay'].every((k) => pos(a[k])) || !frac(a['investigateAt']) || !frac(a['loseAt'])) p.push('stealth.awareness invalid');
+  if (!pos(s['investigateSeconds'])) p.push('stealth.investigateSeconds must be > 0');
+  const st = s['stuck'];
+  if (!isRec(st) || !pos(st['checkMs']) || !pos(st['minMove']) || !pos(st['giveUpMs'])) p.push('stealth.stuck invalid');
+  const e = s['elite'];
+  if (!isRec(e) || !pos(e['minDay']) || !frac(e['chance']) || !isNum(e['perDay']) || !frac(e['max']) || !pos(e['hp']) || !pos(e['damage'])) p.push('stealth.elite invalid');
+  const am = s['ambush'];
+  if (!isRec(am) || !pos(am['minDay']) || !frac(am['chancePerNight']) || !isNum(am['warningSeconds']) || num(am['warningSeconds']) < 3 || !isInt(am['min']) || !isInt(am['max']) || num(am['max']) < num(am['min']) || !pos(am['ringMin']) || num(am['ringMax']) < num(am['ringMin']))
+    p.push('stealth.ambush invalid (warning must be >= 3 s: fair warning)');
+  const dd = s['distanceDanger'];
+  if (!Array.isArray(dd) || dd.length === 0 || !dd.every((x) => isRec(x) && pos(x['tiles']) && pos(x['mult']))) p.push('stealth.distanceDanger invalid');
+  if (!pos(s['monsoonSpiritWeight'])) p.push('stealth.monsoonSpiritWeight must be > 0');
 }
 
 function validateProgression(p: string[], raw: unknown, itemIds: Set<string>, recipes: Rec[]): void {
@@ -804,6 +850,7 @@ export function validateGameData(raw: RawGameData): GameData {
   validateM6(p, raw, tablets, quests, ids(loot));
   validateFishing(p, raw.fishing, ids(loot));
   validateProgression(p, raw.progression, itemIds, recipes);
+  validateStealth(p, raw.stealth);
 
   if (p.length) throw new DataValidationError(p);
 
@@ -826,6 +873,7 @@ export function validateGameData(raw: RawGameData): GameData {
     ending: raw.ending as EndingConfig,
     fishing: raw.fishing as FishingConfig,
     progression: raw.progression as ProgressionConfig,
+    stealth: raw.stealth as StealthConfig,
   };
 
   // Reachability: every item must be gatherable or craftable from gatherable items.
@@ -978,6 +1026,12 @@ export interface EnemyDef {
   };
   charge?: { speed: number; durationMs: number };
   poison?: { damagePerSecond: number; seconds: number };
+  /** M12: how far it hears noise (multiplier on the player's noise radius). */
+  hearing?: number;
+  /** M12 wildlife: gives up and returns home beyond this distance from where it appeared. */
+  territory?: number;
+  /** M12 spirits: radius of the loop it patrols around where it appeared. */
+  patrolRadius?: number;
   projectile?: { speed: number; damage: number; range: number };
 }
 

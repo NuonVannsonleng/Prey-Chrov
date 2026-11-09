@@ -1,0 +1,17 @@
+{
+  "crouchSpeed": 0.55,
+  "noise": { "still": 0, "crouch": 40, "walk": 120, "sprint": 240, "action": 170 },
+  "coverRadius": 22,
+  "sight": { "hidden": 0.3, "crouch": 0.7, "night": 0.7 },
+  "awareness": { "seeRise": 1.4, "hearRise": 0.9, "decay": 0.35, "investigateAt": 0.35, "loseAt": 0.3 },
+  "investigateSeconds": 4,
+  "stuck": { "checkMs": 500, "minMove": 3, "giveUpMs": 2600 },
+  "elite": { "minDay": 4, "chance": 0.08, "perDay": 0.015, "max": 0.3, "hp": 1.7, "damage": 1.25 },
+  "ambush": { "minDay": 3, "chancePerNight": 0.35, "warningSeconds": 6, "min": 2, "max": 3, "ringMin": 300, "ringMax": 380 },
+  "distanceDanger": [
+    { "tiles": 50, "mult": 0.6 },
+    { "tiles": 140, "mult": 1 },
+    { "tiles": 100000, "mult": 1.3 }
+  ],
+  "monsoonSpiritWeight": 1.5
+}
