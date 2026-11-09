@@ -74,6 +74,10 @@ export interface SaveData {
   tabletsRead: string[];
   /** Main quest: the Heart of the Forest has been reached. */
   heartReached: boolean;
+  /** The offering at the Heart Tree was made (ending reached). */
+  restored: boolean;
+  /** Journey statistics for the ending summary. */
+  stats: { kills: number; crafted: number; built: number; gathered: number };
 }
 
 function defaultStorage(): KeyValueStorage | null {
@@ -223,6 +227,12 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
     openedChests: (Array.isArray(rec['openedChests']) ? rec['openedChests'] : []).filter((o): o is string => typeof o === 'string'),
     tabletsRead: (Array.isArray(rec['tabletsRead']) ? rec['tabletsRead'] : []).filter((o): o is string => typeof o === 'string'),
     heartReached: rec['heartReached'] === true,
+    restored: rec['restored'] === true,
+    stats: ((st: unknown) => {
+      const r = isRec(st) ? st : {};
+      const n = (k: string) => Math.max(0, Math.floor(finite(r[k], 0)));
+      return { kills: n('kills'), crafted: n('crafted'), built: n('built'), gathered: n('gathered') };
+    })(rec['stats']),
     shrines: (Array.isArray(rec['shrines']) ? rec['shrines'] : []).flatMap((o: unknown) => {
       if (!isRec(o) || typeof o['key'] !== 'string') return [];
       const last = finite(o['lastOffering'], NaN);

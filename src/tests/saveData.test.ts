@@ -25,6 +25,8 @@ const full: SaveData = {
   openedChests: ['5,6:12'],
   tabletsRead: ['tablet_1'],
   heartReached: false,
+  restored: false,
+  stats: { kills: 2, crafted: 3, built: 1, gathered: 9 },
 };
 
 describe('parseSave', () => {

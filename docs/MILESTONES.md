@@ -11,6 +11,55 @@ Status legend: **Done** · **In progress** · **Not started**
 | M5 | Wildlife, night spirits, combat and guardian shrines | Done |
 | M6 | Monsoon, ruins, tablets and core quest | Done |
 | M7 | Persistence, performance and MVP polish | Done |
+| M8 | Complete the first main story and ending | Done |
+
+---
+
+## M8 — Complete the first main story and ending
+
+### Implemented (playable)
+
+- **The Heart of the Forest glade** (about 220 tiles from spawn, fixed per seed, always on dry land and clear of ruins):
+  - a 9-tile glade of moss and leaf litter with no random props
+  - the **Heart Tree** at its centre: a huge generated tree with a dim teal hollow; it glows once restored
+  - a closed **ring of ancient roots** (radius 6 tiles) that blocks the way in, with no diagonal gaps
+- **Environmental challenge: fire opens the way.** Roots wither back from firelight: a campfire placed beside them, or a held torch. They regrow a few seconds after the light leaves, but never while you stand in the gap and never while you are inside the ring (no trapping). The quest arrow and journal guide you, and the roots themselves explain "They seem to shrink from fire."
+- **The final interaction (E at the Heart Tree):**
+  - fewer than five tablets read → "The great tree does not answer yet."
+  - without held food and two spirit dust (from Ap and Arak, or ruin chests) → a clear hint about what's needed
+  - otherwise one food and two spirit dust are offered, the promise is renewed, the tree lights up and the game saves
+- **Ending sequence:** five epilogue lines (auto-advance; Space, Enter, E or a click to skip), then a **summary** (days survived, tablets read, creatures faced, things crafted, structures built, resources gathered), **credits with the fiction disclaimer** and two buttons. The buttons appear after a short beat so skip presses can't choose one by accident.
+- **Continuation in survival mode:** "Continue surviving" reloads the saved world:
+  - the quest is complete and the roots stay open
+  - the Heart Tree stays lit
+  - night spirits are calmer (night population halved)
+  - "Main menu" returns to the title
+- Journey stats are tracked and saved (older saves default to zero).
+
+### Verification
+
+- `npm run typecheck`, `npm run build` pass; `npm test`: 131 unit tests (quest stage flow through `restore`, save round-trip of `restored`/stats, depth bands).
+- `npm run smoke`: 139 browser checks. The M8 ones:
+  - the glade holds the tree inside a closed ring of solid roots
+  - by day the roots block a straight and a diagonal approach
+  - a torch at night withers the roots and opens a path; the Heart Tree becomes the target
+  - an offering without held food is refused
+  - the offering plays the ending; skip presses never pick a button; the summary and credits show the fiction disclaimer
+  - Continue surviving returns to the world with the quest done, the tree restored, the roots open and the spirits calmed; exactly one food and two spirit dust were consumed
+  - pausing silences the ambience; resuming restores it
+  - inside the ring by day without fire, the roots let you out; once you leave, the ring closes again
+  - roots never regrow while you are inside the ring
+- QA stand-in review: build, 131 tests and 136/136 smoke passed. **Critical, fixed:** you could be trapped inside the root ring (torch burnt out, dawn, or an M7 save made near the Heart). Now the roots stand aside while you are inside the ring, nothing regrows near it, and a held torch counts as fire by day as well. **Warnings, fixed:** the ending buttons could fire twice during the fade-out; "Continue surviving" silently began a new journey when the save had failed (it now explains this and offers only the main menu); the regrow guard did not match the root footprint. The fourth Warning (world-gen changes near the Heart for older saves) is documented below. **Suggestions, fixed:** Left/Right navigation and key-repeat protection for button rows; gathered stats ignore lost loot. Re-verified with the full smoke run (139/139).
+
+### Release gate (M8)
+
+The five-tablet quest now has a real conclusion: find the tablets, travel to the Heart, open the roots with fire, make the offering, watch the ending and credits, then keep playing in the same world.
+
+### Known limitations
+
+- Older saves: placing the glade moved the Heart site for some seeds and changed a few prop positions in the chunks around it, so harvest records saved there before M8 may land on different props. This has no effect on the quest.
+- One ending (alternative endings are M19+ only on request).
+- The ending text and Khmer title still need review by native Khmer speakers and cultural advisors.
 
 ---
 

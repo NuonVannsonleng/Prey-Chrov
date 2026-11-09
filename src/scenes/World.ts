@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { CAMERA, DEBUG_HOOKS, DEPTH, GATHER, PICKUP, SCENES, WATER } from '../config';
+import { CAMERA, DEBUG_HOOKS, DEPTH, GATHER, PICKUP, SCENES, WATER, WORLD_GEN } from '../config';
 import { getGameData, itemDef } from '../data/gameData';
 import type { GameData, Station, ToolKind } from '../data/schema';
 import { Player, type PlayerKeys } from '../entities/Player';
@@ -30,12 +30,15 @@ import { TILE } from '../textures';
 import { FloatingText } from '../ui/FloatingText';
 import { PropLayer } from '../world/PropLayer';
 import { oncePerKeyEvent } from '../utils/keys';
-import { ChunkManager } from '../world/ChunkManager';
+import { ChunkManager, type RootWall } from '../world/ChunkManager';
+import type { EndingData } from './Ending';
 import { WorldGen } from '../world/WorldGen';
 
 /** Upper bound on distinct stacks one harvest can drop (loot tables have at most this many items). */
 const MAX_LOOT_STACKS = 6;
 const TORCH_DARKNESS = 0.15;
+/** Withered roots regrow after this long out of the light (ms of game time). */
+const ROOT_REGROW_MS = 3000;
 
 interface WorldKeys extends PlayerKeys {
   interact: Phaser.Input.Keyboard.Key;
@@ -113,6 +116,10 @@ export class World extends Phaser.Scene {
   private nextQuestTargetAt = 0;
   private weatherKey = '';
   private nextAutosaveAt = 0;
+  /** Journey statistics shown on the ending screen (saved). */
+  private stats = { kills: 0, crafted: 0, built: 0, gathered: 0 };
+  private nextRootToastAt = 0;
+  private autosaveWarned = false;
   /** Smoothed World.update cost in ms (F3 overlay, perf checks). */
   perfMs = 0;
   /**
@@ -177,7 +184,7 @@ export class World extends Phaser.Scene {
     this.gathering = new Gathering(this, this.chunks.nodes, this.gameData, this.seed);
 
     this.floating = new FloatingText(this);
-    this.interaction = new Interaction(this, this.chunks.nodes, (x, y) => this.chunks.tileAtWorld(x, y), this.structures.list, this.chunks.shrines, this.chunks.ruins);
+    this.interaction = new Interaction(this, this.chunks.nodes, (x, y) => this.chunks.tileAtWorld(x, y), this.structures.list, this.chunks.shrines, this.chunks.ruins, this.chunks.roots, () => this.chunks.heart);
     this.quest = new QuestLog(this.gameData, [], false, this.gen.tabletSites().length);
     this.openedChests.clear();
     this.nextWeatherAt = 0;
@@ -217,6 +224,7 @@ export class World extends Phaser.Scene {
       (item, qty, durability) => this.dropInFront(item, qty, durability),
       () => this.stations,
       (_recipe, output) => {
+        this.stats.crafted++;
         if (itemDef(output).tool?.kind === 'axe') this.completeObjective('craft_axe');
       },
     );
@@ -263,8 +271,6 @@ export class World extends Phaser.Scene {
       gameEvents.emit('world:info', { seed: this.seed });
       gameEvents.emit('quest:changed', this.quest.view());
       this.weatherKey = '';
-    this.nextAutosaveAt = 60000;
-    this.perfMs = 0;
       this.nextWeatherAt = 0;
       this.nextQuestTargetAt = 0;
       this.emitStructures();
@@ -297,6 +303,9 @@ export class World extends Phaser.Scene {
     this.nextAttackAt = 0;
     this.nextEffectsEmitAt = 0;
     this.kills = 0;
+    this.stats = { kills: 0, crafted: 0, built: 0, gathered: 0 };
+    this.nextRootToastAt = 0;
+    this.autosaveWarned = false;
   }
 
   override update(time: number, delta: number): void {
@@ -355,6 +364,7 @@ export class World extends Phaser.Scene {
     this.projectiles.update(dt, this.now);
     this.updateShrines();
     this.updateRuins();
+    this.updateHeart();
     this.updateQuestTarget();
     this.emitEffects();
     if (this.now >= this.nextAutosaveAt) {
@@ -479,6 +489,7 @@ export class World extends Phaser.Scene {
 
   private onEnemyKilled(enemy: Enemy): void {
     this.kills++;
+    this.stats.kills++;
     const table = this.gameData.loot.get(enemy.def.lootTable);
     this.floating.show(enemy.x, enemy.cy - 20, enemy.def.kind === 'spirit' ? 'The spirit fades' : `${enemy.def.name} down`, '#e6b866');
     if (!table) return;
@@ -611,21 +622,16 @@ export class World extends Phaser.Scene {
       gameEvents.emit('quest:target', null);
       return;
     }
-    if (stage === 'heart') {
+    if (stage === 'heart' || stage === 'restore') {
       const h = this.gen.heartSite();
       const hx = h.tx * 32 + 16;
       const hy = h.ty * 32 + 16;
-      if (Math.hypot(hx - p.x, hy - p.y) < 4 * 32) {
+      if (stage === 'heart' && Math.hypot(hx - p.x, hy - p.y) < (WORLD_GEN.heartGladeRadius + 1) * 32) {
         this.quest.reachHeart();
         gameEvents.emit('quest:changed', this.quest.view());
-        gameEvents.emit('toast', {
-          text: 'You reach the Heart of the Forest. A wall of ancient roots seals the way — its story continues in the next chapter.',
-          tone: 'info',
-        });
-        gameEvents.emit('quest:target', null);
-        return;
+        gameEvents.emit('toast', { text: `You reach the Heart of the Forest. ${this.gameData.ending.text.rootsBlock}`, tone: 'info' });
       }
-      gameEvents.emit('quest:target', { x: hx, y: hy, label: 'Heart of the Forest' });
+      gameEvents.emit('quest:target', { x: hx, y: hy, label: stage === 'heart' ? 'Heart of the Forest' : 'The Heart Tree' });
       return;
     }
     let best: { x: number; y: number; d: number } | null = null;
@@ -638,6 +644,124 @@ export class World extends Phaser.Scene {
     });
     const target = best as { x: number; y: number; d: number } | null;
     gameEvents.emit('quest:target', target ? { x: target.x, y: target.y, label: 'Stone tablet (ruins)' } : null);
+  }
+
+  /**
+   * Root walls shrink from firelight (a campfire, or a held torch in the dark) and open a path;
+   * out of the light they regrow after a moment — unless the player stands in the gap.
+   * The Heart Tree glows once the promise is renewed.
+   */
+  private updateHeart(): void {
+    const heart = this.chunks.heart;
+    if (heart) {
+      const frame = this.quest.restored ? 1 : 0;
+      if (Number(heart.image.frame.name) !== frame) heart.image.setFrame(frame);
+    }
+    const roots = this.chunks.roots;
+    if (roots.length === 0) return;
+    const p = this.player;
+    // Never trap the player: while inside the ring, nothing regrows.
+    // Inside the ring the roots stand aside (old saves may even load you there); near it, nothing regrows.
+    const dHeart = heart ? Math.hypot(p.x - heart.x, p.y - heart.y) : Infinity;
+    const inside = dHeart < (WORLD_GEN.heartRootRadius - 0.6) * 32;
+    const nearRing = dHeart < (WORLD_GEN.heartRootRadius + 1) * 32;
+    // A held torch is fire even by day (it only *lights the dark* at night).
+    const held = this.inventory.held;
+    const torch = held ? itemDef(held.item).light : undefined;
+    let opened = false;
+    for (const r of roots) {
+      const lit =
+        this.quest.restored ||
+        inside ||
+        this.lightAt(r.x, r.y - 12, 0) !== null ||
+        (torch !== undefined && Math.hypot(r.x - p.x, r.y - 12 - (p.y - 16)) <= torch.radius * 0.9);
+      if (lit) {
+        r.litAt = this.now;
+        if (!r.withered) {
+          this.setRootWithered(r, true);
+          opened = true;
+        }
+      } else if (!nearRing && r.withered && this.now - r.litAt > ROOT_REGROW_MS && !this.overlapsRoot(r)) {
+        this.setRootWithered(r, false);
+      }
+    }
+    if (opened && !this.quest.restored && this.now >= this.nextRootToastAt) {
+      this.nextRootToastAt = this.now + 8000;
+      gameEvents.emit('toast', { text: this.gameData.ending.text.rootsWither, tone: 'info' });
+      gameEvents.emit('sfx', 'leaf');
+    }
+  }
+
+  /** Would a regrown root (zone y-29..y-1, 34 wide) overlap the player's body (y-11..y-1, 16 wide)? Small margin. */
+  private overlapsRoot(r: RootWall): boolean {
+    const p = this.player;
+    return Math.abs(p.x - r.x) < 27 && p.y - 1 > r.y - 32 && p.y - 11 < r.y + 2;
+  }
+
+  private setRootWithered(r: RootWall, withered: boolean): void {
+    r.withered = withered;
+    r.image.setFrame(withered ? 1 : 0);
+    const body = r.zone.body as Phaser.Physics.Arcade.StaticBody | null;
+    if (!body) return;
+    if (withered) this.physics.world.disableBody(body);
+    else {
+      body.enable = true;
+      this.physics.world.add(body);
+    }
+  }
+
+  /** The offering at the Heart Tree: all tablets read, held food and spirit dust. */
+  private offerAtHeart(): void {
+    const t = this.gameData.ending.text;
+    if (this.quest.stage === 'done') {
+      gameEvents.emit('toast', { text: 'The Heart Tree is at peace. Its light warms the glade.', tone: 'info' });
+      return;
+    }
+    if (this.quest.stage === 'tablets') {
+      gameEvents.emit('toast', { text: t.needTablets, tone: 'info' });
+      return;
+    }
+    if (this.quest.stage === 'heart' && this.quest.reachHeart()) gameEvents.emit('quest:changed', this.quest.view());
+    const cfg = this.gameData.ending;
+    const held = this.inventory.held;
+    const def = held ? itemDef(held.item) : null;
+    const inv = this.inventory.inventory;
+    if (!held || !def || def.category !== cfg.offeringCategory || inv.count('spirit_dust') < cfg.spiritDust) {
+      gameEvents.emit('toast', { text: t.needOffering, tone: 'info' });
+      return;
+    }
+    inv.takeFromSlot(this.inventory.selected, 1);
+    inv.remove('spirit_dust', cfg.spiritDust);
+    this.inventory.broadcast();
+    this.quest.restore();
+    this.encounters.calmed = true;
+    gameEvents.emit('quest:changed', this.quest.view());
+    gameEvents.emit('quest:target', null);
+    gameEvents.emit('sfx', 'shrine');
+    gameEvents.emit('toast', { text: t.restored, tone: 'info' });
+    this.player.swing(this.player.x, this.player.y - 30, this.now, GATHER.swingMs * 3);
+    this.updateHeart();
+    const saved = this.save();
+    this.startEnding(saved);
+  }
+
+  private startEnding(saved: boolean): void {
+    if (this.busy) return;
+    this.busy = true;
+    this.building.cancel();
+    this.player.halt();
+    this.encounters.clear();
+    this.projectiles.clear();
+    const summary: EndingData = { day: this.clock.dayNumber, tablets: this.quest.tabletsRead.length, ...this.stats, saved };
+    const cam = this.cameras.main;
+    this.time.delayedCall(1600, () => {
+      cam.fadeEffect.reset();
+      cam.fadeOut(1800, 230, 240, 220);
+      cam.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+        this.scene.stop(SCENES.ui);
+        this.scene.start(SCENES.ending, summary);
+      });
+    });
   }
 
   private emitEffects(): void {
@@ -766,6 +890,11 @@ export class World extends Phaser.Scene {
       }
       case 'shrine':
         return `E — ${this.gameData.shrines.text.prompt}`;
+      case 'heart':
+        if (this.quest.stage === 'done') return 'The Heart Tree is at peace';
+        return `E — ${this.gameData.ending.text.prompt}`;
+      case 'roots':
+        return this.gameData.ending.text.rootsBlock;
       case 'ruin':
         if (target.kind !== 'ruin') return '';
         if (target.ruin.kind === 'chest') return this.openedChests.has(target.ruin.key) ? 'An empty stone chest' : 'E — Open the stone chest';
@@ -804,6 +933,14 @@ export class World extends Phaser.Scene {
     }
     if (target.kind === 'shrine' && pressed) {
       this.offerAtShrine(target.shrine.key);
+      return;
+    }
+    if (target.kind === 'heart' && pressed) {
+      this.offerAtHeart();
+      return;
+    }
+    if (target.kind === 'roots' && pressed) {
+      gameEvents.emit('toast', { text: this.gameData.ending.text.rootsBlock, tone: 'info' });
       return;
     }
     if (target.kind === 'structure' && pressed) {
@@ -845,8 +982,12 @@ export class World extends Phaser.Scene {
       this.inventory.broadcast();
     }
     for (const stack of loot) {
-      if (this.pickups.spawn(stack.item, stack.qty, node.prop.x, node.prop.y - 4, this.now, 250)) continue;
+      if (this.pickups.spawn(stack.item, stack.qty, node.prop.x, node.prop.y - 4, this.now, 250)) {
+        this.stats.gathered += stack.qty;
+        continue;
+      }
       const lost = this.inventory.add(stack.item, stack.qty);
+      this.stats.gathered += stack.qty - lost;
       if (lost > 0) this.floating.show(node.targetX, node.targetY - 20, `No room for ${lost} ${itemDef(stack.item).name}`, '#d9644a');
     }
   }
@@ -926,6 +1067,7 @@ export class World extends Phaser.Scene {
       return b.cancel();
     }
     this.inventory.broadcast();
+    this.stats.built++;
     this.emitStructures();
     gameEvents.emit('sfx', 'build');
     this.floating.show(b.x, b.y - 30, `Built ${placed.def.name}`, '#8ec26a');
@@ -973,6 +1115,7 @@ export class World extends Phaser.Scene {
 
   private save(auto = false): boolean {
     if (this.busy && auto) return false;
+    if (auto && this.inDanger()) return false;
     const ok = writeSave(
       buildSave({
         clock: this.clock,
@@ -987,12 +1130,25 @@ export class World extends Phaser.Scene {
         effects: this.effects,
         shrines: this.shrineState,
         openedChests: this.openedChests,
-        quest: { tabletsRead: this.quest.tabletsRead, heartReached: this.quest.heartReached },
+        quest: { tabletsRead: this.quest.tabletsRead, heartReached: this.quest.heartReached, restored: this.quest.restored },
+        stats: this.stats,
         now: this.now,
       }),
     );
     if (ok) gameEvents.emit('game:saved', { auto });
+    else if (auto && !this.autosaveWarned) {
+      this.autosaveWarned = true;
+      gameEvents.emit('toast', { text: 'Autosave failed — browser storage is unavailable or full', tone: 'warn' });
+    }
     return ok;
+  }
+
+  /** Low health or a hostile close by: an autosave here could trap a reload in a lost fight. */
+  private inDanger(): boolean {
+    const st = this.survival.stats;
+    if (st.health < this.gameData.survival.maxHealth * 0.25) return true;
+    const e = this.encounters.nearest(this.player.x, this.player.y - 10, 150);
+    return e !== null && (e.def.kind === 'spirit' || e.aiState !== 'wander');
   }
 
   /** Wading through shallows is slow; mud a little slow. */
@@ -1068,7 +1224,10 @@ export class World extends Phaser.Scene {
     this.effects.restore(save.effects.map((e) => ({ ...e, id: e.id as EffectId })));
     for (const s of save.shrines) this.shrineState.set(s.key, s.lastOffering);
     for (const k of save.openedChests) this.openedChests.add(k);
-    this.quest = new QuestLog(this.gameData, save.tabletsRead, save.heartReached, this.gen.tabletSites().length);
+    this.quest = new QuestLog(this.gameData, save.tabletsRead, save.heartReached, this.gen.tabletSites().length, save.restored);
+    this.encounters.calmed = this.quest.restored;
+    this.stats = { ...save.stats };
+    this.kills = save.stats.kills;
   }
 
   /**
@@ -1079,7 +1238,8 @@ export class World extends Phaser.Scene {
     let ok = Number.isFinite(x) && Number.isFinite(y) && Math.abs(x) < 5e6 && Math.abs(y) < 5e6;
     if (ok) {
       this.chunks.loadAllAround(x, y, this.now);
-      ok = !this.chunks.isDeepWater(x, y - 4) && this.physics.overlapRect(x - 8, y - 11, 16, 11, false, true).length === 0;
+      // Inset by a pixel: resting flush against a solid (edges touching) is a valid spot.
+      ok = !this.chunks.isDeepWater(x, y - 4) && this.physics.overlapRect(x - 7, y - 10, 14, 9, false, true).length === 0;
     }
     const px = ok ? x : this.spawn.x;
     const py = ok ? y : this.spawn.y;
@@ -1190,12 +1350,14 @@ export class World extends Phaser.Scene {
     this.scene.pause(SCENES.ui);
     this.scene.launch(SCENES.pause);
     this.scene.bringToTop(SCENES.pause);
+    gameEvents.emit('audio:duck', true);
   }
 
   private onResume(): void {
     // Keys released while paused never reached this scene; clear them to avoid stuck movement.
     this.input.keyboard?.resetKeys();
     this.pointerHeld = false;
+    gameEvents.emit('audio:duck', false);
   }
 
   private toggleDebug(): void {
@@ -1219,6 +1381,8 @@ export class World extends Phaser.Scene {
     // Scene shutdown destroys every game object and the physics world; just drop references.
     this.chunks.forget();
     this.scene.stop(SCENES.ui);
+    gameEvents.emit('ambience', { day: 0, night: 0, rain: 0, fire: 0 });
+    gameEvents.emit('audio:duck', false);
   }
 }
 

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { CHUNK_TILES, TILE_SIZE } from '../config';
 import type { BiomeId, EnemyDef, GameData } from '../data/schema';
 import { Enemy, type EnemyWorld } from '../entities/Enemy';
+import { gameEvents } from './GameEvents';
 import { inArc } from './StatusEffects';
 
 /** World services the encounter system needs (implemented by the World scene). */
@@ -43,6 +44,8 @@ export class Encounters {
   private spawnTimer = 0;
   /** Natural spawning on/off (debug `?calm` turns it off for automated tests). */
   enabled = true;
+  /** After the Heart is restored the restless ones grow quiet: night population is halved. */
+  calmed = false;
   private readonly world: EnemyWorld & { now: number; playerX: number; playerY: number; spiritWard: boolean; dawn: boolean };
 
   constructor(
@@ -111,7 +114,8 @@ export class Encounters {
     const ramp = cfg.firstNightMax + Math.max(0, f.day - 1) * cfg.nightRampPerDay;
     const biome = this.data.biomes.get(this.services.biomeAt(Math.floor(f.playerX / TILE_SIZE), Math.floor(f.playerY / TILE_SIZE)));
     const danger = biome?.nightDanger ?? 1;
-    return Math.max(1, Math.min(cfg.maxAlive.night, Math.round(ramp * danger)));
+    const cap = Math.max(1, Math.min(cfg.maxAlive.night, Math.round(ramp * danger)));
+    return this.calmed ? Math.max(1, Math.round(cap / 2)) : cap;
   }
 
   /** Player melee: hits every live enemy inside the arc. Returns enemies hit. */
@@ -167,6 +171,7 @@ export class Encounters {
       const e = this.obtain();
       if (!e) return;
       e.spawn(def, x, y, now);
+      if (def.kind === 'spirit') gameEvents.emit('sfx', 'spirit');
       return;
     }
   }

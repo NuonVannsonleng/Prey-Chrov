@@ -24,7 +24,8 @@ export interface WorldState {
   effects: StatusEffects;
   shrines: ReadonlyMap<string, number>;
   openedChests: ReadonlySet<string>;
-  quest: { tabletsRead: readonly string[]; heartReached: boolean };
+  quest: { tabletsRead: readonly string[]; heartReached: boolean; restored: boolean };
+  stats: { kills: number; crafted: number; built: number; gathered: number };
   /** World game-time clock in ms (node respawn timers are relative to it). */
   now: number;
 }
@@ -59,6 +60,8 @@ export function buildSave(w: WorldState): SaveData {
     openedChests: [...w.openedChests],
     tabletsRead: [...w.quest.tabletsRead],
     heartReached: w.quest.heartReached,
+    restored: w.quest.restored,
+    stats: { ...w.stats },
   };
 }
 

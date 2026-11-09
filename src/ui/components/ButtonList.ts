@@ -3,7 +3,7 @@ import { oncePerKeyEvent } from '../../utils/keys';
 import type { Button } from './Button';
 
 /**
- * Keyboard navigation for a vertical list of buttons (Up/Down or W/S, Enter/Space).
+ * Keyboard navigation for a list of buttons (Up/Down/Left/Right, WASD or Tab; Enter/Space).
  * Disabled buttons are skipped. Listeners are removed on scene shutdown.
  */
 export class ButtonList {
@@ -32,13 +32,19 @@ export class ButtonList {
   }
 
   private onKey(event: KeyboardEvent): void {
+    // Held keys must not auto-activate a button (e.g. Space held through a skip).
+    if (event.repeat) return;
     switch (event.code) {
       case 'ArrowUp':
+      case 'ArrowLeft':
       case 'KeyW':
+      case 'KeyA':
         this.move(-1);
         break;
       case 'ArrowDown':
+      case 'ArrowRight':
       case 'KeyS':
+      case 'KeyD':
       case 'Tab':
         event.preventDefault();
         this.move(event.shiftKey && event.code === 'Tab' ? -1 : 1);

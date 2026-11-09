@@ -634,7 +634,7 @@ try {
   const heart = await evalW('const h = w.gen.heartSite(); return { x: h.tx * 32 + 16, y: h.ty * 32 + 16 };');
   await teleport(heart.x, heart.y + 40);
   await sleep(1500);
-  check('reaching the Heart completes the current quest stage', (await evalW('return w.quest.stage;')) === 'done');
+  check('reaching the Heart glade advances the quest to the offering', (await evalW('return w.quest.stage;')) === 'restore');
   // Restore a calm state for later checks.
   await evalW('w.quest = new w.quest.constructor(w.gameData, ["tablet_1"], false); w.nextQuestTargetAt = 0;');
   await setDayHour(1, 10);
@@ -962,6 +962,90 @@ try {
   await sleep(700);
   const m = await evalW7('return { day: w.clock.dayNumber, hp: Math.round(w.survival.stats.health), wood: w.inventory.inventory.count("wood"), kits: w.inventory.inventory.count("campfire_kit"), sticks: w.inventory.inventory.count("stick") };');
   check('old v1 save migrates and loads (day, stats, items, refunded kit)', migrated && m.day === 3 && m.hp === 77 && m.wood === 7 && m.kits === 1 && m.sticks === 2, JSON.stringify(m));
+  // ---------- M8: the Heart Tree, the offering and the ending ----------
+  const setClock = (d, h) => evalW7('w.clock.totalSeconds = (arg[0] - 1) * 480 + arg[1] * 20; w.nextWeatherAt = 0;', [d, h]);
+  await evalW7('w.encounters.clear(); w.survival.stats.health = 100; w.survival.stats.warmth = 100; w.survival.stats.hunger = 50; for (const t of w.gameData.tablets) w.quest.readTablet(t.id); w.nextQuestTargetAt = 0;');
+  const hs = await evalW7('const h = w.gen.heartSite(); return { x: h.tx * 32 + 16, y: h.ty * 32 + 16 };');
+  await setClock(3, 12);
+  await teleport(hs.x, hs.y + 8 * 32);
+  await sleep(2500);
+  const ring = await evalW7(
+    'const set = w.physics.world.staticBodies; return { roots: w.chunks.roots.length, heart: !!w.chunks.heart, stage: w.quest.stage, solid: w.chunks.roots.filter((r) => set.contains(r.zone.body)).length };',
+  );
+  check('the Heart glade holds the tree inside a closed ring of solid roots', ring.heart && ring.roots >= 20 && ring.solid === ring.roots && ring.stage === 'restore', JSON.stringify(ring));
+  await page.screenshot({ path: OUT + '/27-heart-day.png' });
+  await hold(['KeyW'], 1800);
+  const blocked = await player();
+  check('by day the standing roots block the way to the Heart Tree', Math.hypot(blocked.x - hs.x, blocked.y - hs.y) > 5.4 * 32, JSON.stringify({ blocked, hs }));
+  // Diagonal approach must be sealed too (ring steps leave no gap).
+  await teleport(hs.x + 6 * 32, hs.y + 6 * 32);
+  await sleep(300);
+  await hold(['KeyW', 'KeyA'], 1800);
+  const diagRoot = await player();
+  check("the root ring has no diagonal gap", Math.hypot(diagRoot.x - hs.x, diagRoot.y - hs.y) > 5.2 * 32, JSON.stringify(diagRoot));
+
+  // Never trapped: standing inside the ring by day with no fire (e.g. an old save) lets you walk out.
+  await teleport(hs.x, hs.y + 3 * 32);
+  await sleep(500);
+  await hold(['KeyS'], 2200);
+  const escaped = await player();
+  check('inside the ring by day without fire, the roots let you out (no softlock)', Math.hypot(escaped.x - hs.x, escaped.y - hs.y) > 7 * 32, JSON.stringify(escaped));
+  await sleep(3500);
+  const resealed = await evalW7('const set = w.physics.world.staticBodies; return w.chunks.roots.filter((r) => set.contains(r.zone.body)).length === w.chunks.roots.length;');
+  check('once you leave, the ring closes again', resealed);
+
+  // Night + a held torch: the roots shrink from the light and the way opens.
+  await setClock(3, 22);
+  await evalW7(
+    'const inv = w.inventory.inventory; const s = inv.snapshot().map(() => null); s[0] = { item: "torch", qty: 1, durability: 170 }; s[1] = { item: "cooked_meat", qty: 2 }; s[2] = { item: "spirit_dust", qty: 3 }; inv.restore(s); w.inventory.selected = 0; w.inventory.broadcast();',
+  );
+  await teleport(hs.x, hs.y + 8 * 32);
+  await sleep(900);
+  await hold(['KeyW'], 2600);
+  const lit = await evalW7('const p = w.player; return { withered: w.chunks.roots.filter((r) => r.withered).length, d: Math.hypot(p.x - arg.x, p.y - arg.y), target: w.interaction.current.kind };', hs);
+  await page.screenshot({ path: OUT + '/28-roots-wither.png' });
+  check('torchlight withers the roots and opens a path to the tree', lit.withered > 0 && lit.d < 3 * 32, JSON.stringify(lit));
+  check('the Heart Tree is the interaction target up close', lit.target === 'heart', lit.target);
+  // Holding the torch (not food) is refused with a hint.
+  await page.keyboard.press('KeyE');
+  await sleep(300);
+  check('an offering needs held food and spirit dust', (await evalW7('return w.quest.stage;')) === 'restore');
+  await evalW7('w.inventory.selected = 1; w.inventory.broadcast();');
+  // Torch put away inside the ring: the roots must not regrow and trap the player.
+  await sleep(3800);
+  const ringOpen = await evalW7('return w.chunks.roots.filter((r) => r.withered).length;');
+  check('roots never regrow while the player is inside the ring', ringOpen >= lit.withered, JSON.stringify({ ringOpen, before: lit.withered }));
+  await page.keyboard.press('KeyE');
+  const ended = await waitScene('Ending', 9000);
+  check('the offering renews the promise and the ending plays', ended, '');
+  await sleep(1500);
+  await page.screenshot({ path: OUT + '/29-ending.png' });
+  for (let i = 0; i < 6; i++) {
+    await page.keyboard.press('Space');
+    await sleep(250);
+  }
+  await sleep(1900);
+  const endText = await page.evaluate(() => window.__preyChrov.scene.getScene('Ending').children.list.filter((o) => o.type === 'Text' && o.visible).map((o) => o.text).join(' | '));
+  await page.screenshot({ path: OUT + '/30-ending-summary.png' });
+  check('Space presses that skip the epilogue never pick a button by accident', await sceneActive('Ending'));
+  check('the ending shows a journey summary and credits with the fiction disclaimer', /Days survived/.test(endText) && /Stone tablets read: 5/.test(endText) && /work of fiction/.test(endText), endText.slice(0, 200));
+  await page.evaluate(() => window.__preyChrov.scene.getScene('Ending').children.list.filter((o) => typeof o.activate === 'function')[0].activate());
+  check('Continue surviving returns to the world', await waitScene('World', 9000));
+  await sleep(1500);
+  const afterEnd = await evalW7('const h = w.chunks.heart; return { stage: w.quest.stage, calmed: w.encounters.calmed, frame: h ? Number(h.image.frame.name) : -1, open: w.chunks.roots.every((r) => r.withered), dust: w.inventory.inventory.count("spirit_dust"), meat: w.inventory.inventory.count("cooked_meat") };');
+  check('after the ending: quest done, tree restored, roots open, spirits calmed', afterEnd.stage === 'done' && afterEnd.calmed && afterEnd.frame === 1 && afterEnd.open, JSON.stringify(afterEnd));
+  check('the offering consumed one food and two spirit dust', afterEnd.dust === 1 && afterEnd.meat === 1, JSON.stringify(afterEnd));
+
+  // M7 QA: ambience is silenced while paused.
+  await page.keyboard.press('Escape');
+  await waitScene('Pause', 3000);
+  await sleep(200);
+  const duckedPaused = await page.evaluate(() => window.__preyAudio.ducked === true);
+  await page.keyboard.press('Escape');
+  await sleep(300);
+  const duckedResumed = await page.evaluate(() => window.__preyAudio.ducked === true);
+  check('pause silences the ambience; resume restores it', duckedPaused && !duckedResumed, JSON.stringify({ duckedPaused, duckedResumed }));
+
   await page.evaluate(() => localStorage.clear());
 
   check('no console errors', errors.length === 0, errors.slice(0, 5).join(' | '));

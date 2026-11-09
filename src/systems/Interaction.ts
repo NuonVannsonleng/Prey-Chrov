@@ -3,7 +3,7 @@ import { DEPTH, GATHER, TILE_SIZE } from '../config';
 import type { ResourceNode } from '../entities/ResourceNode';
 import { SHALLOW_TILES, TEX, WATER_TILES } from '../textures';
 import type { Structure } from './Structures';
-import type { RuinObject, ShrineInstance } from '../world/ChunkManager';
+import type { HeartInstance, RootWall, RuinObject, ShrineInstance } from '../world/ChunkManager';
 
 export type InteractTarget =
   | { kind: 'node'; node: ResourceNode; x: number; y: number }
@@ -11,6 +11,8 @@ export type InteractTarget =
   | { kind: 'structure'; structure: Structure; x: number; y: number }
   | { kind: 'shrine'; shrine: ShrineInstance; x: number; y: number }
   | { kind: 'ruin'; ruin: RuinObject; x: number; y: number }
+  | { kind: 'heart'; heart: HeartInstance; x: number; y: number }
+  | { kind: 'roots'; root: RootWall; x: number; y: number }
   | { kind: 'none'; x: number; y: number };
 
 /** How strongly facing direction is preferred when choosing between nearby targets (px of distance). */
@@ -26,6 +28,8 @@ export class Interaction {
   private structureTarget: { kind: 'structure'; structure: Structure; x: number; y: number } | null = null;
   private shrineTarget: { kind: 'shrine'; shrine: ShrineInstance; x: number; y: number } | null = null;
   private ruinTarget: { kind: 'ruin'; ruin: RuinObject; x: number; y: number } | null = null;
+  private heartTarget: { kind: 'heart'; heart: HeartInstance; x: number; y: number } | null = null;
+  private rootTarget: { kind: 'roots'; root: RootWall; x: number; y: number } | null = null;
   private readonly noTarget = { kind: 'none' as const, x: 0, y: 0 };
   private readonly ring: Phaser.GameObjects.Image;
   current: InteractTarget = this.noTarget;
@@ -38,6 +42,8 @@ export class Interaction {
     private readonly structures: readonly Structure[],
     private readonly shrines: readonly ShrineInstance[] = [],
     private readonly ruins: readonly RuinObject[] = [],
+    private readonly roots: readonly RootWall[] = [],
+    private readonly heart: () => HeartInstance | null = () => null,
   ) {
     this.nodeTarget = { kind: 'node', node: null as unknown as ResourceNode, x: 0, y: 0 };
     this.ring = scene.add.image(0, 0, TEX.targetRing).setDepth(DEPTH.targetRing).setVisible(false);
@@ -120,6 +126,45 @@ export class Interaction {
         this.ruinTarget.x = ru.x;
         this.ruinTarget.y = ru.y;
         best = this.ruinTarget;
+      }
+    }
+
+    // Heart Tree (large: measured from its trunk).
+    const ht = this.heart();
+    if (ht) {
+      const dx = ht.x - cx;
+      const dy = ht.y - 10 - cy;
+      const d = Math.hypot(dx, dy);
+      if (d <= GATHER.reach + 34) {
+        const facing = d > 0 ? (dx * fx + dy * fy) / d : 1;
+        const score = d - 34 - facing * FACING_BIAS;
+        if (score < bestScore) {
+          bestScore = score;
+          this.heartTarget ??= { kind: 'heart', heart: ht, x: 0, y: 0 };
+          this.heartTarget.heart = ht;
+          this.heartTarget.x = ht.x;
+          this.heartTarget.y = ht.y;
+          best = this.heartTarget;
+        }
+      }
+    }
+
+    // Standing root walls only explain themselves (fire is the way through).
+    for (const r of this.roots) {
+      if (r.withered) continue;
+      const dx = r.x - cx;
+      const dy = r.y - 6 - cy;
+      const d = Math.hypot(dx, dy);
+      if (d > GATHER.reach + 6) continue;
+      const facing = d > 0 ? (dx * fx + dy * fy) / d : 1;
+      const score = d + 4 - facing * FACING_BIAS;
+      if (score < bestScore) {
+        bestScore = score;
+        this.rootTarget ??= { kind: 'roots', root: r, x: 0, y: 0 };
+        this.rootTarget.root = r;
+        this.rootTarget.x = r.x;
+        this.rootTarget.y = r.y;
+        best = this.rootTarget;
       }
     }
 

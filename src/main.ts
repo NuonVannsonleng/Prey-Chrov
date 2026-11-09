@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { DEBUG_HOOKS, GAME_HEIGHT, GAME_WIDTH } from './config';
 import { Boot } from './scenes/Boot';
+import { Ending } from './scenes/Ending';
 import { GameOver } from './scenes/GameOver';
 import { Menu } from './scenes/Menu';
 import { Pause } from './scenes/Pause';
@@ -28,7 +29,7 @@ const game = new Phaser.Game({
   },
   input: { keyboard: true, mouse: true, touch: true },
   disableContextMenu: true,
-  scene: [Boot, Preload, Menu, World, UI, Pause, GameOver],
+  scene: [Boot, Preload, Menu, World, UI, Pause, GameOver, Ending],
 });
 
 // Procedural audio: unlocked by the first click/key (autoplay policy), fed by typed events.

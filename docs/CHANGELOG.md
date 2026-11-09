@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.0 — M8: The Heart of the Forest and the first ending (2026-11-09)
+
+### Added
+- The Heart glade: the Heart Tree inside a closed ring of ancient roots that wither back from fire (a campfire or a held torch).
+- The offering at the Heart Tree (all five tablets, held food, two spirit dust) completes the main quest.
+- Ending scene: epilogue, journey summary, credits with the fiction disclaimer, Continue surviving or Main menu.
+- Journey stats (kills, crafted, built, gathered) are tracked and saved; spirits are calmer after the ending.
+
+### Fixed
+- Softlock: you can no longer be trapped inside the root ring.
+- The ending can no longer fire a choice twice, and it says when the save failed instead of silently starting over.
+- Button rows support Left/Right and ignore key repeat.
+
 ## 0.7.0 — M7: Persistence, performance and MVP polish (2026-11-09)
 
 ### Added

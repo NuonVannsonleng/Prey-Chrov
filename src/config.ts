@@ -10,6 +10,7 @@ export const SCENES = {
   ui: 'UI',
   pause: 'Pause',
   gameOver: 'GameOver',
+  ending: 'Ending',
 } as const;
 
 export const FONTS = {
