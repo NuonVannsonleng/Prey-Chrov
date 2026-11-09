@@ -58,6 +58,7 @@ export class PlayerInventory {
     const name = itemDef(recipe.output).name;
     if (res.ok) {
       this.broadcast();
+      gameEvents.emit('sfx', 'craft');
       gameEvents.emit('toast', { text: `Crafted ${recipe.qty > 1 ? recipe.qty + ' × ' : ''}${name}`, tone: 'info' });
       this.onCrafted(recipe.id, recipe.output);
       return;

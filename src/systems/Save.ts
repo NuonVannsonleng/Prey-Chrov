@@ -267,7 +267,7 @@ export function inspectSave(storage: KeyValueStorage | null = defaultStorage(), 
 export function describeSaveStatus(status: SaveStatus): string {
   switch (status.kind) {
     case 'none':
-      return 'No saved journey yet — sleep in a shelter to save.';
+      return 'No saved journey yet.';
     case 'corrupt':
       return 'The saved journey is damaged and cannot be loaded.';
     case 'newer':

@@ -12,6 +12,7 @@ import type { Enemy } from '../entities/Enemy';
 import { hash2, hashString, mulberry32 } from '../utils/random';
 import { forecast, weatherModifiers, type Forecast } from '../systems/Season';
 import { QuestLog } from '../systems/Quest';
+import { getSettings } from '../systems/Settings';
 import { rollLoot } from '../systems/Loot';
 import { GameClock, darknessAt, inHourWindow, phaseOf } from '../systems/Clock';
 import { gameEvents, onSceneEvent, type ClockTick, type PlayerTick, type SurvivalTick } from '../systems/GameEvents';
@@ -111,6 +112,9 @@ export class World extends Phaser.Scene {
   private nextWeatherAt = 0;
   private nextQuestTargetAt = 0;
   private weatherKey = '';
+  private nextAutosaveAt = 0;
+  /** Smoothed World.update cost in ms (F3 overlay, perf checks). */
+  perfMs = 0;
   /**
    * Discrete presses are captured from keydown events (not Key.JustDown, which Phaser clears
    * when a key is pressed and released within one frame) and consumed in update().
@@ -179,6 +183,8 @@ export class World extends Phaser.Scene {
     this.nextWeatherAt = 0;
     this.nextQuestTargetAt = 0;
     this.weatherKey = '';
+    this.nextAutosaveAt = 60000;
+    this.perfMs = 0;
     this.effects = new StatusEffects();
     this.shrineState.clear();
     this.projectiles = new Projectiles(this, {
@@ -220,6 +226,7 @@ export class World extends Phaser.Scene {
       add: (item, qty, durability) => this.inventory.add(item, qty, durability),
       onCollected: (item, qty, x, y) => {
         this.floating.show(x, y - 12, `+${qty} ${itemDef(item).name}`);
+        gameEvents.emit('sfx', 'pickup');
         const inv = this.inventory.inventory;
         if (inv.count('wood') > 0 && inv.count('stone') > 0) this.completeObjective('gather');
       },
@@ -256,6 +263,8 @@ export class World extends Phaser.Scene {
       gameEvents.emit('world:info', { seed: this.seed });
       gameEvents.emit('quest:changed', this.quest.view());
       this.weatherKey = '';
+    this.nextAutosaveAt = 60000;
+    this.perfMs = 0;
       this.nextWeatherAt = 0;
       this.nextQuestTargetAt = 0;
       this.emitStructures();
@@ -290,7 +299,17 @@ export class World extends Phaser.Scene {
     this.kills = 0;
   }
 
-  override update(_time: number, delta: number): void {
+  override update(time: number, delta: number): void {
+    const t0 = performance.now();
+    this.tickWorld(time, delta);
+    this.perfMs = this.perfMs * 0.95 + (performance.now() - t0) * 0.05;
+  }
+
+  private shake(durationMs: number, intensity: number): void {
+    if (!getSettings().reducedMotion) this.cameras.main.shake(durationMs, intensity);
+  }
+
+  private tickWorld(_time: number, delta: number): void {
     const dt = Math.min(delta, 100);
     const p = this.player;
     this.animateWater(dt);
@@ -338,6 +357,10 @@ export class World extends Phaser.Scene {
     this.updateRuins();
     this.updateQuestTarget();
     this.emitEffects();
+    if (this.now >= this.nextAutosaveAt) {
+      this.nextAutosaveAt = this.now + 60000;
+      this.save(true);
+    }
     if (this.building.active) this.updateBuilding();
 
     if (!this.input.activePointer.isDown) this.pointerHeld = false;
@@ -412,6 +435,7 @@ export class World extends Phaser.Scene {
     this.nextAttackAt = this.now + c.attackCooldownMs;
     this.nextActAt = Math.max(this.nextActAt, this.now + GATHER.swingMs);
     const hits = this.encounters.attack(ox, oy, dx / len, dy / len, reach, damage, this.now);
+    gameEvents.emit('sfx', hits.length > 0 ? 'enemy_hit' : 'swing');
     for (const e of hits) this.floating.show(e.x, e.cy - 14, `-${damage}`, '#ffffff');
     if (hits.length > 0 && tool) {
       if (this.inventory.inventory.wear(this.inventory.selected, 1) === 'broke') {
@@ -439,6 +463,7 @@ export class World extends Phaser.Scene {
     const p = this.player;
     this.playerInvulnUntil = this.now + c.playerIFramesMs;
     this.survival.damage(damage, cause);
+    gameEvents.emit('sfx', 'hurt');
     const dx = p.x - fromX;
     const dy = p.y - 10 - fromY;
     const len = Math.hypot(dx, dy) || 1;
@@ -446,7 +471,7 @@ export class World extends Phaser.Scene {
     this.tweens.killTweensOf(p);
     p.setAlpha(1);
     this.tweens.add({ targets: p, alpha: 0.35, duration: 90, yoyo: true, repeat: Math.max(1, Math.floor(c.playerIFramesMs / 180) - 1), onComplete: () => p.setAlpha(1) });
-    this.cameras.main.shake(120, 0.004);
+    this.shake(120, 0.004);
     this.floating.show(p.x, p.y - 36, `-${damage}`, '#d9644a');
     this.lastHurtAt = -Infinity;
     return true;
@@ -496,6 +521,7 @@ export class World extends Phaser.Scene {
     if (cfg.blessing.spiritWard) this.effects.apply('ward', seconds);
     this.player.swing(this.player.x, this.player.y - 30, this.now, GATHER.swingMs * 3);
     this.floating.show(this.player.x, this.player.y - 40, 'Blessed', '#e6b866');
+    gameEvents.emit('sfx', 'shrine');
     gameEvents.emit('toast', { text: cfg.text.offered, tone: 'info' });
     this.nextEffectsEmitAt = 0;
   }
@@ -507,6 +533,10 @@ export class World extends Phaser.Scene {
     if (this.now < this.nextWeatherAt) return;
     this.nextWeatherAt = this.now + 500;
     this.weather = forecast(this.clock.dayNumber, this.clock.hour, this.gameData.season);
+    const dark = darknessAt(this.clock.hour, this.gameData.survival.darkness);
+    let fire = 0;
+    for (const s of this.structures.list) if (s.def.lightRadius > 0) fire = Math.max(fire, 1 - Math.hypot(s.x - this.player.x, s.y - this.player.y) / 220);
+    gameEvents.emit('ambience', { day: 1 - dark, night: dark, rain: this.weather.monsoon ? 1 : 0, fire: Math.max(0, fire) });
     this.chunks.setFlood(this.weather.flood, this.gameData.season.floodRiverWidth);
     const key = `${this.weather.label}|${this.weather.monsoon}|${this.chunks.flood}`;
     if (key === this.weatherKey) return;
@@ -551,6 +581,7 @@ export class World extends Phaser.Scene {
       if (!this.pickups.spawn(stack.item, stack.qty, x, y + 10, this.now, 250, 10)) this.inventory.add(stack.item, stack.qty);
     }
     this.floating.show(x, y - 30, 'The lid grinds open', '#e6b866');
+    gameEvents.emit('sfx', 'chest');
   }
 
   private readTablet(id: string): void {
@@ -558,6 +589,7 @@ export class World extends Phaser.Scene {
     if (!tablet) return;
     const isNew = this.quest.readTablet(id);
     gameEvents.emit('tablet:read', tablet);
+    gameEvents.emit('sfx', 'tablet');
     if (isNew) {
       gameEvents.emit('quest:changed', this.quest.view());
       const n = this.quest.tabletsRead.length;
@@ -759,6 +791,7 @@ export class World extends Phaser.Scene {
       p.swing(target.x, target.y + 8, this.now, GATHER.swingMs * 2);
       this.nextActAt = this.now + WATER.drinkCooldownMs;
       this.survival.drink();
+      gameEvents.emit('sfx', 'drink');
       this.floating.show(p.x, p.y - 34, 'Fresh water', '#4fc2b4');
       gameEvents.emit('player:drank');
       this.completeObjective('drink');
@@ -801,6 +834,9 @@ export class World extends Phaser.Scene {
       base = tool.damage;
     }
     const { result, loot } = this.gathering.hit(node, kind, this.now, p.x, base);
+    if (result === 'hit' || result === 'depleted') {
+      gameEvents.emit('sfx', node.def.sprite === 'rock' ? 'stone' : node.def.sprite === 'bush' ? 'leaf' : 'chop');
+    }
     if (result === 'needs-tool') this.floating.show(node.targetX, node.targetY - 20, 'Needs a tool', '#e6b866');
     if (kind !== 'hand' && (result === 'hit' || result === 'depleted')) {
       if (this.inventory.inventory.wear(this.inventory.selected, 1) === 'broke') {
@@ -840,6 +876,7 @@ export class World extends Phaser.Scene {
         return;
       }
       this.survival.eat(def.food);
+      gameEvents.emit('sfx', 'eat');
       this.inventory.inventory.takeFromSlot(this.inventory.selected, 1);
       this.inventory.broadcast();
       this.player.swing(this.player.x, this.player.y - 20, this.now, GATHER.swingMs * 2);
@@ -890,6 +927,7 @@ export class World extends Phaser.Scene {
     }
     this.inventory.broadcast();
     this.emitStructures();
+    gameEvents.emit('sfx', 'build');
     this.floating.show(b.x, b.y - 30, `Built ${placed.def.name}`, '#8ec26a');
     if (placed.def.interaction === 'cook') this.completeObjective('campfire');
     if (placed.def.interaction === 'sleep') this.completeObjective('shelter');
@@ -933,8 +971,9 @@ export class World extends Phaser.Scene {
     });
   }
 
-  private save(): boolean {
-    return writeSave(
+  private save(auto = false): boolean {
+    if (this.busy && auto) return false;
+    const ok = writeSave(
       buildSave({
         clock: this.clock,
         survival: this.survival,
@@ -952,6 +991,8 @@ export class World extends Phaser.Scene {
         now: this.now,
       }),
     );
+    if (ok) gameEvents.emit('game:saved', { auto });
+    return ok;
   }
 
   /** Wading through shallows is slow; mud a little slow. */
@@ -1056,7 +1097,7 @@ export class World extends Phaser.Scene {
     const cause = this.survival.lastDamageCause ?? 'injury';
     const summary = { day: this.clock.dayNumber, time: this.clock.label(), cause };
     const cam = this.cameras.main;
-    cam.shake(250, 0.004);
+    this.shake(250, 0.004);
     cam.fadeEffect.reset();
     cam.fadeOut(1400, 40, 6, 4);
     cam.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
@@ -1142,6 +1183,7 @@ export class World extends Phaser.Scene {
 
   private openPause(): void {
     if (!this.scene.isActive() || this.scene.isActive(SCENES.pause) || this.busy) return;
+    this.save(true);
     this.player.halt();
     this.pointerHeld = false;
     this.scene.pause();

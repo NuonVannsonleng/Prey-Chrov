@@ -4,6 +4,7 @@ import { itemDef } from '../data/gameData';
 import { gameEvents, onSceneEvent, type InventoryView, type PlayerTick } from '../systems/GameEvents';
 import { HOTBAR_SLOTS } from '../systems/Inventory';
 import { TEX } from '../textures';
+import { getSettings } from '../systems/Settings';
 import { oncePerKeyEvent } from '../utils/keys';
 import { ConfirmDialog } from '../ui/components/ConfirmDialog';
 import { Toast } from '../ui/components/Toast';
@@ -49,6 +50,7 @@ export class UI extends Phaser.Scene {
   private hurtFlash!: Phaser.GameObjects.Rectangle;
   private placing = false;
   private closeTabletNextFrame = false;
+  private savedText!: Phaser.GameObjects.Text;
   private toast!: Toast;
   private dialog: ConfirmDialog | null = null;
   private view: InventoryView | null = null;
@@ -124,6 +126,14 @@ export class UI extends Phaser.Scene {
     this.journal = new JournalPanel(this);
     this.tabletView = new TabletView(this);
     this.toast = new Toast(this);
+    this.savedText = this.add
+      .text(GAME_WIDTH - 20, GAME_HEIGHT - 20, '', { fontFamily: FONTS.ui, fontSize: '13px', fontStyle: '600', color: CSS.textDim })
+      .setOrigin(1, 1)
+      .setAlpha(0);
+    if (!getSettings().showHints) {
+      this.hints.setVisible(false);
+      this.status.setObjectivesVisible(false);
+    }
 
     onSceneEvent(this, 'world:info', ({ seed }) => this.minimap.setSeed(seed));
     onSceneEvent(this, 'structures:changed', (list) => this.minimap.setStructures(list));
@@ -166,9 +176,14 @@ export class UI extends Phaser.Scene {
       this.placing = on;
       if (on) this.toast.show('Click (or F) to build on a green spot · right-click / Esc to cancel', 'info');
     });
+    onSceneEvent(this, 'game:saved', ({ auto }) => {
+      this.tweens.killTweensOf(this.savedText);
+      this.savedText.setText(auto ? 'Saved ✓' : 'Journey saved ✓').setAlpha(1);
+      this.tweens.add({ targets: this.savedText, alpha: 0, delay: 1400, duration: 600 });
+    });
     onSceneEvent(this, 'player:hurt', () => {
       this.tweens.killTweensOf(this.hurtFlash);
-      this.hurtFlash.setAlpha(0.32);
+      this.hurtFlash.setAlpha(getSettings().reducedFlash ? 0.14 : 0.32);
       this.tweens.add({ targets: this.hurtFlash, alpha: 0, duration: 650, ease: 'Sine.easeOut' });
     });
     onSceneEvent(this, 'interact:prompt', (text) => this.prompt.setText(text).setVisible(text !== ''));
@@ -204,7 +219,7 @@ export class UI extends Phaser.Scene {
     const fps = this.game.loop.actualFps.toFixed(0);
     this.debugText.setText(
       t
-        ? `FPS ${fps}\npos ${t.x.toFixed(0)}, ${t.y.toFixed(0)}\nspeed ${t.speed.toFixed(0)} px/s\nbus listeners ${gameEvents.listenerCount('player:tick')}`
+        ? `FPS ${fps}\nupdate ${(this.scene.get(SCENES.world) as unknown as { perfMs: number }).perfMs.toFixed(2)} ms\npos ${t.x.toFixed(0)}, ${t.y.toFixed(0)}\nspeed ${t.speed.toFixed(0)} px/s\nbus listeners ${gameEvents.listenerCount('player:tick')}`
         : `FPS ${fps}`,
     );
   }

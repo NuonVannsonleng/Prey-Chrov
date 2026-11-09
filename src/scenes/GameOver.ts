@@ -49,14 +49,14 @@ export class GameOver extends Phaser.Scene {
     const canLoad = save.kind === 'valid';
     const fresh = new Button(this, cx, 350, { label: 'New journey', width: 320, onActivate: () => this.go(SCENES.world, {}) });
     const load = new Button(this, cx, 420, {
-      label: 'Load last sleep',
+      label: 'Load last save',
       width: 320,
       enabled: canLoad,
       onActivate: () => this.go(SCENES.world, { load: true }),
     });
     const menu = new Button(this, cx, 490, { label: 'Main menu', width: 320, onActivate: () => this.go(SCENES.menu) });
     this.add
-      .text(cx, 535, canLoad ? describeSaveStatus(save) : 'No save to load — sleep in a shelter to save your journey.', {
+      .text(cx, 535, canLoad ? describeSaveStatus(save) : 'No save to load yet.', {
         fontFamily: FONTS.ui,
         fontSize: '14px',
         color: CSS.textDim,

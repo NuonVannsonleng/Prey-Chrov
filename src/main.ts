@@ -7,6 +7,8 @@ import { Pause } from './scenes/Pause';
 import { Preload } from './scenes/Preload';
 import { UI } from './scenes/UI';
 import { World } from './scenes/World';
+import { audio } from './systems/Audio';
+import { gameEvents } from './systems/GameEvents';
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -29,6 +31,12 @@ const game = new Phaser.Game({
   scene: [Boot, Preload, Menu, World, UI, Pause, GameOver],
 });
 
+// Procedural audio: unlocked by the first click/key (autoplay policy), fed by typed events.
+audio.install();
+gameEvents.on('sfx', (id) => audio.play(id));
+gameEvents.on('ambience', (levels) => audio.setAmbience(levels));
+
 if (DEBUG_HOOKS) {
-  (window as unknown as { __preyChrov: Phaser.Game }).__preyChrov = game;
+  (window as unknown as { __preyChrov: Phaser.Game; __preyAudio: typeof audio }).__preyChrov = game;
+  (window as unknown as { __preyAudio: typeof audio }).__preyAudio = audio;
 }

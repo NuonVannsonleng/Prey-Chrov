@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { CSS, FONTS, GAME_HEIGHT, GAME_WIDTH, SCENES } from '../config';
 import { Button } from '../ui/components/Button';
 import { ButtonList } from '../ui/components/ButtonList';
+import { SettingsPanel } from '../ui/panels/SettingsPanel';
 import { oncePerKeyEvent } from '../utils/keys';
 
 /** Ignore the Esc press that opened the menu (same physical key event). */
@@ -10,6 +11,8 @@ const ESC_GUARD_MS = 150;
 export class Pause extends Phaser.Scene {
   private openedAt = 0;
   private leaving = false;
+  private settings: SettingsPanel | null = null;
+  private list: ButtonList | null = null;
   private readonly escHandler = oncePerKeyEvent(() => this.onEsc());
 
   constructor() {
@@ -36,11 +39,15 @@ export class Pause extends Phaser.Scene {
         .setOrigin(0.5);
     }
     const resume = new Button(this, cx, 330, { label: 'Resume', onActivate: () => this.resume() });
-    const menu = new Button(this, cx, 400, { label: 'Main Menu', onActivate: () => this.toMenu() });
-    new ButtonList(this, [resume, menu]);
+    const settings = new Button(this, cx, 395, { label: 'Settings', onActivate: () => this.openSettings() });
+    const menu = new Button(this, cx, 460, { label: 'Main Menu', onActivate: () => this.toMenu() });
+    this.list = new ButtonList(this, [resume, settings, menu]);
+    this.settings = new SettingsPanel(this, () => {
+      this.list = new ButtonList(this, [resume, settings, menu]);
+    });
 
     this.add
-      .text(cx, 480, 'WASD move   ·   Shift sprint   ·   Esc resume   ·   F3 debug', {
+      .text(cx, 530, 'Your journey was saved when you paused  ·  Esc resume  ·  F3 debug', {
         fontFamily: FONTS.ui,
         fontSize: '16px',
         color: CSS.textDim,
@@ -52,8 +59,18 @@ export class Pause extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => kb?.off('keydown-ESC', this.escHandler));
   }
 
+  private openSettings(): void {
+    this.list?.destroy();
+    this.list = null;
+    this.settings?.open();
+  }
+
   private onEsc(): void {
     if (performance.now() - this.openedAt < ESC_GUARD_MS) return;
+    if (this.settings?.isOpen) {
+      this.settings.close();
+      return;
+    }
     this.resume();
   }
 

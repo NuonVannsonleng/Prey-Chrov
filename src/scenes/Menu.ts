@@ -5,12 +5,15 @@ import { TEX } from '../textures';
 import { Button } from '../ui/components/Button';
 import { ButtonList } from '../ui/components/ButtonList';
 import { ConfirmDialog } from '../ui/components/ConfirmDialog';
+import { SettingsPanel } from '../ui/panels/SettingsPanel';
+import { oncePerKeyEvent } from '../utils/keys';
 import { mulberry32, randRange } from '../utils/random';
 
 export class Menu extends Phaser.Scene {
   private starting = false;
   private dialog: ConfirmDialog | null = null;
   private list: ButtonList | null = null;
+  private settingsPanel: SettingsPanel | null = null;
 
   constructor() {
     super(SCENES.menu);
@@ -51,13 +54,23 @@ export class Menu extends Phaser.Scene {
     const reason =
       save.kind === 'valid' && !CAN_LOAD_SAVES ? 'Loading saves is not available in this build yet.' : describeSaveStatus(save);
     this.add
-      .text(cx, 543, canContinue ? reason : `Continue unavailable — ${reason}`, {
+      .text(cx, 536, canContinue ? reason : `Continue unavailable — ${reason}`, {
         fontFamily: FONTS.ui,
         fontSize: '16px',
         color: CSS.textDim,
       })
       .setOrigin(0.5);
-    this.list = new ButtonList(this, canContinue ? [cont, play] : [play, cont]);
+    const settingsBtn = new Button(this, cx, 570, { label: 'Settings', width: 220, height: 40, onActivate: () => this.openSettings() });
+    const order = canContinue ? [cont, play, settingsBtn] : [play, cont, settingsBtn];
+    this.list = new ButtonList(this, order);
+    this.settingsPanel = new SettingsPanel(this, () => {
+      this.list = new ButtonList(this, order);
+    });
+    const esc = oncePerKeyEvent((e: KeyboardEvent) => {
+      if (e.code === 'Escape' && this.settingsPanel?.isOpen) this.settingsPanel.close();
+    });
+    this.input.keyboard?.on('keydown', esc);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.input.keyboard?.off('keydown', esc));
 
     this.add
       .text(cx, GAME_HEIGHT - 34, '↑/↓ to choose · Enter to select    ·    Prototype build — all art is generated placeholder', {
@@ -85,6 +98,12 @@ export class Menu extends Phaser.Scene {
         else this.scene.restart();
       },
     );
+  }
+
+  private openSettings(): void {
+    this.list?.destroy();
+    this.list = null;
+    this.settingsPanel?.open();
   }
 
   private startGame(load: boolean): void {

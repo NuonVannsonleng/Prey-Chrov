@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { ItemStack } from './Inventory';
 import type { QuestView } from './Quest';
 import type { TabletDef } from '../data/schema';
+import type { AmbienceLevels, SfxId } from './Audio';
 
 export interface PlayerTick {
   x: number;
@@ -69,6 +70,12 @@ export interface GameEventMap {
   'quest:target': { x: number; y: number; label: string } | null;
   /** A key tablet was read: show its text. */
   'tablet:read': TabletDef;
+  /** One-shot sound effect (procedural audio). */
+  'sfx': SfxId;
+  /** Ambience mix levels 0..1 (sent a few times a second). */
+  'ambience': AmbienceLevels;
+  /** The game was saved (autosave, pause or sleep). */
+  'game:saved': { auto: boolean };
 }
 
 export interface SurvivalTick {

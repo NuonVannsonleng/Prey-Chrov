@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../../config';
+import { gameEvents } from '../../systems/GameEvents';
+import { getSettings } from '../../systems/Settings';
 import { TEX } from '../../textures';
 
 /**
@@ -34,6 +36,8 @@ export class WeatherOverlay {
   setRaining(raining: boolean): void {
     if (raining === this.raining) return;
     this.raining = raining;
+    // Reduced motion: far fewer streaks.
+    this.rain.setQuantity(getSettings().reducedMotion ? 1 : 3);
     if (raining) this.rain.start();
     else this.rain.stop();
     this.scene.tweens.killTweensOf(this.gloom);
@@ -44,6 +48,8 @@ export class WeatherOverlay {
   update(time: number): void {
     if (!this.raining || time < this.nextFlashAt) return;
     this.nextFlashAt = time + 18000 + Math.random() * 24000;
+    gameEvents.emit('sfx', 'thunder');
+    if (getSettings().reducedFlash) return;
     this.scene.tweens.killTweensOf(this.flash);
     this.flash.setAlpha(0.16);
     this.scene.tweens.add({ targets: this.flash, alpha: 0, duration: 700, ease: 'Sine.easeOut' });

@@ -14,9 +14,10 @@ const check = (name, ok, detail = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  (${detail})` : ''}`);
 };
 
-const server = await preview({ preview: { port: 4317, strictPort: true }, logLevel: 'silent' });
+const PORT = Number(process.env.SMOKE_PORT ?? 4317);
+const server = await preview({ preview: { port: PORT, strictPort: true }, logLevel: 'silent' });
 const SEED = 4242;
-const url = `http://localhost:4317/?debug&calm&seed=${SEED}`;
+const url = `http://localhost:${PORT}/?debug&calm&seed=${SEED}`;
 
 let browser;
 for (const channel of ['msedge', 'chrome']) {
@@ -92,7 +93,7 @@ try {
   const contDisabled = await page.evaluate(() => {
     const menu = window.__preyChrov.scene.getScene('Menu');
     const buttons = menu.children.list.filter((o) => typeof o.activate === 'function');
-    return buttons.length === 2 && buttons[0].enabled === true && buttons[1].enabled === false;
+    return buttons.length >= 2 && buttons[0].enabled === true && buttons[1].enabled === false;
   });
   check('Play enabled, Continue disabled without save', contDisabled);
 
@@ -856,10 +857,13 @@ try {
     await page.keyboard.press('Escape');
     await waitScene('Pause', 3000);
     await sleep(200);
-    await clickGame(640, 400);
+    await clickGame(640, 460);
     const menuOk = await waitScene('Menu');
     await sleep(500);
     await clickGame(640, 430);
+    await sleep(300);
+    // Pausing autosaves, so the menu now asks before starting a new journey.
+    if (await page.evaluate(() => window.__preyChrov.scene.getScene('Menu').dialog !== null)) await clickGame(640 - 100, 360 + 45);
     const worldOk = await waitScene('World');
     await sleep(500);
     counts.push(
@@ -881,6 +885,84 @@ try {
   }
   const first = JSON.stringify(counts[0]);
   check('no listener/object growth across restarts', counts.every((c) => JSON.stringify(c) === first), first);
+
+  // ---------- M7: persistence, settings, audio, performance ----------
+  const evalW7 = (fnBody, arg) =>
+    page.evaluate(
+      ({ fnBody, arg }) => {
+        const w = window.__preyChrov.scene.getScene('World');
+        const ui = window.__preyChrov.scene.getScene('UI');
+        return new Function('w', 'ui', 'arg', fnBody)(w, ui, arg);
+      },
+      { fnBody, arg },
+    );
+  await waitScene('World');
+  await sleep(600);
+  check('audio unlocks after the first input (autoplay-safe)', await page.evaluate(() => window.__preyAudio?.enabled === true));
+  const perf = await evalW7('return w.perfMs;');
+  check('World update stays cheap (< 8 ms average, headless)', perf < 8, perf.toFixed(2) + ' ms');
+
+  await page.evaluate(() => localStorage.removeItem('preychrov.save'));
+  await page.keyboard.press('Escape');
+  await waitScene('Pause', 3000);
+  await sleep(300);
+  check('pausing autosaves the journey', await page.evaluate(() => localStorage.getItem('preychrov.save') !== null));
+  await clickGame(640, 395);
+  await sleep(300);
+  const flashBefore = await page.evaluate(() => JSON.parse(localStorage.getItem("preychrov.settings") || "{}").reducedFlash === true);
+  await page.evaluate(() => window.__preyChrov.scene.getScene('Pause').settings.buttons[4].activate());
+  await sleep(150);
+  const flashAfter = await page.evaluate(() => JSON.parse(localStorage.getItem("preychrov.settings") || "{}").reducedFlash === true);
+  await page.screenshot({ path: OUT + '/25-settings.png' });
+  check("settings panel changes and persists a setting", flashBefore !== flashAfter);
+  await page.evaluate(() => window.__preyChrov.scene.getScene('Pause').settings.buttons[4].activate());
+  await page.keyboard.press('Escape');
+  await sleep(250);
+  await page.keyboard.press('Escape');
+  await sleep(300);
+  check('Esc backs out of settings, then resumes', (await sceneActive('World')) && !(await sceneActive('Pause')));
+
+  // A corrupt save never blank-screens: the menu explains it and New journey still works.
+  // (Reloading from the World autosaves on page hide, so corrupt the slot while on the menu.)
+  await page.reload();
+  await waitScene('Menu', 15000);
+  await page.evaluate(() => localStorage.setItem('preychrov.save', '{broken'));
+  await page.evaluate(() => window.__preyChrov.scene.getScene('Menu').scene.restart());
+  await sleep(900);
+  const menuText = await page.evaluate(() => window.__preyChrov.scene.getScene('Menu').children.list.filter((o) => o.type === 'Text').map((o) => o.text).join(' | '));
+  check('corrupt save: menu explains it, Continue disabled', /damaged/.test(menuText), menuText.slice(0, 160));
+  await clickGame(640, 430);
+  check('corrupt save: Play still starts a journey', await waitScene('World'));
+  await sleep(500);
+
+  // An M3-era v1 save migrates: stats/inventory/day kept, structures refunded as kits.
+  await page.reload();
+  await waitScene('Menu', 15000);
+  await page.evaluate(() =>
+    localStorage.setItem(
+      'preychrov.save',
+      JSON.stringify({
+        version: 1,
+        savedAt: 1700000000000,
+        clockSeconds: 1000,
+        player: { x: 500, y: 400, health: 77, hunger: 60, thirst: 55, stamina: 90 },
+        inventory: [{ item: 'wood', qty: 7 }, { item: 'stone_axe', qty: 1, durability: 40 }],
+        selected: 0,
+        structures: [{ type: 'campfire', x: 10, y: 20 }],
+        nodes: [{ id: 3, hp: 0, depleted: true, respawnInMs: 10, harvests: 1 }],
+        pickups: [{ item: 'stick', qty: 2, x: 1, y: 1 }],
+        objectives: ['gather'],
+      }),
+    ),
+  );
+  await page.evaluate(() => window.__preyChrov.scene.getScene('Menu').scene.restart());
+  await sleep(900);
+  await clickGame(640, 500);
+  const migrated = await waitScene('World');
+  await sleep(700);
+  const m = await evalW7('return { day: w.clock.dayNumber, hp: Math.round(w.survival.stats.health), wood: w.inventory.inventory.count("wood"), kits: w.inventory.inventory.count("campfire_kit"), sticks: w.inventory.inventory.count("stick") };');
+  check('old v1 save migrates and loads (day, stats, items, refunded kit)', migrated && m.day === 3 && m.hp === 77 && m.wood === 7 && m.kits === 1 && m.sticks === 2, JSON.stringify(m));
+  await page.evaluate(() => localStorage.clear());
 
   check('no console errors', errors.length === 0, errors.slice(0, 5).join(' | '));
 } catch (e) {

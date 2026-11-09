@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { FONTS } from '../../config';
+import { gameEvents } from '../../systems/GameEvents';
 
 export interface ButtonOptions {
   label: string;
@@ -77,7 +78,14 @@ export class Button extends Phaser.GameObjects.Container {
   }
 
   activate(): void {
-    if (this.enabled) this.onActivate();
+    if (!this.enabled) return;
+    gameEvents.emit('sfx', 'ui');
+    this.onActivate();
+  }
+
+  setLabel(label: string): this {
+    this.text.setText(label);
+    return this;
   }
 
   private redraw(): void {

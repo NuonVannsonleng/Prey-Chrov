@@ -6,6 +6,7 @@ import { TEX, type ResourceSprite } from '../textures';
 import { hash2, hashString, mulberry32 } from '../utils/random';
 import type { ItemStack } from './Inventory';
 import { rollLoot } from './Loot';
+import { getSettings } from './Settings';
 
 const CHIP_TINT: Record<ResourceSprite, number> = {
   tree: 0x8a6a44,
@@ -60,7 +61,7 @@ export class Gathering {
     if (result !== 'depleted') return { result, loot: [] };
 
     node.respawnAt = now + node.def.respawnSeconds * 1000;
-    if (node.def.sprite !== 'bush') this.scene.cameras.main.shake(70, 0.0015);
+    if (node.def.sprite !== 'bush' && !getSettings().reducedMotion) this.scene.cameras.main.shake(70, 0.0015);
 
     const lootTable = this.data.loot.get(node.def.lootTable);
     if (!lootTable) return { result, loot: [] };
