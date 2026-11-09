@@ -7,7 +7,7 @@ import { ButtonList } from '../ui/components/ButtonList';
 export interface GameOverData {
   day: number;
   time: string;
-  cause: 'starvation' | 'dehydration' | 'injury' | 'wildlife' | 'spirit' | 'poison';
+  cause: 'starvation' | 'dehydration' | 'injury' | 'wildlife' | 'spirit' | 'poison' | 'cold';
 }
 
 const CAUSE_TEXT: Record<GameOverData['cause'], string> = {
@@ -16,6 +16,7 @@ const CAUSE_TEXT: Record<GameOverData['cause'], string> = {
   injury: 'Your wounds were too much. Raw food can hurt; cook it at a campfire.',
   wildlife: 'An animal of the forest took you. Watch for the wind-up, then sidestep — or simply keep your distance.',
   spirit: 'The night took you. Spirits will not enter firelight: carry a torch and stay near your campfire.',
+  cold: 'The monsoon chill took you. In the rain, stay close to a campfire or under your shelter to keep warm.',
   poison: 'Venom took you. Poison wears off with time — rest and keep your distance from vipers.',
 };
 

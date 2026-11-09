@@ -23,6 +23,8 @@ export interface WorldState {
   objectives: Objectives;
   effects: StatusEffects;
   shrines: ReadonlyMap<string, number>;
+  openedChests: ReadonlySet<string>;
+  quest: { tabletsRead: readonly string[]; heartReached: boolean };
   /** World game-time clock in ms (node respawn timers are relative to it). */
   now: number;
 }
@@ -42,6 +44,7 @@ export function buildSave(w: WorldState): SaveData {
       hunger: s.hunger,
       thirst: s.thirst,
       stamina: s.stamina,
+      warmth: s.warmth,
     },
     inventory: w.inventory.inventory.snapshot(),
     selected: w.inventory.selected,
@@ -53,6 +56,9 @@ export function buildSave(w: WorldState): SaveData {
     refundItems: [],
     effects: w.effects.serialize(),
     shrines: [...w.shrines].map(([key, lastOffering]) => ({ key, lastOffering })),
+    openedChests: [...w.openedChests],
+    tabletsRead: [...w.quest.tabletsRead],
+    heartReached: w.quest.heartReached,
   };
 }
 

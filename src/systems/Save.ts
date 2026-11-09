@@ -49,7 +49,7 @@ export interface SaveData {
   seed: number;
   /** Game clock total seconds since day 1 00:00. */
   clockSeconds: number;
-  player: { x: number; y: number; health: number; hunger: number; thirst: number; stamina: number };
+  player: { x: number; y: number; health: number; hunger: number; thirst: number; stamina: number; warmth: number };
   inventory: (ItemStack | null)[];
   selected: number;
   structures: SavedStructure[];
@@ -68,6 +68,12 @@ export interface SaveData {
   effects: Array<{ id: string; remaining: number; dps: number; regenPerHour: number }>;
   /** Neak Ta shrines: key → clock seconds of the last offering. */
   shrines: Array<{ key: string; lastOffering: number }>;
+  /** Ruin chest keys already opened (no duplicate loot). */
+  openedChests: string[];
+  /** Key tablet ids read. */
+  tabletsRead: string[];
+  /** Main quest: the Heart of the Forest has been reached. */
+  heartReached: boolean;
 }
 
 function defaultStorage(): KeyValueStorage | null {
@@ -163,6 +169,7 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
       hunger: finite(p['hunger'], NaN),
       thirst: finite(p['thirst'], NaN),
       stamina: finite(p['stamina'], NaN),
+      warmth: finite(p['warmth'], NaN),
     },
     inventory: inventory.map((s: unknown) => {
       if (!isRec(s)) return null;
@@ -213,6 +220,9 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
       const remaining = finite(o['remaining'], 0);
       return remaining > 0 ? [{ id: o['id'], remaining, dps: Math.max(0, finite(o['dps'], 0)), regenPerHour: Math.max(0, finite(o['regenPerHour'], 0)) }] : [];
     }),
+    openedChests: (Array.isArray(rec['openedChests']) ? rec['openedChests'] : []).filter((o): o is string => typeof o === 'string'),
+    tabletsRead: (Array.isArray(rec['tabletsRead']) ? rec['tabletsRead'] : []).filter((o): o is string => typeof o === 'string'),
+    heartReached: rec['heartReached'] === true,
     shrines: (Array.isArray(rec['shrines']) ? rec['shrines'] : []).flatMap((o: unknown) => {
       if (!isRec(o) || typeof o['key'] !== 'string') return [];
       const last = finite(o['lastOffering'], NaN);

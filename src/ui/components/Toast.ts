@@ -8,7 +8,7 @@ export class Toast {
 
   constructor(private readonly scene: Phaser.Scene) {
     this.text = scene.add
-      .text(GAME_WIDTH / 2, 70, '', {
+      .text(GAME_WIDTH / 2, 104, '', {
         fontFamily: FONTS.ui,
         fontSize: '17px',
         fontStyle: '600',

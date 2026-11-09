@@ -221,8 +221,8 @@ try {
   await teleport(tree.x - 140, tree.y + 40);
   await evalW('for (const n of w.gathering.nodes) if (n.depleted) n.respawnAt = 0;');
   await sleep(300);
-  const bodiesAfter = await staticBodies();
-  check('static body count unchanged after deplete/respawn cycles', bodiesAfter === bodiesBefore, bodiesBefore + '→' + bodiesAfter);
+  const bodiesAfter = await evalW('const set = w.physics.world.staticBodies; let bad = 0; for (const n of w.chunks.nodes) { const live = set.contains(n.zone.body); if (n.depleted && n.def.sprite !== "bush" ? live : !live) bad++; } return { bad, nodes: w.chunks.nodes.length };');
+  check('every node collider is live exactly when it should be after respawn cycles', bodiesAfter.bad === 0, JSON.stringify({ bodiesBefore, bodiesAfter }));
 
   const hotbarMatches = await evalW(
     'for (let i = 0; i < 6; i++) {' +
@@ -537,6 +537,104 @@ try {
   await teleport(16, 30);
   await sleep(300);
 
+  // ---------- M6: monsoon, ruins, tablets, quest ----------
+  const setDayHour = (d, h) => evalW('w.clock.totalSeconds = (arg[0] - 1) * 480 + arg[1] * 20; w.nextWeatherAt = 0;', [d, h]);
+  await setDayHour(1, 9);
+  await sleep(700);
+  const forecast1 = await evalW('return ui.status.weatherText.text;');
+  check('forecast shows days until the monsoon', /Monsoon in 4 days/.test(forecast1), forecast1);
+
+  // Monsoon: rain, gloom, warmth drains when exposed, shelter restores it.
+  await teleport(16 + 900, 30);
+  await sleep(300);
+  await setDayHour(5, 12);
+  await sleep(800);
+  const rain = await evalW('return { raining: ui.weather.raining, label: ui.status.weatherText.text, flood: w.chunks.flood };');
+  check('monsoon starts on day 5 (rain + forecast label + flood level)', rain.raining && /Monsoon — day 1/.test(rain.label) && rain.flood > 0, JSON.stringify(rain));
+  await evalW('w.survival.stats.warmth = 100;');
+  await sleep(3000);
+  const drops = await evalW('return ui.weather.rain.getAliveParticleCount();');
+  check('rain streaks are falling', drops > 60, 'alive=' + drops);
+  const warmExposed = await evalW('return w.survival.stats.warmth;');
+  check('exposed in the rain, warmth drops', warmExposed < 99, 'warmth=' + warmExposed.toFixed(1));
+  await page.screenshot({ path: OUT + '/21-monsoon.png' });
+  await evalW('const p = w.player; w.structures.place("bamboo_shelter", p.x, p.y - 30);');
+  await sleep(2500);
+  const warmSheltered = await evalW('return w.survival.stats.warmth;');
+  check('under a shelter, warmth recovers', warmSheltered > warmExposed, warmExposed.toFixed(1) + '→' + warmSheltered.toFixed(1));
+  const floodSafe = await evalW(
+    'let n = 0; let solid = 0; for (const c of w.chunks.loaded.values()) for (const [t] of c.flooded) { n++; if (t.collides) solid++; } return { n, solid };',
+  );
+  check('flooded ground is walkable shallows (never solid)', floodSafe.solid === 0, JSON.stringify(floodSafe));
+
+  // Ruins: chest loot once; tablet → journal + quest.
+  await setDayHour(2, 10);
+  await sleep(600);
+  const site = await evalW('const s = w.gen.tabletSites()[0]; return { x: s.tx * 32 + 16, y: s.ty * 32 + 16 };');
+  await teleport(site.x, site.y + 4 * 32);
+  await sleep(1200);
+  const chest = await evalW('const p = w.player; const c = w.chunks.ruins.filter((r) => r.kind === "chest").sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0]; return c ? { key: c.key, x: c.x, y: c.y } : null;');
+  check('ruin chest exists at a tablet ruin', !!chest);
+  if (chest) {
+    await teleport(chest.x, chest.y + 22);
+    await sleep(200);
+    await hold(['KeyW'], 80);
+    const itemsBefore = await evalW('return w.inventory.inventory.snapshot().reduce((n, s) => n + (s ? s.qty : 0), 0) + w.pickups.activeCount;');
+    await page.keyboard.press('KeyE');
+    await sleep(1500);
+    const opened = await evalW('return w.openedChests.has(arg);', chest.key);
+    const itemsAfter = await evalW('return w.inventory.inventory.snapshot().reduce((n, s) => n + (s ? s.qty : 0), 0);');
+    check('opening a chest gives loot', opened && itemsAfter > 0, 'before=' + itemsBefore + ' after=' + itemsAfter);
+    await page.keyboard.press('KeyE');
+    await sleep(1200);
+    const itemsAgain = await evalW('return w.inventory.inventory.snapshot().reduce((n, s) => n + (s ? s.qty : 0), 0);');
+    check('a chest never gives loot twice', itemsAgain === itemsAfter, itemsAfter + '→' + itemsAgain);
+    await page.screenshot({ path: OUT + '/22-ruin-chest.png' });
+  }
+  const tab = await evalW('const t = w.chunks.ruins.find((r) => r.kind === "tablet"); return t ? { id: t.id, x: t.x, y: t.y } : null;');
+  check('the ruin holds a key tablet', !!tab, JSON.stringify(tab));
+  if (tab) {
+    await teleport(tab.x, tab.y + 22);
+    await sleep(200);
+    await hold(['KeyW'], 80);
+    await page.keyboard.press('KeyE');
+    await sleep(400);
+    const read = await evalW('return { open: ui.tabletView.isOpen, km: ui.tabletView.km.text, read: w.quest.tabletsRead.length, modal: w.modalOpen };');
+    await page.screenshot({ path: OUT + '/23-tablet.png' });
+    check('reading a tablet shows its text and records it', read.open && read.km.length > 0 && read.read === 1 && read.modal, JSON.stringify(read));
+    await page.keyboard.press('Escape');
+    await sleep(200);
+    await page.keyboard.press('KeyJ');
+    await sleep(300);
+    const journal = await evalW('return { open: ui.journal.isOpen, quest: ui.journal.questText.text, t1: ui.journal.tabletTitles[0].text };');
+    await page.screenshot({ path: OUT + '/24-journal.png' });
+    check('journal shows quest progress and the tablet', journal.open && /1\/5/.test(journal.quest), JSON.stringify(journal).slice(0, 200));
+    await page.keyboard.press('Escape');
+    await sleep(200);
+    check('Esc closes journal without pausing', !(await evalW('return ui.journal.isOpen || w.modalOpen;')) && !(await sceneActive('Pause')));
+  }
+  const arrow = await evalW('return { visible: ui.questArrow.arrow.visible, label: ui.questArrow.label.text };');
+  await teleport(16, 30);
+  await sleep(1300);
+  const arrowHome = await evalW('return { visible: ui.questArrow.arrow.visible, label: ui.questArrow.label.text };');
+  check('objective arrow points to the next tablet from afar', arrowHome.visible && /tablet/i.test(arrowHome.label), JSON.stringify({ arrow, arrowHome }));
+
+  // All five → the Heart is revealed and reachable.
+  await evalW('for (const t of w.gameData.tablets) w.quest.readTablet(t.id); w.nextQuestTargetAt = 0;');
+  await sleep(1300);
+  const heartTarget = await evalW('return ui.questArrow.label.text;');
+  check('after five tablets the arrow leads to the Heart of the Forest', /Heart/.test(heartTarget), heartTarget);
+  const heart = await evalW('const h = w.gen.heartSite(); return { x: h.tx * 32 + 16, y: h.ty * 32 + 16 };');
+  await teleport(heart.x, heart.y + 40);
+  await sleep(1500);
+  check('reaching the Heart completes the current quest stage', (await evalW('return w.quest.stage;')) === 'done');
+  // Restore a calm state for later checks.
+  await evalW('w.quest = new w.quest.constructor(w.gameData, ["tablet_1"], false); w.nextQuestTargetAt = 0;');
+  await setDayHour(1, 10);
+  await evalW('w.survival.stats.warmth = 100; w.survival.stats.health = 100;');
+  await teleport(16, 30);
+  await sleep(800);
+
   // ---------- M3: survival, crafting, structures, night, sleep/save, death ----------
   const toPageXY = async (gx, gy) => {
     const box = await page.locator('canvas').boundingBox();
@@ -560,7 +658,7 @@ try {
   await teleport(16, 30);
   await evalW('w.inventory.inventory.restore([]); w.inventory.selected = 0; w.inventory.broadcast();');
   await sleep(150);
-  const hud = await evalW('return !!ui.status && ui.status.bars.length === 4 && ui.status.bars[0].value.text !== "";');
+  const hud = await evalW('return !!ui.status && ui.status.bars.length >= 4 && ui.status.bars[0].value.text !== "";');
   check('survival bars shown', hud);
 
   // Crafting blocked without materials, then succeeds.
@@ -666,7 +764,7 @@ try {
   await clickWorld(pl2.x, pl2.y - 50);
   await sleep(200);
   const shelters = await evalW('return w.structures.list.filter((s) => s.def.id === "bamboo_shelter").map((s) => ({ x: s.x, y: s.y }));');
-  check('bamboo shelter placed', shelters.length === 1, JSON.stringify(shelters));
+  check('bamboo shelter placed', shelters.some((sh) => Math.abs(sh.x - 16) < 80), JSON.stringify(shelters));
   await setHour(12);
   await hold(['KeyW'], 200);
   await page.keyboard.press('KeyE');
@@ -705,6 +803,8 @@ try {
   const afterLoad = await evalW('return { day: w.clock.dayNumber, roast: w.inventory.inventory.count("roasted_bamboo_shoot"), axe: w.inventory.inventory.count("stone_axe"), structures: w.structures.list.length };');
   check('Continue restores day, inventory and structures', JSON.stringify(afterLoad) === JSON.stringify(beforeReload), JSON.stringify({ beforeReload, afterLoad }));
   check('Continue restores the same seed and world', (await evalW('return w.seed;')) === SEED && (await chunkSig()) === sigBefore);
+  const m6Saved = await evalW('return { tablets: w.quest.tabletsRead.length, chests: w.openedChests.size };');
+  check('Continue restores read tablets and opened chests', m6Saved.tablets >= 1 && m6Saved.chests >= 1, JSON.stringify(m6Saved));
 
   // Corrupt save never blank-screens: menu shows it as damaged.
   // (checked in unit tests; here we verify death → GameOver instead)

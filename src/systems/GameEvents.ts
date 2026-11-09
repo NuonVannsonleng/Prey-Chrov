@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 import type { ItemStack } from './Inventory';
+import type { QuestView } from './Quest';
+import type { TabletDef } from '../data/schema';
 
 export interface PlayerTick {
   x: number;
@@ -60,6 +62,13 @@ export interface GameEventMap {
   'structures:changed': Array<{ x: number; y: number; kind: string }>;
   /** Active status effects (sent about once a second). */
   'effects:changed': Array<{ id: string; remaining: number }>;
+  /** Weather/forecast line and rain state (sent when it changes). */
+  'weather:changed': { raining: boolean; label: string; flood: number };
+  'quest:changed': QuestView;
+  /** Current objective location (world px) for the edge arrow, or null when none. */
+  'quest:target': { x: number; y: number; label: string } | null;
+  /** A key tablet was read: show its text. */
+  'tablet:read': TabletDef;
 }
 
 export interface SurvivalTick {
@@ -74,6 +83,9 @@ export interface SurvivalTick {
   hungry: boolean;
   thirsty: boolean;
   exhausted: boolean;
+  warmth: number;
+  cold: boolean;
+  raining: boolean;
 }
 
 export interface ClockTick {

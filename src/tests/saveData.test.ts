@@ -11,7 +11,7 @@ const full: SaveData = {
   savedAt: 1_700_000_000_000,
   seed: 12345,
   clockSeconds: 650,
-  player: { x: 900, y: 600, health: 70, hunger: 60, thirst: 50, stamina: 90 },
+  player: { x: 900, y: 600, health: 70, hunger: 60, thirst: 50, stamina: 90, warmth: 80 },
   inventory: [{ item: 'stone_axe', qty: 1, durability: 40 }, null, { item: 'wood', qty: 12 }],
   selected: 2,
   structures: [{ type: 'campfire', x: 1000, y: 640 }],
@@ -22,6 +22,9 @@ const full: SaveData = {
   refundItems: [],
   effects: [{ id: 'poison', remaining: 4, dps: 1.2, regenPerHour: 0 }],
   shrines: [{ key: '-1,0:5', lastOffering: 300 }],
+  openedChests: ['5,6:12'],
+  tabletsRead: ['tablet_1'],
+  heartReached: false,
 };
 
 describe('parseSave', () => {

@@ -11,6 +11,9 @@ import { CraftingPanel } from '../ui/panels/CraftingPanel';
 import { Hotbar } from '../ui/panels/Hotbar';
 import { InventoryPanel } from '../ui/panels/InventoryPanel';
 import { Minimap } from '../ui/panels/Minimap';
+import { JournalPanel, TabletView } from '../ui/panels/JournalPanel';
+import { QuestArrow } from '../ui/panels/QuestArrow';
+import { WeatherOverlay } from '../ui/panels/WeatherOverlay';
 import { StatusHud } from '../ui/panels/StatusHud';
 
 const HINTS = [
@@ -22,6 +25,7 @@ const HINTS = [
   ['1–6 / Wheel', 'Hotbar'],
   ['I', 'Inventory'],
   ['C', 'Crafting'],
+  ['J', 'Journal (quest, tablets)'],
   ['Q', 'Drop one (Ctrl: stack)'],
   ['Esc', 'Close / pause'],
   ['H', 'Hide help'],
@@ -38,6 +42,10 @@ export class UI extends Phaser.Scene {
   private crafting!: CraftingPanel;
   private status!: StatusHud;
   private minimap!: Minimap;
+  private journal!: JournalPanel;
+  private tabletView!: TabletView;
+  private questArrow!: QuestArrow;
+  private weather!: WeatherOverlay;
   private hurtFlash!: Phaser.GameObjects.Rectangle;
   private placing = false;
   private toast!: Toast;
@@ -67,7 +75,9 @@ export class UI extends Phaser.Scene {
     this.add
       .text(24, 20, 'ព្រៃជ្រៅ', { fontFamily: FONTS.title, fontSize: '22px', color: CSS.gold, padding: { top: 10, bottom: 6 } })
       .setAlpha(0.9);
+    this.weather = new WeatherOverlay(this);
     this.status = new StatusHud(this);
+    this.questArrow = new QuestArrow(this);
     this.minimap = new Minimap(this);
     this.hints = this.buildHints();
     this.hotbar = new Hotbar(this);
@@ -110,6 +120,8 @@ export class UI extends Phaser.Scene {
       () => this.dialog !== null,
     );
     this.crafting = new CraftingPanel(this);
+    this.journal = new JournalPanel(this);
+    this.tabletView = new TabletView(this);
     this.toast = new Toast(this);
 
     onSceneEvent(this, 'world:info', ({ seed }) => this.minimap.setSeed(seed));
@@ -117,6 +129,8 @@ export class UI extends Phaser.Scene {
     onSceneEvent(this, 'player:tick', (t) => {
       this.lastTick = t;
       this.minimap.update(t.x, t.y);
+      if (this.modal) this.questArrow.setVisible(false);
+      else this.questArrow.update(t.x, t.y);
       if (this.sprintTag.visible !== t.sprinting) this.sprintTag.setVisible(t.sprinting);
     });
     onSceneEvent(this, 'debug:toggle', (on) => {
@@ -132,6 +146,16 @@ export class UI extends Phaser.Scene {
     onSceneEvent(this, 'survival:tick', (t) => this.status.updateSurvival(t));
     onSceneEvent(this, 'clock:tick', (c) => this.status.updateClock(c));
     onSceneEvent(this, 'effects:changed', (list) => this.status.updateEffects(list));
+    onSceneEvent(this, 'weather:changed', ({ raining, label }) => {
+      this.status.updateWeather(label, raining);
+      this.weather.setRaining(raining);
+    });
+    onSceneEvent(this, 'quest:changed', (q) => this.journal.render(q));
+    onSceneEvent(this, 'quest:target', (t) => this.questArrow.setTarget(t));
+    onSceneEvent(this, 'tablet:read', (t) => {
+      this.tabletView.show(t);
+      this.syncModal();
+    });
     onSceneEvent(this, 'objectives:changed', (list) => this.status.updateObjectives(list));
     onSceneEvent(this, 'craft:stations', (s) => this.crafting.setStations(s));
     onSceneEvent(this, 'ui:open-crafting', () => {
@@ -166,6 +190,9 @@ export class UI extends Phaser.Scene {
   }
 
   override update(time: number): void {
+    this.weather.update(time);
+    if (this.tabletView.isOpen !== this.modal && this.tabletView.isOpen) this.syncModal();
+    if (!this.tabletView.isOpen && this.modal && !this.panel.isOpen && !this.crafting.isOpen && !this.journal.isOpen && !this.dialog) this.syncModal();
     if (!this.debugOn || time - this.lastDebugUpdate < 200) return;
     this.lastDebugUpdate = time;
     const t = this.lastTick;
@@ -180,6 +207,8 @@ export class UI extends Phaser.Scene {
   private onKey(event: KeyboardEvent): void {
     if (event.code === 'Escape') {
       if (this.dialog) this.dialog.cancel();
+      else if (this.tabletView.isOpen) this.closeTablet();
+      else if (this.journal.isOpen) this.setJournal(false);
       else if (this.crafting.isOpen) this.setCrafting(false);
       else if (this.panel.isOpen) this.setPanel(false);
       else if (this.placing) gameEvents.emit('placement:cancel');
@@ -192,6 +221,16 @@ export class UI extends Phaser.Scene {
       return;
     }
     if (this.dialog) return;
+    if (this.tabletView.isOpen) {
+      if (event.code === 'KeyE' || event.code === 'Enter' || event.code === 'Space') this.closeTablet();
+      return;
+    }
+    if (event.code === 'KeyJ') {
+      if (this.panel.isOpen) this.setPanel(false);
+      if (this.crafting.isOpen) this.setCrafting(false);
+      this.setJournal(!this.journal.isOpen);
+      return;
+    }
     if (event.code === 'KeyI') {
       if (this.crafting.isOpen) this.setCrafting(false);
       this.setPanel(!this.panel.isOpen);
@@ -236,6 +275,17 @@ export class UI extends Phaser.Scene {
     this.syncModal();
   }
 
+  private setJournal(open: boolean): void {
+    if (open) this.journal.open();
+    else this.journal.close();
+    this.syncModal();
+  }
+
+  private closeTablet(): void {
+    this.tabletView.close();
+    this.syncModal();
+  }
+
   private setCrafting(open: boolean): void {
     if (open) this.crafting.open();
     else this.crafting.close();
@@ -249,7 +299,7 @@ export class UI extends Phaser.Scene {
   }
 
   private syncModal(): void {
-    const modal = this.panel.isOpen || this.crafting.isOpen || this.dialog !== null;
+    const modal = this.panel.isOpen || this.crafting.isOpen || this.journal.isOpen || this.tabletView.isOpen || this.dialog !== null;
     if (modal === this.modal) return;
     this.modal = modal;
     gameEvents.emit('ui:modal', modal);

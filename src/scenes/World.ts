@@ -9,7 +9,9 @@ import { Encounters } from '../systems/Encounters';
 import { Projectiles } from '../systems/Projectiles';
 import { StatusEffects, type EffectId } from '../systems/StatusEffects';
 import type { Enemy } from '../entities/Enemy';
-import { hash2, mulberry32 } from '../utils/random';
+import { hash2, hashString, mulberry32 } from '../utils/random';
+import { forecast, weatherModifiers, type Forecast } from '../systems/Season';
+import { QuestLog } from '../systems/Quest';
 import { rollLoot } from '../systems/Loot';
 import { GameClock, darknessAt, inHourWindow, phaseOf } from '../systems/Clock';
 import { gameEvents, onSceneEvent, type ClockTick, type PlayerTick, type SurvivalTick } from '../systems/GameEvents';
@@ -103,6 +105,12 @@ export class World extends Phaser.Scene {
   private kills = 0;
   private pendingAttack = false;
   private readonly lightHit = { x: 0, y: 0, radius: 0 };
+  private quest!: QuestLog;
+  private readonly openedChests = new Set<string>();
+  private weather: Forecast = { monsoon: false, monsoonDay: 0, daysUntil: 0, flood: 0, label: '' };
+  private nextWeatherAt = 0;
+  private nextQuestTargetAt = 0;
+  private weatherKey = '';
   /**
    * Discrete presses are captured from keydown events (not Key.JustDown, which Phaser clears
    * when a key is pressed and released within one frame) and consumed in update().
@@ -129,6 +137,9 @@ export class World extends Phaser.Scene {
     hungry: false,
     thirsty: false,
     exhausted: false,
+    warmth: 100,
+    cold: false,
+    raining: false,
   };
   private readonly clockTick: ClockTick = { day: 1, label: '', phase: '', darkness: 0 };
 
@@ -161,7 +172,12 @@ export class World extends Phaser.Scene {
     this.gathering = new Gathering(this, this.chunks.nodes, this.gameData, this.seed);
 
     this.floating = new FloatingText(this);
-    this.interaction = new Interaction(this, this.chunks.nodes, (x, y) => this.chunks.tileAtWorld(x, y), this.structures.list, this.chunks.shrines);
+    this.interaction = new Interaction(this, this.chunks.nodes, (x, y) => this.chunks.tileAtWorld(x, y), this.structures.list, this.chunks.shrines, this.chunks.ruins);
+    this.quest = new QuestLog(this.gameData);
+    this.openedChests.clear();
+    this.nextWeatherAt = 0;
+    this.nextQuestTargetAt = 0;
+    this.weatherKey = '';
     this.effects = new StatusEffects();
     this.shrineState.clear();
     this.projectiles = new Projectiles(this, {
@@ -237,6 +253,10 @@ export class World extends Phaser.Scene {
       gameEvents.emit('objectives:changed', this.objectives.view());
       gameEvents.emit('craft:stations', [...this.stations]);
       gameEvents.emit('world:info', { seed: this.seed });
+      gameEvents.emit('quest:changed', this.quest.view());
+      this.weatherKey = '';
+      this.nextWeatherAt = 0;
+      this.nextQuestTargetAt = 0;
       this.emitStructures();
     });
     this.scene.launch(SCENES.ui);
@@ -286,7 +306,9 @@ export class World extends Phaser.Scene {
 
     p.step(this.keys, dt, this.now, inputOn, this.survival.canSprint, this.terrainSpeed(p.x, p.y));
     this.clock.advance(dt / 1000);
-    this.survival.update(dt / 1000, this.clock.secondsPerHour, p.sprinting);
+    this.updateWeather();
+    this.survival.update(dt / 1000, this.clock.secondsPerHour, p.sprinting, weatherModifiers(this.weather, this.gameData.season));
+    this.survival.updateWarmth(dt / 1000, this.clock.secondsPerHour, this.weather.monsoon && !this.isSheltered(p.x, p.y), this.gameData.season.cold);
     const fx = this.effects.update(dt / 1000, this.clock.secondsPerHour);
     if (fx.damage > 0) this.survival.damage(fx.damage, 'poison');
     if (fx.heal > 0) this.survival.heal(fx.heal);
@@ -311,6 +333,8 @@ export class World extends Phaser.Scene {
     });
     this.projectiles.update(dt, this.now);
     this.updateShrines();
+    this.updateRuins();
+    this.updateQuestTarget();
     this.emitEffects();
     if (this.building.active) this.updateBuilding();
 
@@ -474,6 +498,114 @@ export class World extends Phaser.Scene {
     this.nextEffectsEmitAt = 0;
   }
 
+  // ---------- Weather, ruins, quest ----------
+
+  /** Recomputes the forecast twice a (real) second; floods and HUD only change on transitions. */
+  private updateWeather(): void {
+    if (this.now < this.nextWeatherAt) return;
+    this.nextWeatherAt = this.now + 500;
+    this.weather = forecast(this.clock.dayNumber, this.clock.hour, this.gameData.season);
+    this.chunks.setFlood(this.weather.flood, this.gameData.season.floodRiverWidth);
+    const key = `${this.weather.label}|${this.weather.monsoon}|${this.chunks.flood}`;
+    if (key === this.weatherKey) return;
+    const started = this.weather.monsoon && !this.weatherKey.includes('|true|');
+    this.weatherKey = key;
+    gameEvents.emit('weather:changed', { raining: this.weather.monsoon, label: this.weather.label, flood: this.chunks.flood });
+    if (started) gameEvents.emit('toast', { text: 'The monsoon breaks. Stay near fire or shelter to keep warm.', tone: 'warn' });
+  }
+
+  /** Under a shelter's roof or by a campfire's warmth. */
+  private isSheltered(x: number, y: number): boolean {
+    const cold = this.gameData.season.cold;
+    for (const s of this.structures.list) {
+      const d = Math.hypot(s.x - x, s.y - y);
+      if (s.def.interaction === 'sleep' && d <= cold.shelterRadius) return true;
+      if (s.def.lightRadius > 0 && d <= s.def.lightRadius * 0.6) return true;
+    }
+    return false;
+  }
+
+  /** Chest frames (open/closed) and tablet frames (read/unread) follow saved state. */
+  private updateRuins(): void {
+    for (const r of this.chunks.ruins) {
+      const done = r.kind === 'chest' ? this.openedChests.has(r.key) : this.quest.hasRead(r.id);
+      const frame = done ? 1 : 0;
+      if (Number(r.image.frame.name) !== frame) r.image.setFrame(frame);
+    }
+  }
+
+  /** Each chest opens once; its loot is seeded by (world seed, chest key) so it can't be re-rolled. */
+  private openChest(key: string, x: number, y: number): void {
+    if (this.openedChests.has(key)) {
+      gameEvents.emit('toast', { text: 'The chest is empty.', tone: 'info' });
+      return;
+    }
+    const table = this.gameData.loot.get('ruin_chest');
+    if (!table) return;
+    this.openedChests.add(key);
+    this.player.swing(x, y - 8, this.now, GATHER.swingMs * 2);
+    const rng = mulberry32(hash2(hashString(key), 99, this.seed));
+    for (const stack of rollLoot(table, rng)) {
+      if (!this.pickups.spawn(stack.item, stack.qty, x, y + 10, this.now, 250, 10)) this.inventory.add(stack.item, stack.qty);
+    }
+    this.floating.show(x, y - 30, 'The lid grinds open', '#e6b866');
+  }
+
+  private readTablet(id: string): void {
+    const tablet = this.gameData.tablets.find((t) => t.id === id);
+    if (!tablet) return;
+    const isNew = this.quest.readTablet(id);
+    gameEvents.emit('tablet:read', tablet);
+    if (isNew) {
+      gameEvents.emit('quest:changed', this.quest.view());
+      const n = this.quest.tabletsRead.length;
+      gameEvents.emit('toast', {
+        text: n >= this.gameData.tablets.length ? 'All five tablets read. The way to the Heart of the Forest is revealed.' : `Tablet ${n} of ${this.gameData.tablets.length} recorded in your journal (J)`,
+        tone: 'info',
+      });
+      this.nextQuestTargetAt = 0;
+    }
+  }
+
+  /** Objective arrow target: nearest unread tablet ruin, then the Heart of the Forest. */
+  private updateQuestTarget(): void {
+    if (this.now < this.nextQuestTargetAt) return;
+    this.nextQuestTargetAt = this.now + 1000;
+    const p = this.player;
+    const stage = this.quest.stage;
+    if (stage === 'done') {
+      gameEvents.emit('quest:target', null);
+      return;
+    }
+    if (stage === 'heart') {
+      const h = this.gen.heartSite();
+      const hx = h.tx * 32 + 16;
+      const hy = h.ty * 32 + 16;
+      if (Math.hypot(hx - p.x, hy - p.y) < 4 * 32) {
+        this.quest.reachHeart();
+        gameEvents.emit('quest:changed', this.quest.view());
+        gameEvents.emit('toast', {
+          text: 'You reach the Heart of the Forest. A wall of ancient roots seals the way — its story continues in the next chapter.',
+          tone: 'info',
+        });
+        gameEvents.emit('quest:target', null);
+        return;
+      }
+      gameEvents.emit('quest:target', { x: hx, y: hy, label: 'Heart of the Forest' });
+      return;
+    }
+    let best: { x: number; y: number; d: number } | null = null;
+    this.gen.tabletSites().forEach((site, i) => {
+      if (this.quest.hasRead(`tablet_${i + 1}`)) return;
+      const x = site.tx * 32 + 16;
+      const y = (site.ty + 3) * 32 + 16;
+      const d = Math.hypot(x - p.x, y - p.y);
+      if (!best || d < best.d) best = { x, y, d };
+    });
+    const target = best as { x: number; y: number; d: number } | null;
+    gameEvents.emit('quest:target', target ? { x: target.x, y: target.y, label: 'Stone tablet (ruins)' } : null);
+  }
+
   private emitEffects(): void {
     if (this.now < this.nextEffectsEmitAt) return;
     this.nextEffectsEmitAt = this.now + 500;
@@ -502,7 +634,8 @@ export class World extends Phaser.Scene {
   }
 
   private darkness(): number {
-    return darknessAt(this.clock.hour, this.gameData.survival.darkness);
+    const base = darknessAt(this.clock.hour, this.gameData.survival.darkness);
+    return this.weather.monsoon ? Math.min(0.85, base + this.gameData.season.rainDarkness) : base;
   }
 
   private renderLighting(): void {
@@ -558,13 +691,17 @@ export class World extends Phaser.Scene {
     st.hungry = s.hungry;
     st.thirsty = s.thirsty;
     st.exhausted = s.exhausted;
+    st.warmth = s.stats.warmth;
+    st.cold = s.cold;
+    st.raining = this.weather.monsoon;
     gameEvents.emit('survival:tick', st);
 
     const c = this.clockTick;
     const dark = this.darkness();
     c.day = this.clock.dayNumber;
     c.label = this.clock.label();
-    c.phase = phaseOf(dark, this.clock.hour);
+    // Phase follows daylight only; rain gloom does not turn noon into dusk.
+    c.phase = phaseOf(darknessAt(this.clock.hour, this.gameData.survival.darkness), this.clock.hour);
     c.darkness = dark;
     gameEvents.emit('clock:tick', c);
   }
@@ -595,6 +732,10 @@ export class World extends Phaser.Scene {
       }
       case 'shrine':
         return `E — ${this.gameData.shrines.text.prompt}`;
+      case 'ruin':
+        if (target.kind !== 'ruin') return '';
+        if (target.ruin.kind === 'chest') return this.openedChests.has(target.ruin.key) ? 'An empty stone chest' : 'E — Open the stone chest';
+        return this.quest.hasRead(target.ruin.id) ? 'E — Read the tablet again' : 'E — Read the stone tablet';
       default:
         return '';
     }
@@ -619,6 +760,11 @@ export class World extends Phaser.Scene {
       this.floating.show(p.x, p.y - 34, 'Fresh water', '#4fc2b4');
       gameEvents.emit('player:drank');
       this.completeObjective('drink');
+      return;
+    }
+    if (target.kind === 'ruin' && pressed) {
+      if (target.ruin.kind === 'chest') this.openChest(target.ruin.key, target.ruin.x, target.ruin.y);
+      else this.readTablet(target.ruin.id);
       return;
     }
     if (target.kind === 'shrine' && pressed) {
@@ -799,6 +945,8 @@ export class World extends Phaser.Scene {
         objectives: this.objectives,
         effects: this.effects,
         shrines: this.shrineState,
+        openedChests: this.openedChests,
+        quest: { tabletsRead: this.quest.tabletsRead, heartReached: this.quest.heartReached },
         now: this.now,
       }),
     );
@@ -827,6 +975,7 @@ export class World extends Phaser.Scene {
       ...(Number.isFinite(ps.hunger) ? { hunger: ps.hunger } : {}),
       ...(Number.isFinite(ps.thirst) ? { thirst: ps.thirst } : {}),
       ...(Number.isFinite(ps.stamina) ? { stamina: ps.stamina } : {}),
+      ...(Number.isFinite(ps.warmth) ? { warmth: ps.warmth } : {}),
     });
     const { slots, removed } = sanitizeInventory(save.inventory, this.gameData, this.inventory.inventory.size);
     this.inventory.inventory.restore(slots);
@@ -875,6 +1024,8 @@ export class World extends Phaser.Scene {
     this.objectives = new Objectives(save.objectives);
     this.effects.restore(save.effects.map((e) => ({ ...e, id: e.id as EffectId })));
     for (const s of save.shrines) this.shrineState.set(s.key, s.lastOffering);
+    for (const k of save.openedChests) this.openedChests.add(k);
+    this.quest = new QuestLog(this.gameData, save.tabletsRead, save.heartReached);
   }
 
   /**

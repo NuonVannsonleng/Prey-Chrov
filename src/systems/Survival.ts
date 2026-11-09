@@ -1,13 +1,18 @@
-import type { ItemDef, SurvivalConfig } from '../data/schema';
+import type { ItemDef, SeasonConfig, SurvivalConfig } from '../data/schema';
 
 export interface SurvivalStats {
   health: number;
   hunger: number;
   thirst: number;
   stamina: number;
+  /** 0..100. Only drops during the monsoon while exposed to the rain. */
+  warmth: number;
 }
 
-export type DeathCause = 'starvation' | 'dehydration' | 'injury' | 'wildlife' | 'spirit' | 'poison';
+export const MAX_WARMTH = 100;
+const NO_MODS: { hunger: number; thirst: number } = { hunger: 1, thirst: 1 };
+
+export type DeathCause = 'starvation' | 'dehydration' | 'injury' | 'wildlife' | 'spirit' | 'poison' | 'cold';
 
 /**
  * Health / hunger / thirst / stamina. Pure logic: feed it real seconds and the clock's
@@ -29,6 +34,7 @@ export class Survival {
       hunger: clamp(initial?.hunger ?? cfg.maxHunger, 0, cfg.maxHunger),
       thirst: clamp(initial?.thirst ?? cfg.maxThirst, 0, cfg.maxThirst),
       stamina: clamp(initial?.stamina ?? cfg.maxStamina, 0, cfg.maxStamina),
+      warmth: clamp(initial?.warmth ?? MAX_WARMTH, 0, MAX_WARMTH),
     };
   }
 
@@ -50,14 +56,17 @@ export class Survival {
   }
 
   /** dtSeconds = real seconds of game time elapsed; sprinting = player actually sprinted this frame. */
-  update(dtSeconds: number, secondsPerHour: number, sprinting: boolean): void {
+  /**
+   * `mods` scale hunger/thirst drain (monsoon: thirst slower, hunger faster).
+   */
+  update(dtSeconds: number, secondsPerHour: number, sprinting: boolean, mods = NO_MODS): void {
     if (this.dead || !(dtSeconds > 0)) return;
     const c = this.cfg;
     const s = this.stats;
     const hours = dtSeconds / secondsPerHour;
 
-    s.hunger = clamp(s.hunger - c.hungerPerHour * hours, 0, c.maxHunger);
-    s.thirst = clamp(s.thirst - c.thirstPerHour * hours, 0, c.maxThirst);
+    s.hunger = clamp(s.hunger - c.hungerPerHour * mods.hunger * hours, 0, c.maxHunger);
+    s.thirst = clamp(s.thirst - c.thirstPerHour * mods.thirst * hours, 0, c.maxThirst);
 
     if (s.thirst <= 0) this.damage(c.dehydrationDamagePerHour * hours, 'dehydration');
     if (s.hunger <= 0) this.damage(c.starvationDamagePerHour * hours, 'starvation');
@@ -76,6 +85,24 @@ export class Survival {
       }
     }
     if (this.exhausted && s.stamina >= c.sprintMinStamina) this.exhausted = false;
+  }
+
+  /**
+   * Cold: while `exposed` (raining, away from shelter and fire) warmth drops; otherwise it
+   * recovers. At zero warmth health drains slowly. Never touches warmth outside the monsoon
+   * beyond recovering it.
+   */
+  updateWarmth(dtSeconds: number, secondsPerHour: number, exposed: boolean, cold: SeasonConfig['cold']): void {
+    if (this.dead || !(dtSeconds > 0)) return;
+    const s = this.stats;
+    const hours = dtSeconds / secondsPerHour;
+    if (exposed) s.warmth = clamp(s.warmth - cold.lossPerHour * hours, 0, MAX_WARMTH);
+    else s.warmth = clamp(s.warmth + cold.recoverPerHour * hours, 0, MAX_WARMTH);
+    if (exposed && s.warmth <= 0) this.damage(cold.damagePerHour * hours, 'cold');
+  }
+
+  get cold(): boolean {
+    return this.stats.warmth <= 25;
   }
 
   damage(amount: number, cause: DeathCause): void {

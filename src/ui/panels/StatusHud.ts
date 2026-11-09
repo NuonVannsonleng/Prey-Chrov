@@ -4,12 +4,14 @@ import type { ClockTick, ObjectiveView, SurvivalTick } from '../../systems/GameE
 import { TEX } from '../../textures';
 
 interface Bar {
-  key: keyof Pick<SurvivalTick, 'health' | 'hunger' | 'thirst' | 'stamina'>;
+  key: keyof Pick<SurvivalTick, 'health' | 'hunger' | 'thirst' | 'stamina' | 'warmth'>;
   label: string;
   color: number;
   fill: Phaser.GameObjects.Rectangle;
   value: Phaser.GameObjects.Text;
   warn: Phaser.GameObjects.Text;
+  /** All objects of the row (for show/hide of the optional warmth bar). */
+  parts: Phaser.GameObjects.GameObject[];
 }
 
 const BAR_W = 170;
@@ -22,6 +24,7 @@ const BAR_H = 12;
 export class StatusHud {
   private readonly bars: Bar[] = [];
   private readonly clockText: Phaser.GameObjects.Text;
+  private readonly weatherText: Phaser.GameObjects.Text;
   private readonly objectives: Phaser.GameObjects.Container;
   private readonly objectiveTitle: Phaser.GameObjects.Text;
   private readonly objectiveLines: Phaser.GameObjects.Text[] = [];
@@ -38,16 +41,17 @@ export class StatusHud {
       { key: 'hunger', label: 'Food', color: 0xe6b866 },
       { key: 'thirst', label: 'Water', color: 0x4fc2b4 },
       { key: 'stamina', label: 'Stamina', color: 0x8ec26a },
+      { key: 'warmth', label: 'Warmth', color: 0xe8893a },
     ];
     for (const s of specs) {
-      scene.add.text(x, y - 2, s.label, { fontFamily: FONTS.ui, fontSize: '13px', fontStyle: '600', color: CSS.textDim });
-      scene.add.rectangle(x + 64, y, BAR_W, BAR_H, 0x08110f, 0.85).setOrigin(0).setStrokeStyle(1, 0x3a5249);
+      const label = scene.add.text(x, y - 2, s.label, { fontFamily: FONTS.ui, fontSize: '13px', fontStyle: '600', color: CSS.textDim });
+      const bg = scene.add.rectangle(x + 64, y, BAR_W, BAR_H, 0x08110f, 0.85).setOrigin(0).setStrokeStyle(1, 0x3a5249);
       const fill = scene.add.rectangle(x + 65, y + 1, BAR_W - 2, BAR_H - 2, s.color).setOrigin(0);
       const value = scene.add.text(x + 64 + BAR_W + 8, y - 2, '', { fontFamily: FONTS.ui, fontSize: '13px', color: CSS.text });
       const warn = scene.add
         .text(x + 64 + BAR_W + 40, y - 2, '', { fontFamily: FONTS.ui, fontSize: '13px', fontStyle: '700', color: CSS.danger })
         .setVisible(false);
-      this.bars.push({ ...s, fill, value, warn });
+      this.bars.push({ ...s, fill, value, warn, parts: [label, bg, fill, value, warn] });
       y += 20;
     }
 
@@ -61,21 +65,30 @@ export class StatusHud {
         padding: { left: 12, right: 12, top: 4, bottom: 4 },
       })
       .setOrigin(0.5, 0);
+    this.weatherText = scene.add
+      .text(GAME_WIDTH / 2, 50, '', { fontFamily: FONTS.ui, fontSize: '13px', fontStyle: '600', color: CSS.textDim })
+      .setOrigin(0.5, 0);
 
     for (let i = 0; i < 3; i++) {
-      this.effectIcons.push(scene.add.image(30 + i * 124, 162, TEX.status, 'poison').setScale(1.5).setVisible(false));
+      this.effectIcons.push(scene.add.image(30 + i * 124, 182, TEX.status, 'poison').setScale(1.5).setVisible(false));
       this.effectTexts.push(
-        scene.add.text(42 + i * 124, 154, '', { fontFamily: FONTS.ui, fontSize: '13px', fontStyle: '600', color: CSS.text }).setVisible(false),
+        scene.add.text(42 + i * 124, 174, '', { fontFamily: FONTS.ui, fontSize: '13px', fontStyle: '600', color: CSS.text }).setVisible(false),
       );
     }
-    this.objectives = scene.add.container(24, 182);
+    this.objectives = scene.add.container(24, 200);
     this.objectiveTitle = scene.add.text(0, 0, 'First day', { fontFamily: FONTS.ui, fontSize: '14px', fontStyle: '700', color: CSS.gold });
     this.objectives.add(this.objectiveTitle);
   }
 
   updateSurvival(t: SurvivalTick): void {
     for (const b of this.bars) {
-      const max = t[`max${b.key[0]?.toUpperCase()}${b.key.slice(1)}` as keyof SurvivalTick] as number;
+      if (b.key === 'warmth') {
+        // Warmth only matters in the monsoon: show it while raining or still recovering.
+        const show = t.raining || t.warmth < 99.5;
+        if ((b.fill.visible ?? true) !== show) for (const o of b.parts) (o as unknown as Phaser.GameObjects.Components.Visible).setVisible(show);
+        if (!show) continue;
+      }
+      const max = b.key === 'warmth' ? 100 : (t[`max${b.key[0]?.toUpperCase()}${b.key.slice(1)}` as keyof SurvivalTick] as number);
       const v = t[b.key];
       const frac = max > 0 ? Math.max(0, Math.min(1, v / max)) : 0;
       b.fill.width = Math.max(0, (BAR_W - 2) * frac);
@@ -97,7 +110,11 @@ export class StatusHud {
               ? 'Exhausted'
               : b.key === 'health' && frac < 0.25
                 ? 'Low!'
-                : '';
+                : b.key === 'warmth' && t.cold
+                  ? v <= 0
+                    ? 'FREEZING'
+                    : 'Cold'
+                  : '';
       if (b.warn.text !== warning) b.warn.setText(warning).setVisible(warning !== '');
     }
   }
@@ -123,6 +140,10 @@ export class StatusHud {
       icon.setFrame(e.id).setVisible(true);
       text.setText(`${name} ${Math.ceil(e.remaining)}s`).setColor(color).setVisible(true);
     }
+  }
+
+  updateWeather(label: string, raining: boolean): void {
+    this.weatherText.setText(raining ? `🌧 ${label}` : label).setColor(raining ? CSS.turquoise : CSS.textDim);
   }
 
   updateClock(c: ClockTick): void {
