@@ -85,6 +85,35 @@ export const SKILL_IDS = ['foraging', 'crafting', 'survival', 'combat', 'explora
 export type SkillId = (typeof SKILL_IDS)[number];
 
 /** progression.json (M11): skills, XP sources (no grind: unique firsts and small daily-capped repeats) and knowledge. */
+/** sidequests.json (M14): side stories offered by events, with steps and a final choice. */
+export const SIDE_EVENTS = ['sleep', 'landmark', 'outpost', 'shortcut', 'puzzle', 'fish', 'spirit_defeat'] as const;
+export const SIDE_STATS = ['tablets', 'puzzles', 'landmarks', 'cooked_fish'] as const;
+export type SideQuestEffect =
+  | { type: 'item'; item: string; qty: number }
+  | { type: 'xp'; skill: SkillId; amount: number }
+  | { type: 'flag'; flag: string }
+  | { type: 'reveal'; radius: number }
+  | { type: 'ending'; text: string };
+
+export interface SideQuestDef {
+  id: string;
+  title: string;
+  /** 'memories' chains unlock character memories; 'side' chains are side objectives. */
+  kind: 'memories' | 'side';
+  start: { event: string };
+  offer: string;
+  steps: Array<{
+    kind: 'event' | 'state' | 'choice';
+    event?: string;
+    stat?: string;
+    count?: number;
+    text: string;
+    memory?: string;
+    prompt?: string;
+    options?: Array<{ id: string; label: string; description: string; cost?: Array<{ item: string; qty: number }>; effects: SideQuestEffect[]; result: string }>;
+  }>;
+}
+
 /** stealth.json (M12): noise, cover, awareness, stuck handling, elites, ambushes, spawn tuning. */
 export interface StealthConfig {
   crouchSpeed: number;
@@ -286,6 +315,7 @@ export interface GameData {
   fishing: FishingConfig;
   progression: ProgressionConfig;
   stealth: StealthConfig;
+  sidequests: readonly SideQuestDef[];
 }
 
 export interface RawGameData {
@@ -308,6 +338,7 @@ export interface RawGameData {
   fishing: unknown;
   progression: unknown;
   stealth: unknown;
+  sidequests: unknown;
 }
 
 // ---------- Validation ----------
@@ -527,6 +558,55 @@ function validateStructures(p: string[], structures: Rec[]): void {
     if (s['rotatable'] === true && !STRUCTURE_SPRITES.includes(s['sprite'] as StructureSprite)) p.push(`${w}: rotatable needs a sprite`);
     const sb = s['sleepBonus'];
     if (sb !== undefined && (!isRec(sb) || !isNum(sb['health']) || num(sb['health']) < 0)) p.push(`${w}: sleepBonus.health must be >= 0`);
+  }
+}
+
+function validateSideQuests(p: string[], raw: unknown, itemIds: Set<string>): void {
+  if (!Array.isArray(raw)) {
+    p.push('sidequests.json: must be an array');
+    return;
+  }
+  const ids = new Set<string>();
+  for (const q of raw) {
+    if (!isRec(q) || !isStr(q['id'])) {
+      p.push('sidequests.json: every quest needs an id');
+      continue;
+    }
+    const w = `side quest "${q['id']}"`;
+    if (ids.has(q['id'] as string)) p.push(`${w}: duplicate id`);
+    ids.add(q['id'] as string);
+    if (!isStr(q['title']) || !isStr(q['offer'])) p.push(`${w}: title and offer text required`);
+    if (q['kind'] !== 'memories' && q['kind'] !== 'side') p.push(`${w}: kind must be memories or side`);
+    const st = q['start'];
+    if (!isRec(st) || !SIDE_EVENTS.includes(st['event'] as (typeof SIDE_EVENTS)[number])) p.push(`${w}: start.event must be one of ${SIDE_EVENTS.join(', ')}`);
+    const steps = Array.isArray(q['steps']) ? (q['steps'] as unknown[]) : [];
+    if (steps.length < 2) p.push(`${w}: needs at least two steps (a beginning and a resolution)`);
+    steps.forEach((s, i) => {
+      const sw = `${w} step ${i}`;
+      if (!isRec(s) || !isStr(s['text'])) {
+        p.push(`${sw}: text required`);
+        return;
+      }
+      if (s['kind'] === 'event' && !SIDE_EVENTS.includes(s['event'] as (typeof SIDE_EVENTS)[number])) p.push(`${sw}: unknown event`);
+      else if (s['kind'] === 'state' && !SIDE_STATS.includes(s['stat'] as (typeof SIDE_STATS)[number])) p.push(`${sw}: unknown stat`);
+      else if (s['kind'] === 'choice') {
+        if (i !== steps.length - 1) p.push(`${sw}: the choice must be the last step`);
+        const opts = Array.isArray(s['options']) ? (s['options'] as Rec[]) : [];
+        if (opts.length < 2) p.push(`${sw}: a choice needs at least two options`);
+        // No soft-lock: at least one option is always affordable.
+        if (!opts.some((o) => !Array.isArray(o['cost']) || (o['cost'] as unknown[]).length === 0)) p.push(`${sw}: one option must have no cost`);
+        for (const o of opts) {
+          if (!isStr(o['id']) || !isStr(o['label']) || !isStr(o['description']) || !isStr(o['result'])) p.push(`${sw}: option id/label/description/result required`);
+          for (const c of Array.isArray(o['cost']) ? (o['cost'] as Rec[]) : []) if (!itemIds.has(c['item'] as string) || !isInt(c['qty'])) p.push(`${sw}: bad cost`);
+          for (const e of Array.isArray(o['effects']) ? (o['effects'] as Rec[]) : []) {
+            const t = e['type'];
+            if (t === 'item' ? !itemIds.has(e['item'] as string) || !isInt(e['qty']) : t === 'xp' ? !SKILL_IDS.includes(e['skill'] as SkillId) || !isInt(e['amount']) : t === 'flag' ? !isStr(e['flag']) : t === 'reveal' ? !isNum(e['radius']) : t === 'ending' ? !isStr(e['text']) : true)
+              p.push(`${sw}: bad effect ${JSON.stringify(e)}`);
+          }
+        }
+      } else if (s['kind'] !== 'event' && s['kind'] !== 'state') p.push(`${sw}: kind must be event, state or choice`);
+    });
+    if (!steps.some((s) => isRec(s) && s['kind'] === 'choice')) p.push(`${w}: needs a final choice (a satisfying resolution)`);
   }
 }
 
@@ -851,6 +931,7 @@ export function validateGameData(raw: RawGameData): GameData {
   validateFishing(p, raw.fishing, ids(loot));
   validateProgression(p, raw.progression, itemIds, recipes);
   validateStealth(p, raw.stealth);
+  validateSideQuests(p, raw.sidequests, itemIds);
 
   if (p.length) throw new DataValidationError(p);
 
@@ -874,6 +955,7 @@ export function validateGameData(raw: RawGameData): GameData {
     fishing: raw.fishing as FishingConfig,
     progression: raw.progression as ProgressionConfig,
     stealth: raw.stealth as StealthConfig,
+    sidequests: raw.sidequests as SideQuestDef[],
   };
 
   // Reachability: every item must be gatherable or craftable from gatherable items.
@@ -907,6 +989,8 @@ export function reachableItems(
   data: Pick<GameData, 'resources' | 'loot' | 'recipes' | 'items'> & Partial<Pick<GameData, 'enemies' | 'structures' | 'fishing'>>,
 ): Set<string> {
   const have = obtainableItems(data);
+  for (const q of (data as { sidequests?: readonly SideQuestDef[] }).sidequests ?? [])
+    for (const s of q.steps) for (const o of s.options ?? []) for (const e of o.effects) if (e.type === 'item') have.add(e.item);
   /** Kits that place a structure providing each station. */
   const stationKits = (station: string): string[] =>
     [...data.items.values()]

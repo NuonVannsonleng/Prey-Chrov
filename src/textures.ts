@@ -173,6 +173,7 @@ export const ICON_KEYS = [
   'compass',
   'nav_note',
   'trail_sign',
+  'lantern',
 ] as const;
 export type IconKey = (typeof ICON_KEYS)[number];
 

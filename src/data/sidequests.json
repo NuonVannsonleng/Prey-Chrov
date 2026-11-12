@@ -1,0 +1,232 @@
+[
+  {
+    "id": "ash_and_timber",
+    "title": "Ash and Timber",
+    "kind": "memories",
+    "start": {
+      "event": "sleep"
+    },
+    "offer": "In your sleep you see a woodcutter with a worn krama knotted at his neck, resting his axe against a great tree. He seems to be remembering something, and the dream lingers when you wake. Follow the memory?",
+    "steps": [
+      {
+        "kind": "event",
+        "event": "landmark",
+        "count": 1,
+        "text": "Find one of the great landmarks the woodcutter remembers",
+        "memory": "He used to rest beneath the old giants of the forest. He said they kept count of the years better than any calendar."
+      },
+      {
+        "kind": "event",
+        "event": "outpost",
+        "count": 1,
+        "text": "Found a camp of your own (place an outpost flag)",
+        "memory": "Every season he built a small camp and left it a little better than he found it, for whoever came next. It was a kind of promise, kept quietly."
+      },
+      {
+        "kind": "choice",
+        "text": "Decide how to honour the woodcutter's memory",
+        "prompt": "The dream returns one last time. The woodcutter smiles and turns away down a trail you have walked yourself. What do you do with his memory?",
+        "options": [
+          {
+            "id": "carve",
+            "label": "Carve his trail",
+            "description": "Mark the paths he loved. You receive 2 Trail Signs and a little Crafting experience.",
+            "effects": [
+              {
+                "type": "item",
+                "item": "trail_sign_kit",
+                "qty": 2
+              },
+              {
+                "type": "xp",
+                "skill": "crafting",
+                "amount": 3
+              },
+              {
+                "type": "ending",
+                "text": "A trail sign by your camp still points the way the woodcutter walked."
+              }
+            ],
+            "result": "You cut his marks into fresh signs, so his trail continues."
+          },
+          {
+            "id": "rest",
+            "label": "Let it rest",
+            "description": "Let the memory go and see the land as he did. The country around you is revealed on your map, and Exploration grows.",
+            "effects": [
+              {
+                "type": "reveal",
+                "radius": 40
+              },
+              {
+                "type": "xp",
+                "skill": "exploration",
+                "amount": 3
+              },
+              {
+                "type": "ending",
+                "text": "You never learned the woodcutter's name, but the paths he walked stay open to you."
+              }
+            ],
+            "result": "The dream fades gently, and the land around you feels known."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rivers_secret",
+    "title": "The River's Secret",
+    "kind": "side",
+    "start": {
+      "event": "shortcut"
+    },
+    "offer": "The stepping stones are worn smooth by many feet. Someone used to cross here to fish the deep pools. Learn the river's ways?",
+    "steps": [
+      {
+        "kind": "event",
+        "event": "fish",
+        "count": 3,
+        "text": "Catch three fish",
+        "memory": "The old crossings were made for fishers: the deep pools beside them are always the richest."
+      },
+      {
+        "kind": "state",
+        "stat": "cooked_fish",
+        "count": 2,
+        "text": "Carry 2 Grilled Fish",
+        "memory": "Fishers here always shared their first good catch. It was said the river was kinder to those who did."
+      },
+      {
+        "kind": "choice",
+        "text": "Decide what to do with your catch",
+        "prompt": "You hold 2 Grilled Fish, warm in their leaves. The fishers of old shared their first good catch. What do you do?",
+        "options": [
+          {
+            "id": "share",
+            "label": "Share the catch",
+            "description": "Leave 2 Grilled Fish as an offering. From now on your fishing window is wider, and Foraging grows.",
+            "cost": [
+              {
+                "item": "cooked_fish",
+                "qty": 2
+              }
+            ],
+            "effects": [
+              {
+                "type": "flag",
+                "flag": "river_blessing"
+              },
+              {
+                "type": "xp",
+                "skill": "foraging",
+                "amount": 3
+              },
+              {
+                "type": "ending",
+                "text": "Along the rivers, the fish seem to rise a little more willingly for you."
+              }
+            ],
+            "result": "You set the fish on a flat stone by the water and leave them there. The river runs on, and the water seems kinder."
+          },
+          {
+            "id": "keep",
+            "label": "Follow the stones",
+            "description": "Keep the catch and trace the old crossings. The river country around you is revealed on your map, and Exploration grows.",
+            "effects": [
+              {
+                "type": "reveal",
+                "radius": 48
+              },
+              {
+                "type": "xp",
+                "skill": "exploration",
+                "amount": 3
+              },
+              {
+                "type": "ending",
+                "text": "You still know the hidden crossings for days around."
+              }
+            ],
+            "result": "You follow the worn stones from bank to bank until the whole river country is clear in your mind."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "embers_in_stone",
+    "title": "Embers in the Stone",
+    "kind": "side",
+    "start": {
+      "event": "puzzle"
+    },
+    "offer": "As the reliquary opens, a warm ember glows in the stone beneath it, like a coal that never went out. Something about the old lamps is unfinished. Find out what?",
+    "steps": [
+      {
+        "kind": "event",
+        "event": "spirit_defeat",
+        "count": 2,
+        "text": "Drive off two restless spirits at night",
+        "memory": "The lamps were lit so travellers could rest within the ruins' walls without fear of the dark."
+      },
+      {
+        "kind": "state",
+        "stat": "tablets",
+        "count": 3,
+        "text": "Read three of the stone tablets",
+        "memory": "The tablets speak of keepers who tended the lamps until the promise with the forest was broken."
+      },
+      {
+        "kind": "choice",
+        "text": "Decide what to do with the ember",
+        "prompt": "The ember pulses in your hand, warm and patient. It could relight the old lamps for every traveller, or light your own way. Which will it be?",
+        "options": [
+          {
+            "id": "rekindle",
+            "label": "Rekindle the lamps",
+            "description": "Return the ember's warmth to the ruins. No creatures appear near any ruin whose puzzle you have solved.",
+            "effects": [
+              {
+                "type": "flag",
+                "flag": "ruin_ward"
+              },
+              {
+                "type": "xp",
+                "skill": "exploration",
+                "amount": 3
+              },
+              {
+                "type": "ending",
+                "text": "The old lamps burn again in the ruins you opened, and travellers rest there safely."
+              }
+            ],
+            "result": "The ember sinks into the stone, and a faint glow spreads through the old lamp channels."
+          },
+          {
+            "id": "lantern",
+            "label": "Keep the ember",
+            "description": "Bind the ember into an Ember Lantern, a lasting light that outlasts a torch. You receive 1 Ember Lantern and Survival grows.",
+            "effects": [
+              {
+                "type": "item",
+                "item": "ember_lantern",
+                "qty": 1
+              },
+              {
+                "type": "xp",
+                "skill": "survival",
+                "amount": 3
+              },
+              {
+                "type": "ending",
+                "text": "Your Ember Lantern still glows on the darkest nights."
+              }
+            ],
+            "result": "You cradle the ember in a bamboo frame, and the Ember Lantern glows steadily, asking for nothing."
+          }
+        ]
+      }
+    ]
+  }
+]

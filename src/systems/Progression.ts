@@ -90,6 +90,14 @@ export class Progression {
     return { skill: s.skill, xp: s.xp, levelUp: after > before ? after : null, text: s.text };
   }
 
+  /** Direct XP (story rewards: granted once because the story finishes once). */
+  addXp(skill: SkillId, amount: number): { levelUp: number | null } {
+    const before = this.level(skill);
+    this.xp[skill] += Math.max(0, Math.floor(amount));
+    const after = this.level(skill);
+    return { levelUp: after > before ? after : null };
+  }
+
   /** Knowledge whose condition is now met (item owned or skill level reached) and not yet learned. */
   learnable(hasItem: (id: string) => boolean): Array<ProgressionConfig['knowledge'][number]> {
     return this.cfg.knowledge.filter((k) => {

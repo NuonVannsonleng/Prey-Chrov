@@ -280,6 +280,14 @@ export const EXPLORE_ICON_DRAW = {
     px(ctx, ox + 3, 2, 10, 1, hex(0x9ad07a));
     for (let i = 0; i < 4; i++) px(ctx, ox + 5, 5 + i * 2, 6 - (i % 2) * 2, 1, hex(0x2c4a2a));
   },
+  lantern: (ctx: Ctx, ox: number) => {
+    px(ctx, ox + 5, 3, 6, 11, hex(0x9fbf5a));
+    px(ctx, ox + 4, 2, 8, 2, hex(0x6e8a3a));
+    px(ctx, ox + 4, 13, 8, 2, hex(0x6e8a3a));
+    ellipse(ctx, ox + 8, 8, 2.5, 3.5, '#ffd27a');
+    ellipse(ctx, ox + 8, 8, 1.2, 1.8, '#fff2c8');
+    px(ctx, ox + 7, 0, 2, 2, hex(0x84603c));
+  },
   trail_sign: (ctx: Ctx, ox: number) => {
     px(ctx, ox + 7, 4, 2, 11, hex(0x84603c));
     ctx.fillStyle = hex(0xa87048);
