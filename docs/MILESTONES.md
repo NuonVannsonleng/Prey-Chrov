@@ -17,6 +17,69 @@ Status legend: **Done** · **In progress** · **Not started**
 | M11 | Equipment, gear upgrades and meaningful progression | Done |
 | M12 | Advanced AI, stealth and dynamic encounters | Done |
 | M13 | Exploration tools, mapping and ruins | Done |
+| M14 | Narrative chapters, side quests and choices | Done |
+
+---
+
+## M14 — Narrative chapters, side quests and choices
+
+### Implemented (playable)
+
+- **Three side-story chains** beyond the five tablets. Each starts from something you do, offers itself with **Follow it / Let it go**, shows clear steps, and ends in a two-way choice:
+
+  | Story | Starts when | Steps | Choice |
+  | --- | --- | --- | --- |
+  | **Ash and Timber** (character memories) | You first sleep, and dream of a woodcutter | Find a great landmark; found an outpost | **Carve his trail**: two trail signs, Crafting XP. **Let it rest**: the country around you is revealed on the map, Exploration XP. |
+  | **The River's Secret** | You first find hidden stepping stones | Catch three fish; carry two grilled fish | **Share the catch** (costs the fish): from then on the fishing window is wider, Foraging XP. **Follow the stones**: the river country is revealed, Exploration XP. |
+  | **Embers in the Stone** | You first solve a ruin puzzle | Drive off two night spirits (an encounter); read three tablets | **Rekindle the lamps**: no creatures appear near any ruin you have solved. **Keep the ember**: the long-burning Ember Lantern, Survival XP. |
+
+  - **Memories** unlock as steps complete. They are short in-world recollections, collected in the journal.
+  - Every choice also adds its own line to the **ending's epilogue**, before the final line.
+- **Choices affect** helpful world states (the fishing window, warded ruins), resources (trail signs, the lantern), routes (map reveals) and the ending. They are framed as personal acts of remembrance and sharing in a fictional forest, not as depictions of Khmer religious practice.
+- **Story dialogs must be answered:** Esc does nothing, and option descriptions say exactly what each choice does. **The world holds still while a story moment is on screen**, and story moments wait until you are safe (not mid-fight, not at low health, not asleep).
+  - An option you can't afford stays visible with its requirement, and the other option is always free (the validator enforces this).
+  - Dialogs queue and wait for other panels.
+  - A choice interrupted by a reload is asked again.
+- **Journal (J) with tabs:**
+  - **Main story:** the quest, tablets and lore glossary, as before.
+  - **Side stories:** each chain's status, steps with progress and outcome, and every memory found.
+  - Switch with Tab, 1 or 2.
+- **Localization-ready:** every story string (titles, offers, steps, memories, prompts, options, results, epilogue lines) lives in `src/data/sidequests.json`. Code only assembles it.
+- **Declining** marks a chain declined for good, so nothing is lost and the main journey is unaffected. A declined chain is not offered again.
+- **No reward farming:** each chain finishes exactly once. Its state (including the choice) saves together with the inventory that received the reward, so a reload can't pay out twice.
+
+### Verification
+
+- `npm run typecheck` and `npm run build` pass.
+- `npm test`: 177 unit tests. New ones cover:
+  - at least three chains, each with a start, progress steps, a final choice with a free option and its own epilogue line
+  - reward reachability, and validator rejection of a choice with no free option
+  - offer and decline
+  - every chain playable to its choice
+  - **rewards never paid twice, even after a save/load**
+  - mid-chain reloads keep progress
+  - **side stories never touch the main quest**
+- `npm run smoke`: 212 browser checks. The M14 ones:
+  - an offer after an event; Esc can't skip it; Enter accepts
+  - steps unlock memories, then the choice; "Let it rest" reveals the map and adds an epilogue line
+  - a chain can be declined
+  - state steps advance on their own, and the Ember Lantern is granted once
+  - the journal's Side stories tab
+  - after a reload nothing is re-offered or re-rewarded, and the main story is untouched
+  - the world holds still under a story dialog
+  - dying with a story dialog open does not freeze input in the next game
+  - Debug-only `?nostory` keeps stories quiet while other systems are tested.
+- **Reviews:** this is the first milestone reviewed by the project's real `phaser-qa` and `content-designer` agents. M1–M13 used general-purpose stand-ins given the phaser-qa brief, because the agent types weren't loaded in those sessions.
+  - `content-designer`: ship with minor edits. Applied: item names in text match the data, softer wording so the river offering doesn't read as a spirit ritual, the woodcutter chain tied to the theme of the promise, and clearer choice descriptions.
+  - `phaser-qa`: two Criticals, both fixed. Dying with a story dialog open could freeze all keyboard input in the next game (the UI scene now resets its story state). Enemies and hunger kept running behind a story dialog (the world now holds still, and story moments wait until you're safe).
+  - `phaser-qa` Warnings fixed: events while busy were lost (now queued); a lost or second pending choice was never re-shown (now re-offered).
+  - Re-verified with the full smoke run (212/212).
+
+### Known limitations
+
+- A declined story isn't offered again (by design: declining is a real choice).
+- Story text is English only. It is all in `sidequests.json`, ready for translation.
+- Needs native-speaker review: the word "krama" in Ash and Timber. The fishers' custom of sharing the first catch is invented fiction, not a Khmer tradition.
 
 ---
 

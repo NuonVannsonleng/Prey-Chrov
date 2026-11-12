@@ -25,6 +25,7 @@ const full: SaveData = {
   openedChests: ['5,6:12'],
   knownPlants: ['healing_herb'],
   ambushNight: 3,
+  story: { quests: { ash_and_timber: { status: 'done', step: 2, count: 0, choice: 'rest' } }, flags: ['river_blessing'], endingLines: ['A line.'] },
   exploration: { explored: ['0,0', '1,0'], ruins: ['80,90'], landmarks: ['great_fig@10,20'], shortcuts: ['3,4'], shrines: ['5,6'], puzzles: ['80,90'], markers: [{ x: 1, y: 2, kind: 'pin', text: '' }] },
   progression: { xp: { crafting: 4 }, firsts: ['craft_first:stone_axe'], daily: { day: 2, counts: { gather: 1 } }, knowledge: ['tanning'] },
   equipment: { body: { item: 'hide_vest', qty: 1 }, feet: null },

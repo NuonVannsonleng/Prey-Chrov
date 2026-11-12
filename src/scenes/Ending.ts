@@ -15,6 +15,8 @@ export interface EndingData {
   tablets: number;
   /** Whether the post-offering save succeeded (Continue needs it). */
   saved: boolean;
+  /** M14: epilogue lines added by side-story choices. */
+  storyLines?: string[];
 }
 
 const LINE_MS = 3600;
@@ -41,7 +43,10 @@ export class Ending extends Phaser.Scene {
 
   create(data: EndingData): void {
     this.stats = data;
-    this.lines = [...getGameData().ending.epilogue];
+    // Side-story choices add their own lines before the final one.
+    const base = [...getGameData().ending.epilogue];
+    const last = base.pop();
+    this.lines = [...base, ...(data.storyLines ?? []), ...(last ? [last] : [])];
     this.index = -1;
     this.finished = false;
     this.leaving = false;

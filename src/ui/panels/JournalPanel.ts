@@ -3,6 +3,8 @@ import { CSS, FONTS, GAME_HEIGHT, GAME_WIDTH } from '../../config';
 import { getGameData } from '../../data/gameData';
 import type { TabletDef } from '../../data/schema';
 import type { QuestView } from '../../systems/Quest';
+import type { SideQuestView } from '../../systems/SideQuests';
+import { Button } from '../components/Button';
 
 const W = 1000;
 const H = 600;
@@ -18,6 +20,12 @@ export class JournalPanel {
   private outpostLine = '';
   private readonly tabletTitles: Phaser.GameObjects.Text[] = [];
   private readonly tabletBodies: Phaser.GameObjects.Text[] = [];
+  private readonly mainGroup: Phaser.GameObjects.GameObject[] = [];
+  private readonly sideGroup: Phaser.GameObjects.GameObject[] = [];
+  private readonly sideText: Phaser.GameObjects.Text;
+  private readonly memText: Phaser.GameObjects.Text;
+  private readonly tabButtons: Button[] = [];
+  private tab: 'main' | 'side' = 'main';
 
   constructor(scene: Phaser.Scene) {
     const left = GAME_WIDTH / 2 - W / 2;
@@ -68,7 +76,55 @@ export class JournalPanel {
       wordWrap: { width: 450 },
     });
     children.push(loreHead, loreBody, disclaimer);
+    // Everything above belongs to the Main story tab.
+    this.mainGroup.push(...children.slice(4));
+    // Side stories tab: quests on the left, memories on the right.
+    const sideHead = scene.add.text(left + 28, top + 66, 'Side stories', { fontFamily: FONTS.ui, fontSize: '17px', fontStyle: '700', color: CSS.gold });
+    this.sideText = scene.add.text(left + 28, top + 96, '', { fontFamily: FONTS.ui, fontSize: '14px', color: CSS.text, wordWrap: { width: 450 }, lineSpacing: 4 });
+    const memHead = scene.add.text(left + 520, top + 66, 'Memories', { fontFamily: FONTS.ui, fontSize: '17px', fontStyle: '700', color: CSS.gold });
+    this.memText = scene.add.text(left + 520, top + 96, '', { fontFamily: FONTS.ui, fontSize: '14px', fontStyle: 'italic', color: CSS.text, wordWrap: { width: 450 }, lineSpacing: 4 });
+    this.sideGroup.push(sideHead, this.sideText, memHead, this.memText);
+    children.push(...this.sideGroup);
+    const mkTab = (label: string, tab: 'main' | 'side', x: number) => {
+      const b = new Button(scene, x, top + 34, { label, width: 150, height: 32, fontSize: 15, onActivate: () => this.setTab(tab) });
+      this.tabButtons.push(b);
+      children.push(b);
+    };
+    mkTab('Main story', 'main', left + 300);
+    mkTab('Side stories', 'side', left + 460);
     this.root = scene.add.container(0, 0, children).setDepth(700).setVisible(false);
+    this.setTab('main');
+  }
+
+  setTab(tab: 'main' | 'side'): void {
+    this.tab = tab;
+    for (const o of this.mainGroup) (o as unknown as Phaser.GameObjects.Components.Visible).setVisible(tab === 'main');
+    for (const o of this.sideGroup) (o as unknown as Phaser.GameObjects.Components.Visible).setVisible(tab === 'side');
+    this.tabButtons[0]?.setFocused(tab === 'main');
+    this.tabButtons[1]?.setFocused(tab === 'side');
+  }
+
+  nextTab(): void {
+    this.setTab(this.tab === 'main' ? 'side' : 'main');
+  }
+
+  get activeTab(): string {
+    return this.tab;
+  }
+
+  /** Side stories: status, steps with progress, the outcome; memories in the order found. */
+  renderSide(quests: readonly SideQuestView[], memories: ReadonlyArray<{ title: string; text: string }>): void {
+    const label: Record<string, string> = { available: 'Not yet begun', offered: 'Offered', active: 'In progress', declined: 'Declined', done: 'Complete' };
+    const blocks = quests
+      .filter((q) => q.status !== 'available')
+      .map((q) => {
+        const lines = [`${q.title} — ${label[q.status] ?? q.status}`];
+        if (q.status === 'active' || q.status === 'done') for (const s of q.steps) lines.push(`  ${s.done ? '✓' : '○'} ${s.text}${s.progress ? ` (${s.progress})` : ''}`);
+        if (q.outcome) lines.push(`  → ${q.outcome}`);
+        return lines.join('\n');
+      });
+    this.sideText.setText(blocks.length ? blocks.join('\n\n') : 'No side stories yet. They begin with things you do: a dream, a discovery, a solved ruin…');
+    this.memText.setText(memories.length ? memories.map((m) => `“${m.text}”\n  — ${m.title}`).join('\n\n') : 'Memories you uncover will be kept here.');
   }
 
   get isOpen(): boolean {

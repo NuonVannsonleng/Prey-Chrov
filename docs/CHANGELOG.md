@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.0 — M14: Side stories, memories and choices (2026-11-12)
+
+### Added
+- Three side-story chains (Ash and Timber, The River's Secret, Embers in the Stone) offered by things you do, with memories and a final choice.
+- Choices change the world (wider fishing window, warded ruins), resources (trail signs, Ember Lantern), routes (map reveals) and the ending (an extra epilogue line each).
+- Journal tabs: Main story and Side stories (progress, outcomes, memories).
+- Story dialogs that must be answered; the world holds still while they are shown.
+
+### Fixed
+- Dying with a story dialog open no longer freezes input afterwards.
+
 ## 0.13.0 — M13: Maps, landmarks and ruin puzzles (2026-11-09)
 
 ### Added

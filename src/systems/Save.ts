@@ -89,6 +89,8 @@ export interface SaveData {
     puzzles: string[];
     markers: Array<{ x: number; y: number; kind: 'pin' | 'note'; text: string }>;
   };
+  /** M14: side stories, story flags and the epilogue lines they add. */
+  story: { quests: Record<string, { status: string; step: number; count: number; choice?: string }>; flags: string[]; endingLines: string[] };
   /** M12: the night index the ambush was last rolled for (one roll per night, across reloads). */
   ambushNight: number;
   /** M11: skills, one-time awards, daily caps and knowledge. */
@@ -270,6 +272,17 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
     }),
     openedChests: (Array.isArray(rec['openedChests']) ? rec['openedChests'] : []).filter((o): o is string => typeof o === 'string'),
     ambushNight: Math.floor(finite(rec['ambushNight'], -1)),
+    story: ((st: unknown) => {
+      const r = isRec(st) ? st : {};
+      const quests: Record<string, { status: string; step: number; count: number; choice?: string }> = {};
+      if (isRec(r['quests']))
+        for (const [k, v] of Object.entries(r['quests'])) {
+          if (!isRec(v) || typeof v['status'] !== 'string') continue;
+          quests[k] = { status: v['status'], step: Math.max(0, Math.floor(finite(v['step'], 0))), count: Math.max(0, Math.floor(finite(v['count'], 0))), ...(typeof v['choice'] === 'string' ? { choice: v['choice'] } : {}) };
+        }
+      const strs = (v: unknown) => (Array.isArray(v) ? v.filter((o): o is string => typeof o === 'string' && o.length < 300).slice(0, 50) : []);
+      return { quests, flags: strs(r['flags']), endingLines: strs(r['endingLines']) };
+    })(rec['story']),
     exploration: ((ex: unknown) => {
       const r = isRec(ex) ? ex : {};
       const strs = (v: unknown, max: number) => (Array.isArray(v) ? v.filter((o): o is string => typeof o === 'string' && o.length < 64).slice(0, max) : []);

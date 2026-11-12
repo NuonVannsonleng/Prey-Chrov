@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { ItemStack } from './Inventory';
 import type { QuestView } from './Quest';
+import type { SideQuestView } from './SideQuests';
 import type { TabletDef } from '../data/schema';
 import type { AmbienceLevels, SfxId } from './Audio';
 
@@ -108,6 +109,14 @@ export interface GameEventMap {
   'map:marker': { x: number; y: number };
   /** Compass: up to three nearest markers to point at on screen ([] = none / no compass). */
   'markers:pointers': Array<{ x: number; y: number; label: string }>;
+  /** M14 side stories. */
+  'story:offer': { id: string; title: string; text: string };
+  'story:choice': { id: string; title: string; prompt: string; options: Array<{ id: string; label: string; description: string; enabled: boolean; note?: string }> };
+  'story:answer': { id: string; accept: boolean };
+  /** UI → World: a story moment is on screen (the world holds still while it is). */
+  'ui:story': boolean;
+  'story:choose': { id: string; option: string };
+  'sidequests:changed': { quests: SideQuestView[]; memories: Array<{ title: string; text: string }> };
   /** Outpost flags for the minimap and journal. */
   'outposts:changed': OutpostInfo[];
   /** World entered/left structure placement mode; UI routes Esc to cancel it. */

@@ -17,7 +17,8 @@ const check = (name, ok, detail = '') => {
 const PORT = Number(process.env.SMOKE_PORT ?? 4317);
 const server = await preview({ preview: { port: PORT, strictPort: true }, logLevel: 'silent' });
 const SEED = 4242;
-const url = `http://localhost:${PORT}/?debug&calm&seed=${SEED}`;
+// nostory: side stories stay quiet until the M14 block switches them on.
+const url = `http://localhost:${PORT}/?debug&calm&nostory&seed=${SEED}`;
 
 let browser;
 for (const channel of ['msedge', 'chrome']) {
@@ -1696,6 +1697,99 @@ try {
   check('reload preserves the explored map, discoveries, solved puzzles, opened reliquaries and markers', ex0 === ex1, ex1.slice(0, 200));
   await teleport(home13.x, home13.y);
   await sleep(800);
+
+  // ---------- M14: side stories, memories and choices ----------
+  await setClock(9, 10);
+  await evalW7('w.storiesEnabled = true; w.encounters.clear(); w.sideQuests = new w.sideQuests.constructor(w.gameData.sidequests); w.storyFlags.clear(); w.endingLines = []; w.emitSideQuests();');
+  const storyOpen = () => evalW7('return { open: ui.story !== null, modal: w.modalOpen };');
+  // Ash and Timber: offered after sleeping; accepted with Enter (focus starts on "Follow it").
+  await evalW7('w.storyEvent("sleep");');
+  await sleep(400);
+  const storyOffer = await storyOpen();
+  await page.screenshot({ path: OUT + '/44-story-storyOffer.png' });
+  await page.keyboard.press('Escape');
+  await sleep(200);
+  const storyStill = await storyOpen();
+  await page.keyboard.press('Enter');
+  await sleep(300);
+  const ash = await evalW7('return w.sideQuests.state.get("ash_and_timber");');
+  check('a side story is offered after an event; Esc cannot skip it; Enter accepts', storyOffer.open && storyOffer.modal && storyStill.open && ash.status === 'active', JSON.stringify({ storyOffer, storyStill, ash }));
+  await evalW7('w.storyEvent("landmark"); w.storyEvent("outpost");');
+  await sleep(400);
+  const atChoice = await evalW7('return { open: ui.story !== null, mem: w.sideQuests.memories().length };');
+  await page.screenshot({ path: OUT + '/45-story-choice.png' });
+  const explored14 = await evalW7('return w.explored.size;');
+  await page.keyboard.press('ArrowDown');
+  await sleep(100);
+  await page.keyboard.press('Enter');
+  await sleep(400);
+  const ashDone = await evalW7('return { s: w.sideQuests.state.get("ash_and_timber"), explored: w.explored.size, lines: w.endingLines.length };');
+  check('steps unlock memories, then a final choice; "Let it rest" reveals the map and adds an epilogue line', atChoice.open && atChoice.mem === 2 && ashDone.s.status === 'done' && ashDone.s.choice === 'rest' && ashDone.explored > explored14 && ashDone.lines === 1, JSON.stringify({ atChoice, ashDone, explored14 }));
+  // The River's Secret: declined.
+  await evalW7('w.storyEvent("shortcut");');
+  await sleep(400);
+  await page.keyboard.press('ArrowDown');
+  await sleep(100);
+  await page.keyboard.press('Enter');
+  await sleep(400);
+  const riverRes = await evalW7('return { s: w.sideQuests.state.get("rivers_secret").status, toast: ui.toast.text.text };');
+  check('a side story can be declined (main journey unaffected)', riverRes.s === 'declined' && /main journey is unaffected/.test(riverRes.toast), JSON.stringify(riverRes));
+  // Embers in the Stone: spirits + tablets (already read) → keep the ember.
+  await evalW7('w.storyEvent("puzzle");');
+  await sleep(400);
+  await page.keyboard.press('Enter');
+  await sleep(300);
+  await evalW7('w.storyEvent("spirit_defeat"); w.storyEvent("spirit_defeat"); w.nextWeatherAt = 0;');
+  await sleep(900);
+  const emberChoice = await storyOpen();
+  await page.keyboard.press('ArrowDown');
+  await sleep(100);
+  await page.keyboard.press('Enter');
+  await sleep(400);
+  const emberRes = await evalW7('return { s: w.sideQuests.state.get("embers_in_stone"), lantern: w.inventory.inventory.count("ember_lantern"), lines: w.endingLines.length };');
+  check('state steps (tablets read) advance on their own; the ember lantern is granted once', emberChoice.open && emberRes.s.status === 'done' && emberRes.s.choice === 'lantern' && emberRes.lantern === 1 && emberRes.lines === 2, JSON.stringify({ emberChoice, emberRes }));
+  // Journal: Side stories tab with steps, outcomes and memories.
+  await page.keyboard.press('KeyJ');
+  await sleep(200);
+  await page.keyboard.press('Digit2');
+  await sleep(200);
+  const jtext = await evalW7('return { tab: ui.journal.activeTab, side: ui.journal.sideText.text, mem: ui.journal.memText.text };');
+  await page.screenshot({ path: OUT + '/46-journal-side.png' });
+  check('the journal has a Side stories tab with progress, outcomes and memories', jtext.tab === 'side' && /Ash and Timber — Complete/.test(jtext.side) && /Declined/.test(jtext.side) && /woodcutter|camp/.test(jtext.mem), JSON.stringify(jtext).slice(0, 220));
+  await page.keyboard.press('KeyJ');
+  await sleep(200);
+  // Reload: nothing can be earned twice; the main story is untouched.
+  await evalW7('w.save();');
+  await page.reload();
+  await waitScene('Menu', 15000);
+  await sleep(800);
+  await clickGame(640, 500);
+  await waitScene('World');
+  await sleep(1200);
+  const after14 = await evalW7('w.storiesEnabled = true; w.storyEvent("sleep"); w.storyEvent("puzzle"); return { lantern: w.inventory.inventory.count("ember_lantern"), again: w.sideQuests.choose("embers_in_stone", "lantern"), status: [...w.sideQuests.state.values()].map((s) => s.status).join(","), main: w.quest.stage, lines: w.endingLines.length };');
+  await sleep(2800);
+  const noDialog = await evalW7('return ui.story === null;');
+  check('after a reload no story can be re-offered or re-rewarded; the main story is untouched', after14.lantern === 1 && after14.again === null && after14.status === 'done,declined,done' && noDialog && after14.lines === 2 && after14.main === 'done', JSON.stringify({ after14, noDialog }));
+
+  // QA: the world holds still under a story dialog; dying with one open never freezes input later.
+  await evalW7('w.storiesEnabled = true; w.sideQuests = new w.sideQuests.constructor(w.gameData.sidequests); w.encounters.clear(); w.survival.stats.health = 100;');
+  await evalW7('w.storyEvent("sleep");');
+  await sleep(300);
+  const frozen0 = await evalW7('return { now: w.now, hunger: w.survival.stats.hunger, open: w.storyOpen };');
+  await sleep(800);
+  const frozen1 = await evalW7('return { now: w.now, hunger: w.survival.stats.hunger, open: w.storyOpen };');
+  check('the world holds still while a story moment is on screen', frozen0.open && frozen0.now === frozen1.now && frozen0.hunger === frozen1.hunger, JSON.stringify({ frozen0, frozen1 }));
+  await evalW7('w.storyOpen = false; w.survival.stats.thirst = 0; w.survival.stats.hunger = 0; w.survival.stats.health = 0.5;');
+  const died14 = await waitScene('GameOver', 12000);
+  await sleep(700);
+  await clickGame(640, 350);
+  await waitScene('World');
+  await sleep(900);
+  await page.keyboard.press('KeyJ');
+  await sleep(250);
+  const inputOk = await evalW7('return { story: ui.story, journal: ui.journal.isOpen };');
+  await page.keyboard.press('KeyJ');
+  check('dying with a story dialog open does not freeze input in the next game', died14 && inputOk.story === null && inputOk.journal === true, JSON.stringify(inputOk));
 
   await page.evaluate(() => localStorage.clear());
 

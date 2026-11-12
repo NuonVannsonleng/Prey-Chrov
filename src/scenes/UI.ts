@@ -12,6 +12,7 @@ import { CraftingPanel } from '../ui/panels/CraftingPanel';
 import { StoragePanel } from '../ui/panels/StoragePanel';
 import { CharacterPanel } from '../ui/panels/CharacterPanel';
 import { MapPanel } from '../ui/panels/MapPanel';
+import { StoryDialog } from '../ui/components/StoryDialog';
 import { Hotbar } from '../ui/panels/Hotbar';
 import { InventoryPanel } from '../ui/panels/InventoryPanel';
 import { Minimap } from '../ui/panels/Minimap';
@@ -52,6 +53,9 @@ export class UI extends Phaser.Scene {
   private storage!: StoragePanel;
   private character!: CharacterPanel;
   private map!: MapPanel;
+  /** Story offers/choices waiting to be shown one at a time. */
+  private story: StoryDialog | null = null;
+  private readonly storyQueue: Array<() => StoryDialog> = [];
   /** Compass pointers toward the nearest map markers. */
   private pointerG!: Phaser.GameObjects.Graphics;
   private readonly pointerT: Phaser.GameObjects.Text[] = [];
@@ -86,6 +90,9 @@ export class UI extends Phaser.Scene {
     this.dialog = null;
     this.view = null;
     this.modal = false;
+    // The scene instance is reused across runs: never carry a dead story dialog over.
+    this.story = null;
+    this.storyQueue.length = 0;
     this.placing = false;
     this.add.image(0, 0, TEX.vignette).setOrigin(0);
     this.hurtFlash = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x8a1a10, 0).setOrigin(0);
@@ -171,6 +178,19 @@ export class UI extends Phaser.Scene {
       this.map.setSeed(seed);
     });
     onSceneEvent(this, 'map:data', (d) => this.map.render(d));
+    onSceneEvent(this, 'sidequests:changed', (v) => this.journal.renderSide(v.quests, v.memories));
+    onSceneEvent(this, 'story:offer', (o) =>
+      this.queueStory(
+        () =>
+          new StoryDialog(this, o.title, o.text, [
+            { id: 'accept', label: 'Follow it', description: 'Begin this side story. It appears in your Journal (J) › Side stories.', enabled: true },
+            { id: 'decline', label: 'Let it go', description: 'Decline. Nothing is lost, and the main journey is unaffected.', enabled: true },
+          ], (id) => this.endStory(() => gameEvents.emit('story:answer', { id: o.id, accept: id === 'accept' }))),
+      ),
+    );
+    onSceneEvent(this, 'story:choice', (c) =>
+      this.queueStory(() => new StoryDialog(this, c.title, c.prompt, c.options, (id) => this.endStory(() => gameEvents.emit('story:choose', { id: c.id, option: id })))),
+    );
     onSceneEvent(this, 'markers:pointers', (list) => {
       this.pointers = list;
     });
@@ -263,6 +283,8 @@ export class UI extends Phaser.Scene {
       kb?.off('keydown', this.keyHandler);
       this.input.off(Phaser.Input.Events.POINTER_WHEEL, this.onWheel, this);
       if (this.modal) gameEvents.emit('ui:modal', false);
+      this.storyQueue.length = 0;
+      this.story = null;
     });
 
     gameEvents.emit('ui:ready');
@@ -275,7 +297,7 @@ export class UI extends Phaser.Scene {
     }
     this.weather.update(time);
     if (this.tabletView.isOpen !== this.modal && this.tabletView.isOpen) this.syncModal();
-    if (!this.tabletView.isOpen && this.modal && !this.panel.isOpen && !this.crafting.isOpen && !this.journal.isOpen && !this.storage.isOpen && !this.character.isOpen && !this.map.isOpen && !this.dialog) this.syncModal();
+    if (!this.tabletView.isOpen && this.modal && !this.panel.isOpen && !this.crafting.isOpen && !this.journal.isOpen && !this.storage.isOpen && !this.character.isOpen && !this.map.isOpen && !this.story && !this.dialog) this.syncModal();
     if (!this.debugOn || time - this.lastDebugUpdate < 200) return;
     this.lastDebugUpdate = time;
     const t = this.lastTick;
@@ -288,6 +310,8 @@ export class UI extends Phaser.Scene {
   }
 
   private onKey(event: KeyboardEvent): void {
+    // A story moment must be answered; its buttons handle the keys.
+    if (this.story) return;
     if (event.code === 'Escape') {
       if (this.dialog) this.dialog.cancel();
       else if (this.tabletView.isOpen) this.closeTablet();
@@ -342,6 +366,12 @@ export class UI extends Phaser.Scene {
       return;
     }
     if (this.character.isOpen && /^Digit[1-6]$/.test(event.code)) return;
+    if (this.journal.isOpen && (event.code === 'Tab' || event.code === 'Digit1' || event.code === 'Digit2')) {
+      event.preventDefault();
+      if (event.code === 'Tab') this.journal.nextTab();
+      else this.journal.setTab(event.code === 'Digit1' ? 'main' : 'side');
+      return;
+    }
     if (event.code === 'KeyJ') {
       if (this.character.isOpen) this.setCharacter(false);
       if (this.panel.isOpen) this.setPanel(false);
@@ -412,6 +442,29 @@ export class UI extends Phaser.Scene {
     this.syncModal();
   }
 
+  private queueStory(make: () => StoryDialog): void {
+    this.storyQueue.push(make);
+    if (!this.story) this.nextStory();
+  }
+
+  private nextStory(): void {
+    const make = this.storyQueue.shift();
+    if (!make) return;
+    // Story moments wait for other panels to close.
+    for (const close of [() => this.panel.isOpen && this.setPanel(false), () => this.crafting.isOpen && this.setCrafting(false), () => this.journal.isOpen && this.setJournal(false), () => this.map.isOpen && this.setMap(false), () => this.character.isOpen && this.setCharacter(false)]) close();
+    this.story = make();
+    gameEvents.emit('ui:story', true);
+    this.syncModal();
+  }
+
+  private endStory(send: () => void): void {
+    this.story = null;
+    this.syncModal();
+    send();
+    if (this.storyQueue.length) this.time.delayedCall(200, () => this.nextStory());
+    else gameEvents.emit('ui:story', false);
+  }
+
   private setMap(open: boolean): void {
     if (open) this.map.open();
     else this.map.close();
@@ -470,7 +523,7 @@ export class UI extends Phaser.Scene {
   }
 
   private syncModal(): void {
-    const modal = this.panel.isOpen || this.crafting.isOpen || this.journal.isOpen || this.tabletView.isOpen || this.storage.isOpen || this.character.isOpen || this.map.isOpen || this.dialog !== null;
+    const modal = this.panel.isOpen || this.crafting.isOpen || this.journal.isOpen || this.tabletView.isOpen || this.storage.isOpen || this.character.isOpen || this.map.isOpen || this.story !== null || this.dialog !== null;
     if (modal === this.modal) return;
     this.modal = modal;
     this.toast.setLow(modal);

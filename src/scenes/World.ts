@@ -20,6 +20,7 @@ import { gameEvents, onSceneEvent, type ClockTick, type PlayerTick, type Surviva
 import { Gathering } from '../systems/Gathering';
 import { FishingSession } from '../systems/Fishing';
 import { Progression } from '../systems/Progression';
+import { SideQuestBook, type SideUpdate } from '../systems/SideQuests';
 import { playerNoise } from '../systems/Perception';
 import { LANDMARK_NAMES, PLATE_WINDOW_SECONDS, STEPPING_CELL, ruinKey, ruinPlan, trapPhase, type LandmarkId } from '../world/RuinPlan';
 import type { LandmarkObj, RuinFeatureObj } from '../world/ChunkManager';
@@ -145,6 +146,18 @@ export class World extends Phaser.Scene {
   private readonly lampProgress = new Map<string, string[]>();
   private readonly plateProgress = new Map<string, { pressed: Set<string>; until: number }>();
   private nextTrapHitAt = 0;
+  /** M14 side stories, story flags and their epilogue lines (saved). */
+  private sideQuests!: SideQuestBook;
+  private readonly storyFlags = new Set<string>();
+  private endingLines: string[] = [];
+  /** A story moment is on screen: the world holds still (no attacks, no drain). */
+  private storyOpen = false;
+  /** Side stories on (debug ?nostory turns them off for tests). */
+  storiesEnabled = true;
+  /** Story updates and events waiting for a safe moment (not busy, not in danger). */
+  private readonly storyBacklog: SideUpdate[] = [];
+  private readonly storyEventsWaiting: string[] = [];
+  private nextChoiceRetryAt = 0;
   private readonly trapPhases = new Map<string, string>();
   private ambushAt = 0;
   private readonly encFrame = { playerX: 0, playerY: 0, darkness: 0, day: 1, spiritWard: false, noise: 0, hidden: false, crouching: false, monsoon: false, distTiles: 0 };
@@ -240,6 +253,13 @@ export class World extends Phaser.Scene {
     this.ambushAt = 0;
     this.ambushRolledNight = -1;
     this.explored.clear();
+    this.sideQuests = new SideQuestBook(getGameData().sidequests);
+    this.storyFlags.clear();
+    this.endingLines = [];
+    this.storyOpen = false;
+    this.storyBacklog.length = 0;
+    this.storyEventsWaiting.length = 0;
+    this.nextChoiceRetryAt = 0;
     for (const s of Object.values(this.found)) s.clear();
     this.markers = [];
     this.lampProgress.clear();
@@ -281,6 +301,8 @@ export class World extends Phaser.Scene {
       onKilled: (enemy) => this.onEnemyKilled(enemy),
     });
     this.encounters.enabled = !(DEBUG_HOOKS && new URLSearchParams(window.location.search).has('calm'));
+    // Debug only: ?nostory keeps side stories quiet for automated tests of other systems.
+    this.storiesEnabled = !(DEBUG_HOOKS && new URLSearchParams(window.location.search).has('nostory'));
     this.building = new Building(this, this.structures);
     this.lighting = new Lighting(this, CAMERA.zoom);
     this.clock = new GameClock(this.gameData.survival.day);
@@ -354,9 +376,26 @@ export class World extends Phaser.Scene {
       this.emitStructures();
       this.emitOutposts();
       this.emitCharacter();
+      this.emitSideQuests();
+      // A choice interrupted by a reload is offered again.
+      const pending = this.sideQuests.pendingChoice();
+      if (pending) this.time.delayedCall(800, () => this.handleStory([pending]));
     });
     onSceneEvent(this, 'equipment:unequip', (slot) => this.unequip(slot));
     onSceneEvent(this, 'map:request', () => gameEvents.emit('map:data', this.mapData()));
+    onSceneEvent(this, 'story:answer', ({ id, accept }) => {
+      this.handleStory(this.sideQuests.answerOffer(id, accept));
+      if (!accept) gameEvents.emit('toast', { text: 'You let that story go. The main journey is unaffected.', tone: 'info' });
+      this.emitSideQuests();
+    });
+    onSceneEvent(this, 'story:choose', ({ id, option }) => this.chooseStory(id, option));
+    onSceneEvent(this, 'ui:story', (open) => {
+      this.storyOpen = open;
+      if (open) {
+        this.player.halt();
+        this.pointerHeld = false;
+      }
+    });
     onSceneEvent(this, 'map:marker', ({ x, y }) => this.toggleMarker(x, y));
     this.scene.launch(SCENES.ui);
 
@@ -412,9 +451,10 @@ export class World extends Phaser.Scene {
     this.animateWater(dt);
     this.chunks.update(p.x, p.y, this.now);
     this.chunks.processFlood();
-    if (this.busy) {
+    if (this.busy || this.storyOpen) {
       this.pendingUse = false;
       this.pendingInteract = false;
+      this.pendingAttack = false;
       this.renderLighting();
       return;
     }
@@ -549,7 +589,19 @@ export class World extends Phaser.Scene {
   private outpostDistance(x: number, y: number): number {
     let best = Infinity;
     for (const s of this.structures.records) if (s.def.outpost) best = Math.min(best, Math.hypot(s.x - x, s.y - y));
+    // "Rekindle the lamps" (Embers in the Stone): solved ruins are safe too.
+    if (this.storyFlags.has('ruin_ward')) {
+      for (const k of this.found.puzzles) {
+        const [tx, ty] = k.split(',').map(Number) as [number, number];
+        best = Math.min(best, Math.hypot(tx * 32 + 16 - x, ty * 32 + 16 - y));
+      }
+    }
     return best;
+  }
+
+  private applyStoryFlags(): void {
+    const cfg = this.gameData.fishing;
+    this.fishing = new FishingSession(this.storyFlags.has('river_blessing') ? { ...cfg, zoneWidth: Math.min(0.8, cfg.zoneWidth + 0.08) } : cfg);
   }
 
   private shrineDistance(x: number, y: number): number {
@@ -623,6 +675,7 @@ export class World extends Phaser.Scene {
   private onEnemyKilled(enemy: Enemy): void {
     this.kills++;
     if (!this.grant('defeat_first', enemy.def.id)) this.grant('defeat', null);
+    if (enemy.def.kind === 'spirit') this.storyEvent('spirit_defeat');
     this.stats.kills++;
     const table = this.gameData.loot.get(enemy.def.lootTable);
     this.floating.show(enemy.x, enemy.cy - 20, enemy.def.kind === 'spirit' ? 'The spirit fades' : `${enemy.def.name} down`, '#e6b866');
@@ -701,6 +754,7 @@ export class World extends Phaser.Scene {
     const biome = this.gen.biomeAt(Math.floor(this.player.x / 32), Math.floor(this.player.y / 32));
     if (biome !== this.gen.biomeAt(Math.floor(this.spawn.x / 32), Math.floor(this.spawn.y / 32))) this.grant('biome', biome);
     this.updateDiscovery();
+    this.checkStoryState();
     if (this.now >= this.nextKnowledgeAt) {
       this.nextKnowledgeAt = this.now + 1000;
       this.checkKnowledge();
@@ -918,7 +972,7 @@ export class World extends Phaser.Scene {
     this.player.halt();
     this.encounters.clear();
     this.projectiles.clear();
-    const summary: EndingData = { day: this.clock.dayNumber, tablets: this.quest.tabletsRead.length, ...this.stats, saved };
+    const summary: EndingData = { day: this.clock.dayNumber, tablets: this.quest.tabletsRead.length, ...this.stats, saved, storyLines: [...this.endingLines] };
     const cam = this.cameras.main;
     this.time.delayedCall(1600, () => {
       cam.fadeEffect.reset();
@@ -1453,6 +1507,7 @@ export class World extends Phaser.Scene {
         }
       }
       gameEvents.emit('sfx', 'splash');
+      this.storyEvent('fish');
     }
     this.inventory.broadcast();
     this.floating.show(p.x, p.y - 36, text, caught ? '#8ec26a' : '#e6b866');
@@ -1530,7 +1585,10 @@ export class World extends Phaser.Scene {
     this.floating.show(b.x, b.y - 30, `Built ${placed.def.name}`, '#8ec26a');
     if (placed.def.station === 'campfire') this.completeObjective('campfire');
     this.grant('build_first', placed.def.id);
-    if (placed.def.outpost) this.grant('outpost', placed.name);
+    if (placed.def.outpost) {
+      this.grant('outpost', placed.name);
+      this.storyEvent('outpost');
+    }
     if (placed.def.interaction === 'sleep') this.completeObjective('shelter');
     if (placed.def.outpost) {
       this.emitOutposts();
@@ -1573,6 +1631,7 @@ export class World extends Phaser.Scene {
       this.pendingInteract = false;
       cam.fadeIn(900, 2, 4, 8);
       this.busy = false;
+      this.time.delayedCall(1200, () => this.storyEvent('sleep'));
       gameEvents.emit('toast', {
         text: saved ? `Day ${this.clock.dayNumber} — you wake rested. Journey saved.` : `Day ${this.clock.dayNumber} — could not save (browser storage unavailable)`,
         tone: saved ? 'info' : 'warn',
@@ -1599,6 +1658,7 @@ export class World extends Phaser.Scene {
         openedChests: this.openedChests,
         knownPlants: this.knownPlants,
         ambushNight: this.ambushRolledNight,
+        story: { quests: this.sideQuests.serialize(), flags: [...this.storyFlags], endingLines: [...this.endingLines] },
         exploration: {
           explored: [...this.explored],
           ruins: [...this.found.ruins],
@@ -1640,6 +1700,128 @@ export class World extends Phaser.Scene {
     return (1 - slow) * (this.fx.speed + (feet?.speed ?? 0));
   }
 
+  // ---------- Side stories (M14) ----------
+
+  private storyEvent(event: string): void {
+    if (!this.storiesEnabled) return;
+    if (this.busy) {
+      this.storyEventsWaiting.push(event);
+      return;
+    }
+    this.handleStory(this.sideQuests.notify(event));
+  }
+
+  private checkStoryState(): void {
+    if (!this.storiesEnabled) return;
+    if (!this.busy) for (const ev of this.storyEventsWaiting.splice(0)) this.handleStory(this.sideQuests.notify(ev));
+    // Story moments wait until you are safe (not mid-fight, not asleep or dying).
+    if (this.storyBacklog.length && !this.busy && !this.storyOpen && !this.inDanger()) this.showStory(this.storyBacklog.splice(0));
+    // A choice that was never answered (lost dialog, several at once) is asked again.
+    if (!this.storyOpen && !this.storyBacklog.length && this.now >= this.nextChoiceRetryAt) {
+      const pending = this.sideQuests.pendingChoice();
+      if (pending) {
+        this.nextChoiceRetryAt = this.now + 6000;
+        this.handleStory([pending]);
+      }
+    }
+    const ups = this.sideQuests.checkState((stat) => {
+      if (stat === 'tablets') return this.quest.tabletsRead.length;
+      if (stat === 'puzzles') return this.found.puzzles.size;
+      if (stat === 'landmarks') return this.found.landmarks.size;
+      if (stat === 'cooked_fish') return this.inventory.inventory.count('cooked_fish');
+      return 0;
+    });
+    if (ups.length) this.handleStory(ups);
+  }
+
+  private handleStory(ups: SideUpdate[]): void {
+    if (!ups.length) return;
+    if (this.busy || this.inDanger()) {
+      this.storyBacklog.push(...ups);
+      this.emitSideQuests();
+      return;
+    }
+    this.showStory(ups);
+  }
+
+  private showStory(ups: SideUpdate[]): void {
+    for (const u of ups) {
+      if (u.offer) gameEvents.emit('story:offer', u.offer);
+      if (u.memory) {
+        gameEvents.emit('toast', { text: `A memory returns (${u.memory.title}) — see Journal (J) › Memories`, tone: 'info' });
+        gameEvents.emit('sfx', 'tablet');
+      }
+      if (u.choice) {
+        const inv = this.inventory.inventory;
+        gameEvents.emit('story:choice', {
+          id: u.choice.id,
+          title: u.choice.title,
+          prompt: u.choice.prompt,
+          options: u.choice.options.map((o) => {
+            const missing = o.cost.filter((c) => inv.count(c.item) < c.qty);
+            return {
+              id: o.id,
+              label: o.label,
+              description: o.description,
+              enabled: missing.length === 0,
+              note: missing.length ? `Needs ${missing.map((c) => `${c.qty} ${itemDef(c.item).name}`).join(', ')}` : undefined,
+            };
+          }),
+        });
+      }
+    }
+    if (ups.length) this.emitSideQuests();
+  }
+
+  /** The final choice: pays any cost, applies its effects once, and records the outcome. */
+  private chooseStory(id: string, option: string): void {
+    const def = this.gameData.sidequests.find((q) => q.id === id);
+    const opt = def?.steps[def.steps.length - 1]?.options?.find((o) => o.id === option);
+    if (!opt) return;
+    const inv = this.inventory.inventory;
+    if ((opt.cost ?? []).some((c) => inv.count(c.item) < c.qty)) {
+      // Can't afford it any more: ask again (the free option is always available).
+      const pending = this.sideQuests.pendingChoice();
+      if (pending) this.handleStory([pending]);
+      return;
+    }
+    const res = this.sideQuests.choose(id, option);
+    if (!res) return;
+    for (const c of opt.cost ?? []) inv.remove(c.item, c.qty);
+    for (const e of res.effects) {
+      if (e.type === 'item') {
+        const left = this.inventory.add(e.item, e.qty);
+        if (left > 0 && !this.dropInFront(e.item, left)) this.pickups.spawn(e.item, left, this.player.x, this.player.y + 8, this.now, 0, 4, false);
+      } else if (e.type === 'xp') {
+        const up = this.progression.addXp(e.skill, e.amount);
+        const skill = this.gameData.progression.skills.find((s) => s.id === e.skill);
+        this.floating.show(this.player.x + 18, this.player.y - 48, `+${e.amount} ${skill?.name ?? e.skill}`, '#c58be0');
+        if (up.levelUp !== null) gameEvents.emit('toast', { text: `${skill?.name ?? e.skill} rose to level ${up.levelUp}: ${skill?.effect ?? ''}`, tone: 'info' });
+        this.applyProgressionEffects();
+        this.checkKnowledge();
+      } else if (e.type === 'flag') {
+        this.storyFlags.add(e.flag);
+        this.applyStoryFlags();
+      } else if (e.type === 'reveal') {
+        const p = this.player;
+        const r = Math.ceil(e.radius / 8);
+        const ccx = Math.floor(p.x / 256);
+        const ccy = Math.floor(p.y / 256);
+        for (let oy = -r; oy <= r; oy++) for (let ox = -r; ox <= r; ox++) if (ox * ox + oy * oy <= r * r) this.explored.add(`${ccx + ox},${ccy + oy}`);
+      } else if (e.type === 'ending') this.endingLines.push(e.text);
+    }
+    this.inventory.broadcast();
+    this.emitCharacter();
+    this.emitSideQuests();
+    gameEvents.emit('sfx', 'shrine');
+    gameEvents.emit('toast', { text: `${def?.title}: ${res.result}`, tone: 'info' });
+    this.save();
+  }
+
+  private emitSideQuests(): void {
+    gameEvents.emit('sidequests:changed', { quests: this.sideQuests.view(), memories: this.sideQuests.memories() });
+  }
+
   // ---------- Exploration, map and ruins (M13) ----------
 
   /** Fog of war, ruins, landmarks, shortcuts and shrines you have come near (every half second). */
@@ -1657,6 +1839,7 @@ export class World extends Phaser.Scene {
       if (this.found.landmarks.has(key) || Math.hypot(l.x - p.x, l.y - p.y) > 200) continue;
       this.found.landmarks.add(key);
       this.grant('landmark', key);
+      this.storyEvent('landmark');
       gameEvents.emit('toast', { text: `Landmark discovered: ${LANDMARK_NAMES[l.id as LandmarkId] ?? l.id}. It is now on your map (M).`, tone: 'info' });
     }
     if (this.gen.steppingAt(ptx, Math.floor((p.y - 4) / 32))) {
@@ -1665,6 +1848,7 @@ export class World extends Phaser.Scene {
       if (![...this.found.shortcuts].some((k) => k.split('|')[0] === cell)) {
         this.found.shortcuts.add(key);
         this.grant('shortcut', key);
+        this.storyEvent('shortcut');
         gameEvents.emit('toast', { text: 'Shortcut found: hidden stepping stones across the river. Marked on your map (M).', tone: 'info' });
       }
     }
@@ -1858,6 +2042,7 @@ export class World extends Phaser.Scene {
     this.lampProgress.delete(ruin);
     this.plateProgress.delete(ruin);
     this.grant('puzzle', ruin);
+    this.time.delayedCall(2500, () => this.storyEvent('puzzle'));
     gameEvents.emit('sfx', 'chest');
     this.shake(220, 0.003);
     gameEvents.emit('toast', { text: 'A deep grinding sound… the reliquary unseals.', tone: 'info' });
@@ -2408,6 +2593,10 @@ export class World extends Phaser.Scene {
     this.objectives = new Objectives(save.objectives);
     for (const k of save.knownPlants) this.knownPlants.add(k);
     this.ambushRolledNight = save.ambushNight;
+    this.sideQuests = new SideQuestBook(this.gameData.sidequests, save.story.quests as Record<string, Partial<import('../systems/SideQuests').SideQuestState>>);
+    for (const f of save.story.flags) this.storyFlags.add(f);
+    this.endingLines = [...save.story.endingLines];
+    this.applyStoryFlags();
     const ex = save.exploration;
     for (const k of ex.explored) this.explored.add(k);
     for (const k of ex.ruins) this.found.ruins.add(k);
