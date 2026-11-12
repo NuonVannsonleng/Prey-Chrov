@@ -16,6 +16,7 @@ import fishing from './fishing.json';
 import progression from './progression.json';
 import stealth from './stealth.json';
 import sidequests from './sidequests.json';
+import setpieces from './setpieces.json';
 import structures from './structures.json';
 import survival from './survival.json';
 import { validateGameData, type GameData, type ItemDef } from './schema';
@@ -42,6 +43,7 @@ export const RAW_GAME_DATA = {
   progression,
   stealth,
   sidequests,
+  setpieces,
 };
 
 let cached: GameData | null = null;

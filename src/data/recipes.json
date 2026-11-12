@@ -700,5 +700,26 @@
     ],
     "station": "none",
     "category": "building"
+  },
+  {
+    "id": "tusk_spear",
+    "output": "tusk_spear",
+    "qty": 1,
+    "ingredients": [
+      {
+        "item": "great_tusk",
+        "qty": 1
+      },
+      {
+        "item": "bamboo",
+        "qty": 3
+      },
+      {
+        "item": "hide",
+        "qty": 1
+      }
+    ],
+    "station": "workbench",
+    "category": "tools"
   }
 ]

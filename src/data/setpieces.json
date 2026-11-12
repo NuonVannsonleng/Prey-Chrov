@@ -1,0 +1,54 @@
+{
+  "tusker": {
+    "enemy": "old_tusker",
+    "lairDistance": 95,
+    "wakeRadius": 640,
+    "rumourDay": 3,
+    "stunMs": 2600,
+    "vulnerableMultiplier": 3,
+    "armouredDamage": 1
+  },
+  "storm": {
+    "minDay": 5,
+    "warningSeconds": 6,
+    "durationSeconds": 75,
+    "strikeIntervalMs": 1700,
+    "warningMs": 1300,
+    "radius": 46,
+    "damage": 14,
+    "warmthLossMultiplier": 1.6,
+    "xp": 3
+  },
+  "blight": {
+    "cores": 3,
+    "coreRadiusTiles": 3.5,
+    "burnSeconds": 4,
+    "fireReach": 92,
+    "slamIntervalMs": 1900,
+    "warningMs": 1100,
+    "radius": 44,
+    "damage": 12,
+    "retryHealth": 0.6
+  },
+  "text": {
+    "tuskerName": "The Old Tusker",
+    "tuskerRumour": "Something huge has been tearing up the clearings. Its ground is marked on your map (M).",
+    "tuskerMarker": "Old Tusker's ground",
+    "tuskerWake": "The ground shakes: the Old Tusker. Its hide turns blades — lure its charge into a tree or rock, then strike.",
+    "tuskerHintDazed": "Dazed — strike now!",
+    "tuskerHintLure": "Lure its charge into something solid",
+    "armoured": "Armoured — hide turns the blow",
+    "tuskerDefeated": "The Old Tusker falls. Its great tusk is yours — craft a tusk spear at a workbench.",
+    "stormWarning": "A great storm breaks in {s}s: lightning will strike the open ground. Take shelter or stand by a fire!",
+    "stormPassed": "The storm passes. You weathered the Great Storm.",
+    "blightName": "The Blight",
+    "blightStart": "A blight grips the Heart Tree. Hold fire to its three cores to burn them, and dodge the strikes.",
+    "blightHint": "{n} left: hold fire to them",
+    "blightCoreOne": "1 core",
+    "blightCoreMany": "{n} cores",
+    "blightCoreBurned": "The core crumbles to ash",
+    "blightCleared": "The blight withers away. The Heart Tree breathes again — you may make your offering.",
+    "blightBlocked": "A blight chokes the Heart Tree. Burn its three cores with fire first.",
+    "blightRetry": "The blight overwhelms you… you wake at the glade's edge. Burned cores stay burned. Try again."
+  }
+}

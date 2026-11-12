@@ -4,7 +4,7 @@ import { perceive, sightRange, type Perceived } from '../systems/Perception';
 import { CREATURE_POSE, TEX } from '../textures';
 import { DEPTH, FONTS, ySort } from '../config';
 
-export type EnemyState = 'wander' | 'investigate' | 'return' | 'chase' | 'telegraph' | 'attack' | 'recover' | 'flee' | 'fade';
+export type EnemyState = 'wander' | 'investigate' | 'return' | 'chase' | 'telegraph' | 'attack' | 'recover' | 'flee' | 'fade' | 'stunned';
 
 const ELITE_TINT = 0xffd27a;
 
@@ -125,11 +125,21 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const w = def.sprite === 'tiger' ? 30 : def.sprite === 'snake' ? 18 : 20;
     this.body.setSize(w, 10, false).setOffset((this.width - w) / 2, this.height - 10);
     if (def.kind === 'spirit') this.scene.tweens.add({ targets: this, alpha: 0.92, duration: 600 });
-    this.setScale(elite ? 1.15 : 1);
+    this.setScale(def.boss ? 1.9 : elite ? 1.15 : 1);
     if (elite) this.setTint(ELITE_TINT);
+    else if (def.boss) this.setTint(0x9a8a78);
   }
 
   private maxHpAtSpawn = 0;
+  /** M15 set-piece tuning (boss): stun length after a charge into something solid; damage taken. */
+  stunMs = 2600;
+  vulnerableMultiplier = 3;
+  armouredDamage = 1;
+  /** Damage the last landed hit actually dealt (after armour), for feedback. */
+  lastDamage = 0;
+  /** The last hit was turned by armour (boss not stunned). */
+  lastArmoured = false;
+  private chargeStartedAt = 0;
   /** Set by move() each frame: the creature is trying to go somewhere (for stuck detection). */
   private wantsMove = false;
 
@@ -161,6 +171,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   /** Returns true if the hit landed (not during invulnerability). */
   takeHit(damage: number, fromX: number, fromY: number, knockback: number, iFramesMs: number, now: number): boolean {
     if (!this.active || now < this.invulnUntil || this.aiState === 'fade') return false;
+    // A set-piece boss is armoured: only a stunned boss takes full (multiplied) damage.
+    this.lastArmoured = this.def.boss === true && this.aiState !== 'stunned';
+    if (this.def.boss) damage = this.lastArmoured ? this.armouredDamage : damage * this.vulnerableMultiplier;
+    this.lastDamage = damage;
     this.hp -= damage;
     this.invulnUntil = now + iFramesMs;
     const dx = this.x - fromX;
@@ -171,11 +185,12 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.scene.time.delayedCall(70, () => {
       this.clearTint();
       if (this.elite) this.setTint(ELITE_TINT);
+      else if (this.def.boss) this.setTint(0x9a8a78);
     });
     // A hit always gives you away.
     this.awareness = 1;
     // Being hit interrupts a wind-up (rewards aggression) and provokes the creature.
-    if (this.aiState === 'telegraph' || this.aiState === 'wander' || this.aiState === 'chase') this.setAi('recover', now, 300);
+    if (!this.def.boss && (this.aiState === 'telegraph' || this.aiState === 'wander' || this.aiState === 'chase')) this.setAi('recover', now, 300);
     if (this.wounded) this.setAi('flee', now, 4000);
     return true;
   }
@@ -321,6 +336,13 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         this.x += Math.sin(now / 25) * 0.4;
         if (now >= this.stateUntil) this.beginAttack(w, ux, uy);
         break;
+      case 'stunned':
+        // Dazed after charging into something solid: the opening to strike back.
+        this.body.setVelocity(0, 0);
+        this.pose(CREATURE_POSE.idle);
+        this.x += Math.sin(now / 40) * 0.5;
+        if (now >= this.stateUntil) this.setAi('recover', now, 500);
+        break;
       case 'attack':
         this.pose(CREATURE_POSE.attack);
         this.attack(w, dist);
@@ -346,12 +368,12 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   /** "?" while searching, "!" when it has spotted you — readable warning before any attack. */
   private updateMarker(): void {
     const s = this.aiState;
-    const t = s === 'investigate' ? '?' : s === 'chase' || s === 'telegraph' ? '!' : '';
+    const t = s === 'investigate' ? '?' : s === 'chase' || s === 'telegraph' ? '!' : s === 'stunned' ? '✶' : '';
     if (!t || this.alpha < 0.3) {
       if (this.marker.visible) this.marker.setVisible(false);
       return;
     }
-    if (this.marker.text !== t) this.marker.setText(t).setColor(t === '!' ? '#d9644a' : '#e6b866');
+    if (this.marker.text !== t) this.marker.setText(t).setColor(t === '!' ? '#d9644a' : t === '✶' ? '#ffffff' : '#e6b866');
     this.marker.setVisible(true).setPosition(this.x, this.y - this.displayHeight - 2);
   }
 
@@ -464,6 +486,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         if (w.lightAt(tx, ty, 4)) return this.setAi('recover', now, 600);
       }
       this.body.setVelocity(this.dirX * d.charge.speed, this.dirY * d.charge.speed);
+      this.chargeStartedAt = now;
       this.setAi('attack', now, d.charge.durationMs);
       return;
     }
@@ -473,7 +496,14 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   private attack(w: EnemyWorld, dist: number): void {
     const d = this.def;
     if (d.charge) {
-      if (!d.flying && w.blocked(this.x + this.dirX * 14, this.y + this.dirY * 14)) this.body.setVelocity(0, 0);
+      const water = !d.flying && w.blocked(this.x + this.dirX * 14, this.y + this.dirY * 14);
+      const solid = !this.body.touching.none || !this.body.blocked.none;
+      if (d.boss && w.now - this.chargeStartedAt > 120 && (water || solid)) {
+        this.body.setVelocity(0, 0);
+        this.setAi('stunned', w.now, this.stunMs);
+        return;
+      }
+      if (water) this.body.setVelocity(0, 0);
       if (d.kind === 'spirit' && w.lightAt(this.x, this.cy, 4)) {
         this.body.setVelocity(0, 0);
         return;

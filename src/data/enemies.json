@@ -193,5 +193,41 @@
     },
     "hearing": 1,
     "patrolRadius": 90
+  },
+  {
+    "id": "old_tusker",
+    "name": "The Old Tusker",
+    "description": "A boar the size of a buffalo, scarred and grey. Its hide turns blades — but it charges blindly at whatever angers it.",
+    "kind": "wildlife",
+    "sprite": "boar",
+    "active": "any",
+    "behavior": "charger",
+    "hp": 60,
+    "speed": 85,
+    "damage": 16,
+    "attackRange": 30,
+    "attackCooldownMs": 3000,
+    "telegraphMs": 1100,
+    "aggroRadius": 260,
+    "leashRadius": 700,
+    "fleeBelowHp": 0,
+    "lootTable": "tusker_loot",
+    "avoidsLight": false,
+    "flying": false,
+    "spawn": {
+      "weight": 0,
+      "minDay": 1,
+      "maxAlive": 1,
+      "biomes": {
+        "clearing": 0
+      }
+    },
+    "charge": {
+      "speed": 360,
+      "durationMs": 900
+    },
+    "hearing": 1.2,
+    "territory": 520,
+    "boss": true
   }
 ]

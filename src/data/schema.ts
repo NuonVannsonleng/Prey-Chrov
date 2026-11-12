@@ -85,6 +85,15 @@ export const SKILL_IDS = ['foraging', 'crafting', 'survival', 'combat', 'explora
 export type SkillId = (typeof SKILL_IDS)[number];
 
 /** progression.json (M11): skills, XP sources (no grind: unique firsts and small daily-capped repeats) and knowledge. */
+/** setpieces.json (M15): the Old Tusker, the Great Storm and the Blight at the Heart. */
+export interface SetPiecesConfig {
+  tusker: { enemy: string; lairDistance: number; wakeRadius: number; rumourDay: number; stunMs: number; vulnerableMultiplier: number; armouredDamage: number };
+  storm: { minDay: number; warningSeconds: number; durationSeconds: number; strikeIntervalMs: number; warningMs: number; radius: number; damage: number; warmthLossMultiplier: number; xp: number };
+  blight: { cores: number; coreRadiusTiles: number; burnSeconds: number; fireReach: number; slamIntervalMs: number; warningMs: number; radius: number; damage: number; retryHealth: number };
+  /** Every player-facing set-piece string ({s}, {n} are filled in). */
+  text: Record<string, string>;
+}
+
 /** sidequests.json (M14): side stories offered by events, with steps and a final choice. */
 export const SIDE_EVENTS = ['sleep', 'landmark', 'outpost', 'shortcut', 'puzzle', 'fish', 'spirit_defeat'] as const;
 export const SIDE_STATS = ['tablets', 'puzzles', 'landmarks', 'cooked_fish'] as const;
@@ -316,6 +325,7 @@ export interface GameData {
   progression: ProgressionConfig;
   stealth: StealthConfig;
   sidequests: readonly SideQuestDef[];
+  setpieces: SetPiecesConfig;
 }
 
 export interface RawGameData {
@@ -339,6 +349,7 @@ export interface RawGameData {
   progression: unknown;
   stealth: unknown;
   sidequests: unknown;
+  setpieces: unknown;
 }
 
 // ---------- Validation ----------
@@ -558,6 +569,41 @@ function validateStructures(p: string[], structures: Rec[]): void {
     if (s['rotatable'] === true && !STRUCTURE_SPRITES.includes(s['sprite'] as StructureSprite)) p.push(`${w}: rotatable needs a sprite`);
     const sb = s['sleepBonus'];
     if (sb !== undefined && (!isRec(sb) || !isNum(sb['health']) || num(sb['health']) < 0)) p.push(`${w}: sleepBonus.health must be >= 0`);
+  }
+}
+
+function validateSetPieces(p: string[], raw: unknown, enemies: Rec[]): void {
+  if (!isRec(raw)) {
+    p.push('setpieces.json: must be an object');
+    return;
+  }
+  const pos = (v: unknown) => isNum(v) && num(v) > 0;
+  const t = raw['tusker'];
+  if (!isRec(t)) p.push('setpieces.tusker required');
+  else {
+    const boss = enemies.find((e) => e['id'] === t['enemy']);
+    if (!boss || boss['boss'] !== true) p.push('setpieces.tusker.enemy must be an enemy with boss: true');
+    for (const k of ['lairDistance', 'wakeRadius', 'rumourDay', 'stunMs', 'vulnerableMultiplier', 'armouredDamage']) if (!pos(t[k])) p.push(`setpieces.tusker.${k} must be > 0`);
+    // Beatable without exploits: a stun window long enough to land several hits.
+    if (pos(t['stunMs']) && num(t['stunMs']) < 1500) p.push('setpieces.tusker.stunMs must be >= 1500 (fair window)');
+    if (boss && (!isNum(boss['telegraphMs']) || num(boss['telegraphMs']) < 800)) p.push('old tusker telegraphMs must be >= 800 (telegraphed)');
+  }
+  const s = raw['storm'];
+  if (!isRec(s)) p.push('setpieces.storm required');
+  else {
+    for (const k of ['minDay', 'warningSeconds', 'durationSeconds', 'strikeIntervalMs', 'warningMs', 'radius', 'damage', 'warmthLossMultiplier']) if (!pos(s[k])) p.push(`setpieces.storm.${k} must be > 0`);
+    if (pos(s['warningMs']) && num(s['warningMs']) < 800) p.push('setpieces.storm.warningMs must be >= 800 (telegraphed)');
+    if (pos(s['warningMs']) && pos(s['strikeIntervalMs']) && num(s['strikeIntervalMs']) <= num(s['warningMs'])) p.push('setpieces.storm: strikes must not overlap their warnings');
+  }
+  const tx = raw['text'];
+  const keys = ['tuskerName', 'tuskerRumour', 'tuskerMarker', 'tuskerWake', 'tuskerHintDazed', 'tuskerHintLure', 'armoured', 'tuskerDefeated', 'stormWarning', 'stormPassed', 'blightName', 'blightStart', 'blightHint', 'blightCoreOne', 'blightCoreMany', 'blightCoreBurned', 'blightCleared', 'blightBlocked', 'blightRetry'];
+  for (const k of keys) if (!isRec(tx) || !isStr(tx[k])) p.push(`setpieces.text.${k} required`);
+  const b = raw['blight'];
+  if (!isRec(b)) p.push('setpieces.blight required');
+  else {
+    for (const k of ['cores', 'coreRadiusTiles', 'burnSeconds', 'fireReach', 'slamIntervalMs', 'warningMs', 'radius', 'damage']) if (!pos(b[k])) p.push(`setpieces.blight.${k} must be > 0`);
+    if (pos(b['warningMs']) && num(b['warningMs']) < 800) p.push('setpieces.blight.warningMs must be >= 800 (telegraphed)');
+    if (!isNum(b['retryHealth']) || num(b['retryHealth']) <= 0 || num(b['retryHealth']) > 1) p.push('setpieces.blight.retryHealth must be 0–1');
   }
 }
 
@@ -932,6 +978,7 @@ export function validateGameData(raw: RawGameData): GameData {
   validateProgression(p, raw.progression, itemIds, recipes);
   validateStealth(p, raw.stealth);
   validateSideQuests(p, raw.sidequests, itemIds);
+  validateSetPieces(p, raw.setpieces, enemies);
 
   if (p.length) throw new DataValidationError(p);
 
@@ -956,6 +1003,7 @@ export function validateGameData(raw: RawGameData): GameData {
     progression: raw.progression as ProgressionConfig,
     stealth: raw.stealth as StealthConfig,
     sidequests: raw.sidequests as SideQuestDef[],
+    setpieces: raw.setpieces as SetPiecesConfig,
   };
 
   // Reachability: every item must be gatherable or craftable from gatherable items.
@@ -1116,6 +1164,8 @@ export interface EnemyDef {
   territory?: number;
   /** M12 spirits: radius of the loop it patrols around where it appeared. */
   patrolRadius?: number;
+  /** M15 set-piece creature: armoured except while stunned; never spawns naturally. */
+  boss?: boolean;
   projectile?: { speed: number; damage: number; range: number };
 }
 

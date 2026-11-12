@@ -458,5 +458,30 @@
         "max": 1
       }
     ]
+  },
+  {
+    "id": "tusker_loot",
+    "guaranteed": [
+      {
+        "item": "great_tusk",
+        "min": 1,
+        "max": 1
+      },
+      {
+        "item": "hide",
+        "min": 3,
+        "max": 4
+      },
+      {
+        "item": "raw_meat",
+        "min": 4,
+        "max": 5
+      }
+    ],
+    "rolls": {
+      "min": 0,
+      "max": 0
+    },
+    "entries": []
   }
 ]
