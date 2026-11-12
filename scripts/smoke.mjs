@@ -965,7 +965,8 @@ try {
   check('old v1 save migrates and loads (day, stats, items, refunded kit)', migrated && m.day === 3 && m.hp === 77 && m.wood === 7 && m.kits === 1 && m.sticks === 2, JSON.stringify(m));
   // ---------- M8: the Heart Tree, the offering and the ending ----------
   const setClock = (d, h) => evalW7('w.clock.totalSeconds = (arg[0] - 1) * 480 + arg[1] * 20; w.nextWeatherAt = 0;', [d, h]);
-  await evalW7('w.encounters.clear(); w.survival.stats.health = 100; w.survival.stats.warmth = 100; w.survival.stats.hunger = 50; for (const t of w.gameData.tablets) w.quest.readTablet(t.id); w.nextQuestTargetAt = 0;');
+  // (M15: the blight at the Heart is tested in its own block; here the offering itself is under test.)
+  await evalW7('w.setFlags.blightCleared = true; w.encounters.clear(); w.survival.stats.health = 100; w.survival.stats.warmth = 100; w.survival.stats.hunger = 50; for (const t of w.gameData.tablets) w.quest.readTablet(t.id); w.nextQuestTargetAt = 0;');
   const hs = await evalW7('const h = w.gen.heartSite(); return { x: h.tx * 32 + 16, y: h.ty * 32 + 16 };');
   await setClock(3, 12);
   await teleport(hs.x, hs.y + 8 * 32);
@@ -1770,6 +1771,107 @@ try {
   await sleep(2800);
   const noDialog = await evalW7('return ui.story === null;');
   check('after a reload no story can be re-offered or re-rewarded; the main story is untouched', after14.lantern === 1 && after14.again === null && after14.status === 'done,declined,done' && noDialog && after14.lines === 2 && after14.main === 'done', JSON.stringify({ after14, noDialog }));
+
+  // ---------- M15: set pieces — the Old Tusker, the Great Storm, the Blight ----------
+  await setClock(9, 11);
+  await evalW7('w.storiesEnabled = false; w.setPiecesEnabled = true; w.encounters.clear(); w.survival.stats.health = 100; w.survival.stats.warmth = 100; w.setFlags.tuskerDefeated = false; w.tusker = null;');
+  // The Old Tusker: rumour + map marker, then it wakes near its ground.
+  const tuskLair = await evalW7('return w.lairSite();');
+  await teleport(tuskLair.x + 420, tuskLair.y);
+  await sleep(1500);
+  const tusk0 = await evalW7('const e = w.tusker; return e ? { hp: e.hp, max: e.maxHp, boss: e.def.boss, scale: e.scaleX, marker: w.markers.some((m) => /Tusker/.test(m.text)) } : null;');
+  check('the Old Tusker wakes near its ground (rumour marked on the map)', !!tusk0 && tusk0.boss && tusk0.scale > 1.5 && tusk0.marker, JSON.stringify(tusk0));
+  const armoured = await evalW7('const e = w.tusker; const h0 = e.hp; e.invulnUntil = 0; e.takeHit(10, e.x - 20, e.y, 0, 0, w.now); return { lost: h0 - e.hp, armoured: e.lastArmoured };');
+  check('blades glance off its hide while it is not dazed (armour)', armoured.lost === 1 && armoured.armoured, JSON.stringify(armoured));
+  // Lure a charge into a solid: a wall right in its path.
+  const stun = await evalW7(`
+    const e = w.tusker;
+    const x = Math.round((e.x + 70) / 8) * 8, y = Math.round(e.y / 8) * 8;
+    for (const dy of [-32, 0, 32]) w.structures.place('bamboo_wall', x, y + dy, { rot: 1 });
+    e.body.reset(x - 70, y);
+    e.dirX = 1; e.dirY = 0; e.aiState = 'attack'; e.stateUntil = w.now + 900; e.chargeStartedAt = w.now - 200;
+    e.body.setVelocity(360, 0);
+    return { x, y };`);
+  await sleep(500);
+  const dazed = await evalW7('const e = w.tusker; return { state: e.aiState, marker: e.marker.text };');
+  await page.screenshot({ path: OUT + '/47-tusker-dazed.png' });
+  const stunStrike = await evalW7('const e = w.tusker; const h0 = e.hp; e.invulnUntil = 0; e.takeHit(4, e.x - 20, e.y, 0, 0, w.now); return { lost: h0 - e.hp };');
+  check('a charge into something solid leaves it dazed (✶), and then blows land in full', dazed.state === 'stunned' && dazed.marker === '✶' && stunStrike.lost === 12, JSON.stringify({ dazed, stunStrike }));
+  // Finish it with a real swing while dazed.
+  const fell = await evalW7(`
+    const e = w.tusker;
+    e.hp = 2; e.aiState = 'stunned'; e.stateUntil = w.now + 2000; e.invulnUntil = 0;
+    w.player.body.reset(e.x - 30, e.y + 4);
+    w.nextAttackAt = 0;
+    w.attack(e.x, e.cy);
+    return { defeated: w.setFlags.tuskerDefeated, tusk: w.pickups.activeCount };`);
+  await sleep(1200);
+  const tuskItem = await evalW7('return { inv: w.inventory.inventory.count("great_tusk"), ground: w.pickups.serialize().filter((p) => p.item === "great_tusk").length, bar: ui.bossBar.visible };');
+  check('defeating it is recorded once and drops the Great Tusk (boss bar closes)', fell.defeated && tuskItem.inv + tuskItem.ground === 1 && !tuskItem.bar, JSON.stringify({ fell, tuskItem }));
+  await evalW7('for (const s of w.structures.records.filter((r) => r.def.id === "bamboo_wall" && Math.hypot(r.x - arg.x, r.y - arg.y) < 80)) w.structures.remove(s); w.emitStructures();', stun);
+
+  // The Great Storm: warning first, then telegraphed strikes that shelter protects from.
+  await evalW7('w.encounters.clear(); w.survival.stats.health = 100; w.setFlags.stormDone = false; w.storm.phase = "none";');
+  await setClock(10, 22);
+  await sleep(900);
+  const stormWarn = await evalW7('return { phase: w.storm.phase, toast: ui.toast.text.text };');
+  await evalW7('w.storm.until = w.now;');
+  await sleep(1400);
+  const tele = await evalW7('return w.strikes.map((s) => ({ d: Math.round(Math.hypot(s.x - w.player.x, s.y - w.player.y)), warn: Math.round(s.at - w.now) }));');
+  await page.screenshot({ path: OUT + '/48-storm-telegraph.png' });
+  await sleep(1800);
+  const hitExposed = await evalW7('return w.survival.stats.health;');
+  check('the storm warns first, then marks each strike on the ground before it lands (exposed: it hurts)', stormWarn.phase === 'warning' && /storm breaks/.test(stormWarn.toast) && hitExposed < 100, JSON.stringify({ stormWarn, tele, hitExposed }));
+  await evalW7('w.survival.stats.health = 100; w.structures.place("bamboo_shelter", w.player.x, w.player.y + 10); w.emitStructures(); w.strikes.length = 0; w.storm.nextStrikeAt = w.now;');
+  await sleep(300);
+  const farStrikes = await evalW7('return w.strikes.map((s) => Math.round(Math.hypot(s.x - w.player.x, s.y - w.player.y)));');
+  await sleep(1800);
+  const hpSheltered = await evalW7('return w.survival.stats.health;');
+  check('under shelter, strikes land away from you', farStrikes.length > 0 && farStrikes.every((d) => d > 150) && hpSheltered >= 99, JSON.stringify({ farStrikes, hpSheltered }));
+  await evalW7('w.storm.until = w.now;');
+  await sleep(500);
+  const stormOver = await evalW7('return { phase: w.storm.phase, done: w.setFlags.stormDone };');
+  check('the storm passes and is recorded (it never repeats)', stormOver.phase === 'none' && stormOver.done, JSON.stringify(stormOver));
+
+  // The Blight at the Heart: burn the cores with fire; falling is a checkpoint retry, not a death.
+  await setClock(10, 11);
+  await evalW7(`
+    w.encounters.clear(); w.survival.stats.health = 100;
+    w.quest = new w.quest.constructor(w.gameData, w.gameData.tablets.map((t) => t.id), true, 5, false);
+    w.setFlags.blightCleared = false; w.blight.active = false; w.blight.cores = [];
+    const inv = w.inventory.inventory; const s = inv.snapshot().map(() => null); s[0] = { item: 'torch', qty: 1, durability: 170 }; inv.restore(s); w.inventory.selected = 0; w.inventory.broadcast();`);
+  const hs15 = await evalW7('const h = w.gen.heartSite(); return { x: h.tx * 32 + 16, y: h.ty * 32 + 16 };');
+  await teleport(hs15.x, hs15.y + 3 * 32);
+  await sleep(1800);
+  const bl0 = await evalW7('return { active: w.blight.active, cores: w.blight.cores.length, bar: ui.bossBar.visible, name: ui.bossName.text };');
+  await page.screenshot({ path: OUT + '/49-blight.png' });
+  check('entering the ring wakes the blight (three cores, a bar with what to do)', bl0.active && bl0.cores === 3 && bl0.bar && /Blight/.test(bl0.name), JSON.stringify(bl0));
+  const blCore = await evalW7('return w.blight.cores[0];');
+  await teleport(blCore.x, blCore.y + 26);
+  await sleep(1300);
+  const burning = await evalW7('return Math.round(w.blight.cores[0].burn * 10) / 10;');
+  let blSlam = null;
+  for (let i = 0; i < 20 && !blSlam; i++) {
+    blSlam = await evalW7('const s = w.strikes.find((x) => x.kind === "blight"); return s ? { warn: Math.round(s.at - w.now), d: Math.round(Math.hypot(s.x - w.player.x, s.y - w.player.y)) } : null;');
+    if (!blSlam) await sleep(150);
+  }
+  check('holding fire to a core burns it; the blight answers with telegraphed slams', burning > 0.5 && !!blSlam && blSlam.warn >= 500 && blSlam.d < 40, JSON.stringify({ burning, blSlam }));
+  // Falling to it returns you to the glade edge with your progress (no Game Over, no save change).
+  const saveBefore = await page.evaluate(() => localStorage.getItem('preychrov.save'));
+  await evalW7('w.blight.cores[0].burn = 99; w.lastBlightHitAt = w.now; w.survival.stats.health = 0;');
+  await sleep(500);
+  const blRetry = await evalW7('return { scene: w.scene.isActive(), hp: Math.round(w.survival.stats.health), d: Math.round(Math.hypot(w.player.x - arg.x, w.player.y - arg.y)), kept: w.blight.cores[0].burn >= 99, cores: w.blight.cores.length };', hs15);
+  const saveAfter = await page.evaluate(() => localStorage.getItem('preychrov.save'));
+  check('falling to the blight is a checkpoint retry: back at the glade edge, burned cores kept, save untouched', blRetry.scene && blRetry.hp === 60 && blRetry.d > 280 && blRetry.kept && saveBefore === saveAfter, JSON.stringify(blRetry));
+  const blightBlocked = await evalW7('w.offerAtHeart(); return ui.toast.text.text;');
+  await evalW7('for (const c of w.blight.cores) c.burn = 99; w.blight.active = true;');
+  await sleep(400);
+  const blCleared = await evalW7('return { blCleared: w.setFlags.blightCleared, active: w.blight.active, bar: ui.bossBar.visible };');
+  const blAllowed = await evalW7('w.offerAtHeart(); return ui.toast.text.text;');
+  check('the offering waits for the blight to be cleared, then is allowed', /blight chokes/i.test(blightBlocked) && blCleared.blCleared && !blCleared.active && !blCleared.bar && !/blight/i.test(blAllowed), JSON.stringify({ blightBlocked, blCleared, blAllowed }));
+  const perf15 = await evalW7('return w.perfMs;');
+  check('set pieces keep World update cheap (< 8 ms average)', perf15 < 8, perf15.toFixed(2) + ' ms');
+  await evalW7('w.quest = new w.quest.constructor(w.gameData, w.gameData.tablets.map((t) => t.id), true, 5, true); w.setPiecesEnabled = false;');
 
   // QA: the world holds still under a story dialog; dying with one open never freezes input later.
   await evalW7('w.storiesEnabled = true; w.sideQuests = new w.sideQuests.constructor(w.gameData.sidequests); w.encounters.clear(); w.survival.stats.health = 100;');

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.15.0 — M15: Set pieces — the Old Tusker, the Great Storm, the Blight (2026-11-12)
+
+### Added
+- The Old Tusker: an armoured giant boar, beaten by luring its telegraphed charges into solid scenery; drops the Great Tusk (Tusk Spear).
+- The Great Storm: a one-time monsoon-night lightning storm with ground-marked strikes; shelter or fire keeps you safe.
+- The Blight at the Heart: burn three cores with fire while dodging telegraphed slams; falling to it is a checkpoint retry that never touches your save.
+- Boss bar with one-line hints; all set-piece text in data.
+
 ## 0.14.0 — M14: Side stories, memories and choices (2026-11-12)
 
 ### Added

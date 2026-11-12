@@ -18,6 +18,78 @@ Status legend: **Done** · **In progress** · **Not started**
 | M12 | Advanced AI, stealth and dynamic encounters | Done |
 | M13 | Exploration tools, mapping and ruins | Done |
 | M14 | Narrative chapters, side quests and choices | Done |
+| M15 | Major challenges and final encounters | Done |
+
+---
+
+## M15 — Major challenges and final encounters
+
+### Implemented (playable)
+
+Three set pieces built from systems you already know: charging creatures and solid scenery, shelter and weather, firelight. None of them is a health sponge, and none involves the Neak Ta.
+
+- **The Old Tusker (a giant territorial boar).**
+  - From day 3 a rumour toast and a map marker point to its ground, a fixed place per world about 95 tiles from spawn. It wakes when you come near, and a boss bar appears.
+  - Its hide **turns blades**: every hit does 1 damage while it is alert.
+  - It winds up visibly (1.1 s) before each charge. If the charge slams into a **tree, rock, wall or water**, it is **dazed for 2.6 s** (✶). Blows then land at 3× damage.
+  - Pattern reading and positioning (stand in front of something solid, then sidestep) beat it in two or three stuns with a stone spear.
+  - It drops the **Great Tusk**, which the workbench turns into the **Tusk Spear** (damage 8, 180 durability), the strongest weapon in the forest.
+- **The Great Storm (a storm-survival sequence).** It happens once per journey, on a monsoon night from day 5, if you are out in the open.
+  - First a 6-second warning tells you to get under a roof or shelter, or stand by a fire.
+  - For 75 s lightning strikes, **each marked on the ground for 1.3 s** before it lands (14 damage).
+  - Out in the open the strikes find you. Under cover they land well away.
+  - The cold also bites harder while you are exposed.
+  - You can dodge in the open, but cover is the safe answer.
+  - Weathering it gives Survival XP.
+- **The Blight at the Heart (a fictional corrupted manifestation).** It appears when you enter the root ring before making the offering.
+  - Three cores pulse around the Heart Tree. **Hold fire to each one** (a held torch or the Ember Lantern within reach, or a campfire placed right beside that core) until it crumbles. The boss bar counts the cores left.
+  - While the blight lingers, the root ring stays open, so you can always get back in.
+  - Meanwhile the blight's slams are **marked on the ground for 1.1 s** before they land.
+  - The offering waits until the blight is gone.
+- **Checkpoint and retry (story-only scene):** falling to the blight is not a death.
+  - If the blight's own strike fells you, you come to at a safe spot on the edge of the glade at 60% health, and **cores you burned stay burned**. Other causes (hunger, thirst, poison) are ordinary deaths.
+  - Your survival save is never touched: nothing is loaded or written, and autosaves pause during every set piece.
+- **Telegraphs:** filling rings on the ground, sounds and a boss bar with a one-line hint ("Dazed — strike now!", "2 cores left: hold fire to them").
+- **Data-driven and localization-ready:** all tuning and every player-facing set-piece string live in `src/data/setpieces.json`. The validator refuses untelegraphed or unfair tuning: warnings of at least 800 ms, a stun window of at least 1.5 s, and strikes never overlapping their warnings.
+
+### Verification
+
+- `npm run typecheck` and `npm run build` pass.
+- `npm test`: 181 unit tests. New ones cover:
+  - every storm strike and blight slam can be walked out of during its warning, and strikes never overlap their warnings
+  - the Tusker winds up visibly, never spawns randomly, falls within about three stuns with a stone spear, and is not worth chipping down while armoured
+  - the blight is beaten with light, not damage, and its retry is a checkpoint
+  - the validator refuses untelegraphed tuning
+- `npm run smoke`: 224 browser checks. The M15 ones:
+  - the Tusker wakes near its marked ground
+  - armour turns blows
+  - a charge into a wall dazes it (✶) and blows land in full
+  - defeating it is recorded and drops the Great Tusk
+  - the storm warns, then marks strikes that hurt in the open
+  - under shelter strikes land away from you
+  - the storm passes and is recorded
+  - entering the ring wakes the blight
+  - fire burns a core while telegraphed slams target you (about 1.1 s warning)
+  - falling to the blight is a checkpoint retry with burned cores kept and **the save byte-for-byte unchanged**
+  - the offering waits for the blight, then is allowed
+  - World update stays under 1 ms on average during set pieces
+- **Reviews (real agents):**
+  - `content-designer`: approved with trims. Applied: shorter instruction toasts, a clearer storm warning, "Armoured" feedback, and a defeat line pointing to the workbench. Confirmed: no Neak Ta, real-spirit or real-religion implications.
+  - `phaser-qa`: no Criticals. Its own smoke run hung on a duplicate port, so smoke was re-run here (224/224). Warnings fixed:
+    - any death during the blight triggered the retry; now only blight strikes do
+    - one central campfire burned all three cores
+    - the retry spot was unchecked
+    - roots could regrow and lock you out after a retry
+    - the boss bar flickered every frame during the blight
+    - Tusker spawn attempts ran every frame
+    - a storm reaching its active phase after the rain or night ended still counted as weathered
+    - per-frame closures
+
+### Known limitations
+
+- If you flee more than about 900 px, the Tusker leaves; when you return it is back at full health.
+- The storm and the blight are one-time events per journey; the Tusker can be fought again only until it falls.
+- To review: the Heart Tree "offering" wording is fictional framing and should be confirmed by a native speaker (as for M8).
 
 ---
 

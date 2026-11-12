@@ -28,6 +28,7 @@ export interface WorldState {
   ambushNight: number;
   exploration: SaveData['exploration'];
   story: SaveData['story'];
+  setpieces: SaveData['setpieces'];
   progression: SaveData['progression'];
   equipment: SaveData['equipment'];
   quest: { tabletsRead: readonly string[]; heartReached: boolean; restored: boolean };
@@ -68,6 +69,7 @@ export function buildSave(w: WorldState): SaveData {
     ambushNight: w.ambushNight,
     exploration: w.exploration,
     story: w.story,
+    setpieces: { ...w.setpieces },
     progression: w.progression,
     equipment: w.equipment,
     tabletsRead: [...w.quest.tabletsRead],

@@ -109,6 +109,8 @@ export interface GameEventMap {
   'map:marker': { x: number; y: number };
   /** Compass: up to three nearest markers to point at on screen ([] = none / no compass). */
   'markers:pointers': Array<{ x: number; y: number; label: string }>;
+  /** M15 set pieces: the boss health bar (null hides it). */
+  'boss:bar': { name: string; frac: number; hint: string } | null;
   /** M14 side stories. */
   'story:offer': { id: string; title: string; text: string };
   'story:choice': { id: string; title: string; prompt: string; options: Array<{ id: string; label: string; description: string; enabled: boolean; note?: string }> };

@@ -89,6 +89,8 @@ export interface SaveData {
     puzzles: string[];
     markers: Array<{ x: number; y: number; kind: 'pin' | 'note'; text: string }>;
   };
+  /** M15: set-piece progress. */
+  setpieces: { tuskerDefeated: boolean; tuskerRumour: boolean; stormDone: boolean; blightCleared: boolean };
   /** M14: side stories, story flags and the epilogue lines they add. */
   story: { quests: Record<string, { status: string; step: number; count: number; choice?: string }>; flags: string[]; endingLines: string[] };
   /** M12: the night index the ambush was last rolled for (one roll per night, across reloads). */
@@ -272,6 +274,10 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
     }),
     openedChests: (Array.isArray(rec['openedChests']) ? rec['openedChests'] : []).filter((o): o is string => typeof o === 'string'),
     ambushNight: Math.floor(finite(rec['ambushNight'], -1)),
+    setpieces: ((sp: unknown) => {
+      const r = isRec(sp) ? sp : {};
+      return { tuskerDefeated: r['tuskerDefeated'] === true, tuskerRumour: r['tuskerRumour'] === true, stormDone: r['stormDone'] === true, blightCleared: r['blightCleared'] === true };
+    })(rec['setpieces']),
     story: ((st: unknown) => {
       const r = isRec(st) ? st : {};
       const quests: Record<string, { status: string; step: number; count: number; choice?: string }> = {};

@@ -150,10 +150,29 @@ export class World extends Phaser.Scene {
   private sideQuests!: SideQuestBook;
   private readonly storyFlags = new Set<string>();
   private endingLines: string[] = [];
+  /** M15 set pieces (saved flags + live state). */
+  private readonly setFlags = { tuskerDefeated: false, tuskerRumour: false, stormDone: false, blightCleared: false };
+  private tusker: Enemy | null = null;
+  private lair: { x: number; y: number } | null = null;
+  private nextBossBarAt = 0;
+  private nextTuskerTryAt = 0;
+  private blightBarShown = false;
+  private blightBarLeft = -1;
+  /** When the blight last struck the player: only its own blows trigger the checkpoint retry. */
+  private lastBlightHitAt = -Infinity;
+  private telegraphsDrawn = false;
+  private bossBarShown = false;
+  private readonly storm = { phase: 'none' as 'none' | 'warning' | 'active', until: 0, nextStrikeAt: 0 };
+  private readonly strikes: Array<{ x: number; y: number; at: number; kind: 'storm' | 'blight' }> = [];
+  private readonly blight = { active: false, cores: [] as Array<{ x: number; y: number; burn: number }>, nextSlamAt: 0 };
+  private telegraphG!: Phaser.GameObjects.Graphics;
+  private stormCold: SeasonConfig['cold'] | null = null;
   /** A story moment is on screen: the world holds still (no attacks, no drain). */
   private storyOpen = false;
   /** Side stories on (debug ?nostory turns them off for tests). */
   storiesEnabled = true;
+  /** Set pieces on (debug ?calm turns them off for tests of other systems). */
+  setPiecesEnabled = true;
   /** Story updates and events waiting for a safe moment (not busy, not in danger). */
   private readonly storyBacklog: SideUpdate[] = [];
   private readonly storyEventsWaiting: string[] = [];
@@ -257,6 +276,21 @@ export class World extends Phaser.Scene {
     this.storyFlags.clear();
     this.endingLines = [];
     this.storyOpen = false;
+    this.setFlags.tuskerDefeated = this.setFlags.tuskerRumour = this.setFlags.stormDone = this.setFlags.blightCleared = false;
+    this.tusker = null;
+    this.lair = null;
+    this.nextBossBarAt = 0;
+    this.bossBarShown = false;
+    this.blightBarShown = false;
+    this.blightBarLeft = -1;
+    this.nextTuskerTryAt = 0;
+    this.lastBlightHitAt = -Infinity;
+    this.telegraphsDrawn = false;
+    this.storm.phase = 'none';
+    this.strikes.length = 0;
+    this.blight.active = false;
+    this.blight.cores = [];
+    this.telegraphG = this.add.graphics().setDepth(DEPTH.floatingText - 7);
     this.storyBacklog.length = 0;
     this.storyEventsWaiting.length = 0;
     this.nextChoiceRetryAt = 0;
@@ -303,6 +337,8 @@ export class World extends Phaser.Scene {
     this.encounters.enabled = !(DEBUG_HOOKS && new URLSearchParams(window.location.search).has('calm'));
     // Debug only: ?nostory keeps side stories quiet for automated tests of other systems.
     this.storiesEnabled = !(DEBUG_HOOKS && new URLSearchParams(window.location.search).has('nostory'));
+    // Debug only: ?calm also keeps set pieces (tusker, storm, blight) out of automated tests.
+    this.setPiecesEnabled = !(DEBUG_HOOKS && new URLSearchParams(window.location.search).has('calm'));
     this.building = new Building(this, this.structures);
     this.lighting = new Lighting(this, CAMERA.zoom);
     this.clock = new GameClock(this.gameData.survival.day);
@@ -470,11 +506,12 @@ export class World extends Phaser.Scene {
     this.survivalMods.hunger = wm.hunger * drain;
     this.survivalMods.thirst = wm.thirst * drain;
     this.survival.update(dt / 1000, this.clock.secondsPerHour, p.sprinting, this.survivalMods);
-    this.survival.updateWarmth(dt / 1000, this.clock.secondsPerHour, this.weather.monsoon && !this.isSheltered(p.x, p.y), this.coldWorn ?? this.gameData.season.cold);
+    this.survival.updateWarmth(dt / 1000, this.clock.secondsPerHour, this.weather.monsoon && !this.isSheltered(p.x, p.y), this.storm.phase === 'active' ? this.stormColdConfig() : (this.coldWorn ?? this.gameData.season.cold));
     const fx = this.effects.update(dt / 1000, this.clock.secondsPerHour);
     if (fx.damage > 0) this.survival.damage(fx.damage, 'poison');
     if (fx.heal > 0) this.survival.heal(fx.heal);
     this.watchSurvival();
+    if (this.survival.dead && this.blight.active && this.now - this.lastBlightHitAt < 1500) this.retryBlight();
     if (this.survival.dead) {
       this.emitTicks(cfg);
       this.die();
@@ -500,6 +537,7 @@ export class World extends Phaser.Scene {
     ef.distTiles = Math.hypot(p.x - this.spawn.x, p.y - this.spawn.y) / 32;
     this.encounters.update(dt, this.now, ef);
     this.updateAmbush(ef);
+    this.updateSetPieces(dt);
     this.projectiles.update(dt, this.now);
     this.updateShrines();
     this.updateRuins();
@@ -629,7 +667,7 @@ export class World extends Phaser.Scene {
     this.nextActAt = Math.max(this.nextActAt, this.now + GATHER.swingMs);
     const hits = this.encounters.attack(ox, oy, dx / len, dy / len, reach, damage, this.now);
     gameEvents.emit('sfx', hits.length > 0 ? 'enemy_hit' : 'swing');
-    for (const e of hits) this.floating.show(e.x, e.cy - 14, `-${damage}`, '#ffffff');
+    for (const e of hits) this.floating.show(e.x, e.cy - 14, e.lastArmoured ? this.gameData.setpieces.text['armoured'] ?? '' : `-${e.lastDamage || damage}`, e.lastArmoured ? '#e6b866' : '#ffffff');
     if (hits.length > 0 && tool && tool.kind !== 'rod') {
       if (this.inventory.inventory.wear(this.inventory.selected, this.fx.toolWear) === 'broke') {
         gameEvents.emit('toast', { text: `Your ${itemDef(held?.item ?? '').name} broke`, tone: 'warn' });
@@ -673,6 +711,17 @@ export class World extends Phaser.Scene {
   }
 
   private onEnemyKilled(enemy: Enemy): void {
+    if (enemy.def.boss) {
+      this.setFlags.tuskerDefeated = true;
+      this.tusker = null;
+      gameEvents.emit('boss:bar', null);
+      this.bossBarShown = false;
+      this.progression.addXp('combat', 4);
+      this.applyProgressionEffects();
+      this.emitCharacter();
+      gameEvents.emit('toast', { text: this.spText('tuskerDefeated'), tone: 'info' });
+      this.save();
+    }
     this.kills++;
     if (!this.grant('defeat_first', enemy.def.id)) this.grant('defeat', null);
     if (enemy.def.kind === 'spirit') this.storyEvent('spirit_defeat');
@@ -893,6 +942,7 @@ export class World extends Phaser.Scene {
       const lit =
         this.quest.restored ||
         inside ||
+        (this.blight.cores.length > 0 && !this.setFlags.blightCleared) ||
         this.lightAt(r.x, r.y - 12, 0) !== null ||
         (torch !== undefined && Math.hypot(r.x - p.x, r.y - 12 - (p.y - 16)) <= torch.radius * 0.9);
       if (lit) {
@@ -942,6 +992,10 @@ export class World extends Phaser.Scene {
       return;
     }
     if (this.quest.stage === 'heart' && this.quest.reachHeart()) gameEvents.emit('quest:changed', this.quest.view());
+    if (!this.setFlags.blightCleared) {
+      gameEvents.emit('toast', { text: this.spText('blightBlocked'), tone: 'warn' });
+      return;
+    }
     const cfg = this.gameData.ending;
     const held = this.inventory.held;
     const def = held ? itemDef(held.item) : null;
@@ -1659,6 +1713,7 @@ export class World extends Phaser.Scene {
         knownPlants: this.knownPlants,
         ambushNight: this.ambushRolledNight,
         story: { quests: this.sideQuests.serialize(), flags: [...this.storyFlags], endingLines: [...this.endingLines] },
+        setpieces: { ...this.setFlags },
         exploration: {
           explored: [...this.explored],
           ruins: [...this.found.ruins],
@@ -1685,6 +1740,7 @@ export class World extends Phaser.Scene {
 
   /** Low health or a hostile close by: an autosave here could trap a reload in a lost fight. */
   private inDanger(): boolean {
+    if (this.blight.active || this.storm.phase !== 'none' || (this.tusker?.active && this.tusker.awareness >= 1)) return true;
     const st = this.survival.stats;
     if (st.health < this.gameData.survival.maxHealth * 0.25) return true;
     const e = this.encounters.nearest(this.player.x, this.player.y - 10, 150);
@@ -1698,6 +1754,251 @@ export class World extends Phaser.Scene {
     const feet = this.feetGear;
     const slow = (1 - base) * (feet?.terrain ?? 1);
     return (1 - slow) * (this.fx.speed + (feet?.speed ?? 0));
+  }
+
+  // ---------- Set pieces (M15) ----------
+
+  /** Set-piece text from setpieces.json with {s} / {n} filled in (localization-ready). */
+  private spText(key: string, vars: Record<string, string | number> = {}): string {
+    let t = this.gameData.setpieces.text[key] ?? key;
+    for (const [k, v] of Object.entries(vars)) t = t.split(`{${k}}`).join(String(v));
+    return t;
+  }
+
+  /** The Old Tusker's ground: dry, open land a fixed distance from spawn (per seed). */
+  private lairSite(): { x: number; y: number } {
+    if (this.lair) return this.lair;
+    const t = this.gameData.setpieces.tusker;
+    const a0 = ((this.seed % 360) * Math.PI) / 180;
+    for (let i = 0; i < 72; i++) {
+      const a = a0 + i * 0.26;
+      for (const r of [t.lairDistance, t.lairDistance + 12, t.lairDistance - 12]) {
+        const tx = Math.round(Math.cos(a) * r);
+        const ty = Math.round(Math.sin(a) * r);
+        if (this.gen.ruinsNear(tx, ty, 22).length || this.gen.inHeartGlade(tx, ty, 10)) continue;
+        let dry = true;
+        for (let oy = -4; oy <= 4 && dry; oy++) for (let ox = -4; ox <= 4; ox++) if (this.gen.waterAt(tx + ox, ty + oy)) dry = false;
+        if (dry) return (this.lair = { x: tx * 32 + 16, y: ty * 32 + 16 });
+      }
+    }
+    return (this.lair = { x: Math.round(Math.cos(a0) * t.lairDistance) * 32, y: Math.round(Math.sin(a0) * t.lairDistance) * 32 });
+  }
+
+  private stormColdConfig(): SeasonConfig['cold'] {
+    const base = this.coldWorn ?? this.gameData.season.cold;
+    if (!this.stormCold || this.stormCold.recoverPerHour !== base.recoverPerHour || this.stormCold.damagePerHour !== base.damagePerHour)
+      this.stormCold = { ...base, lossPerHour: base.lossPerHour * this.gameData.setpieces.storm.warmthLossMultiplier };
+    return this.stormCold;
+  }
+
+  private updateSetPieces(dt: number): void {
+    if (!this.setPiecesEnabled) return;
+    const p = this.player;
+    const sp = this.gameData.setpieces;
+    // ---- The Old Tusker ----
+    if (!this.setFlags.tuskerDefeated) {
+      const lair = this.lairSite();
+      if (!this.setFlags.tuskerRumour && this.clock.dayNumber >= sp.tusker.rumourDay && this.markers.length < 30) {
+        this.setFlags.tuskerRumour = true;
+        this.markers.push({ x: lair.x, y: lair.y, kind: 'pin', text: this.spText('tuskerMarker') });
+        gameEvents.emit('toast', { text: this.spText('tuskerRumour'), tone: 'info' });
+      }
+      if (this.tusker && !this.tusker.active) this.tusker = null;
+      if (!this.tusker && this.now >= this.nextTuskerTryAt && Math.hypot(p.x - lair.x, p.y - lair.y) < sp.tusker.wakeRadius) {
+        this.nextTuskerTryAt = this.now + 1000;
+        const e = this.encounters.spawnAt(sp.tusker.enemy, lair.x, lair.y, this.now);
+        if (e) {
+          e.stunMs = sp.tusker.stunMs;
+          e.vulnerableMultiplier = sp.tusker.vulnerableMultiplier;
+          e.armouredDamage = sp.tusker.armouredDamage;
+          this.tusker = e;
+          gameEvents.emit('sfx', 'thunder');
+          gameEvents.emit('toast', { text: this.spText('tuskerWake'), tone: 'warn' });
+        }
+      }
+      if (this.tusker && this.now >= this.nextBossBarAt) {
+        this.nextBossBarAt = this.now + 200;
+        const engaged = this.tusker.awareness >= 0.35 || this.tusker.hp < this.tusker.maxHp;
+        if (engaged) {
+          gameEvents.emit('boss:bar', { name: this.spText('tuskerName'), frac: Math.max(0, this.tusker.hp / this.tusker.maxHp), hint: this.spText(this.tusker.aiState === 'stunned' ? 'tuskerHintDazed' : 'tuskerHintLure') });
+          this.bossBarShown = true;
+        } else if (this.bossBarShown) {
+          gameEvents.emit('boss:bar', null);
+          this.bossBarShown = false;
+        }
+      }
+    }
+    if (!this.tusker && this.bossBarShown && !this.blightBarShown) {
+      gameEvents.emit('boss:bar', null);
+      this.bossBarShown = false;
+    }
+
+    // ---- The Great Storm ----
+    const night = this.darkness() > 0.5;
+    const st = this.storm;
+    if (st.phase === 'none' && !this.setFlags.stormDone && this.weather.monsoon && night && this.clock.dayNumber >= sp.storm.minDay && !this.isSheltered(p.x, p.y)) {
+      st.phase = 'warning';
+      st.until = this.now + sp.storm.warningSeconds * 1000;
+      gameEvents.emit('sfx', 'thunder');
+      gameEvents.emit('toast', { text: this.spText('stormWarning', { s: sp.storm.warningSeconds }), tone: 'warn' });
+    } else if (st.phase === 'warning' && this.now >= st.until && (!this.weather.monsoon || !night)) {
+      st.phase = 'none';
+    } else if (st.phase === 'warning' && this.now >= st.until) {
+      st.phase = 'active';
+      st.until = this.now + sp.storm.durationSeconds * 1000;
+      st.nextStrikeAt = this.now + 400;
+    } else if (st.phase === 'active') {
+      if (this.now >= st.nextStrikeAt) {
+        st.nextStrikeAt += sp.storm.strikeIntervalMs;
+        const sheltered = this.isSheltered(p.x, p.y);
+        const a = Math.random() * Math.PI * 2;
+        const r = sheltered ? 220 + Math.random() * 160 : Math.random() * 26;
+        this.strikes.push({ x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r, at: this.now + sp.storm.warningMs, kind: 'storm' });
+      }
+      if (this.now >= st.until || !this.weather.monsoon || !night) {
+        st.phase = 'none';
+        this.setFlags.stormDone = true;
+        this.strikes.length = 0;
+        const up = this.progression.addXp('survival', sp.storm.xp);
+        if (up.levelUp !== null) this.applyProgressionEffects();
+        this.emitCharacter();
+        gameEvents.emit('toast', { text: this.spText('stormPassed'), tone: 'info' });
+      }
+    }
+
+    // ---- The Blight at the Heart ----
+    const heart = this.chunks.heart;
+    const bl = this.blight;
+    const R = WORLD_GEN.heartRootRadius;
+    if (!bl.active && !this.setFlags.blightCleared && this.quest.stage === 'restore' && heart && Math.hypot(p.x - heart.x, p.y - heart.y) < (R - 0.6) * 32) {
+      bl.active = true;
+      // After a retry the cores (and their burn progress) are kept: a checkpoint, not a reset.
+      if (!bl.cores.length) for (let i = 0; i < sp.blight.cores; i++) {
+        const a = -Math.PI / 2 + Math.PI / 6 + (i * Math.PI * 2) / sp.blight.cores;
+        bl.cores.push({ x: heart.x + Math.cos(a) * sp.blight.coreRadiusTiles * 32, y: heart.y - 8 + Math.sin(a) * sp.blight.coreRadiusTiles * 32, burn: 0 });
+      }
+      bl.nextSlamAt = this.now + 1800;
+      gameEvents.emit('sfx', 'spirit');
+      this.shake(300, 0.004);
+      gameEvents.emit('toast', { text: this.spText('blightStart'), tone: 'warn' });
+    }
+    if (bl.active) {
+      const held = this.inventory.held;
+      const carrying = held ? itemDef(held.item).light !== undefined : false;
+      let left = 0;
+      for (const c of bl.cores) {
+        if (c.burn >= sp.blight.burnSeconds) continue;
+        let nearFire = carrying && Math.hypot(p.x - c.x, p.y - 12 - c.y) <= sp.blight.fireReach;
+        if (!nearFire) for (const s of this.structures.list) if (s.def.lightRadius > 0 && Math.hypot(s.x - c.x, s.y - c.y) <= sp.blight.fireReach) nearFire = true;
+        if (nearFire) {
+          c.burn += dt / 1000;
+          if (c.burn >= sp.blight.burnSeconds) {
+            gameEvents.emit('sfx', 'chest');
+            this.floating.show(c.x, c.y - 20, this.spText('blightCoreBurned'), '#e6b866');
+          }
+        }
+        if (c.burn < sp.blight.burnSeconds) left++;
+      }
+      if (left !== this.blightBarLeft || !this.blightBarShown) {
+        this.blightBarLeft = left;
+        this.blightBarShown = true;
+        gameEvents.emit('boss:bar', { name: this.spText('blightName'), frac: left / sp.blight.cores, hint: this.spText('blightHint', { n: this.spText(left === 1 ? 'blightCoreOne' : 'blightCoreMany', { n: left }) }) });
+      }
+      const inGlade = heart ? Math.hypot(p.x - heart.x, p.y - heart.y) < (WORLD_GEN.heartGladeRadius + 1) * 32 : false;
+      if (left === 0) {
+        bl.active = false;
+        this.setFlags.blightCleared = true;
+        this.strikes.length = 0;
+        gameEvents.emit('boss:bar', null);
+        this.blightBarShown = false;
+        this.blightBarLeft = -1;
+        this.progression.addXp('exploration', 3);
+        this.emitCharacter();
+        gameEvents.emit('toast', { text: this.spText('blightCleared'), tone: 'info' });
+      } else if (inGlade && this.now >= bl.nextSlamAt) {
+        bl.nextSlamAt = this.now + sp.blight.slamIntervalMs;
+        this.strikes.push({ x: p.x + (Math.random() - 0.5) * 30, y: p.y + (Math.random() - 0.5) * 20, at: this.now + sp.blight.warningMs, kind: 'blight' });
+      }
+    }
+
+    // ---- Telegraphed strikes resolve ----
+    for (let i = this.strikes.length - 1; i >= 0; i--) {
+      const s = this.strikes[i];
+      if (!s || this.now < s.at) continue;
+      this.strikes.splice(i, 1);
+      const cfgS = s.kind === 'storm' ? sp.storm : sp.blight;
+      if (s.kind === 'storm') {
+        gameEvents.emit('sfx', 'thunder');
+        if (!getSettings().reducedFlash) this.cameras.main.flash(120, 230, 240, 255);
+      } else {
+        gameEvents.emit('sfx', 'stone');
+        this.shake(120, 0.003);
+      }
+      const shelteredNow = s.kind === 'storm' && this.isSheltered(p.x, p.y);
+      if (!shelteredNow && Math.hypot(p.x - s.x, p.y - 6 - s.y) <= cfgS.radius && this.hurtPlayer(cfgS.damage, 'injury', s.x, s.y) && s.kind === 'blight') this.lastBlightHitAt = this.now;
+    }
+    this.drawTelegraphs();
+  }
+
+  /** Warning rings fill as a strike approaches; blight cores show how far they have burned. */
+  private drawTelegraphs(): void {
+    const any = this.strikes.length > 0 || this.blight.active;
+    if (!any && !this.telegraphsDrawn) return;
+    this.telegraphsDrawn = any;
+    const g = this.telegraphG.clear();
+    const sp = this.gameData.setpieces;
+    for (const s of this.strikes) {
+      const cfgS = s.kind === 'storm' ? sp.storm : sp.blight;
+      const t = 1 - Math.max(0, s.at - this.now) / cfgS.warningMs;
+      const color = s.kind === 'storm' ? 0xfff2c8 : 0xb070d0;
+      g.lineStyle(2, color, 0.9).strokeCircle(s.x, s.y, cfgS.radius);
+      g.fillStyle(color, 0.12 + t * 0.3).fillCircle(s.x, s.y, cfgS.radius * t);
+    }
+    if (this.blight.active) {
+      const pulse = 0.5 + Math.sin(this.now / 180) * 0.2;
+      for (const c of this.blight.cores) {
+        const done = c.burn >= sp.blight.burnSeconds;
+        if (done) {
+          g.fillStyle(0x2a2420, 0.7).fillCircle(c.x, c.y, 9);
+          continue;
+        }
+        g.fillStyle(0x3a1a40, 0.9).fillCircle(c.x, c.y, 13);
+        g.fillStyle(0x9a50c0, pulse).fillCircle(c.x, c.y, 8);
+        if (c.burn > 0) {
+          g.lineStyle(3, 0xe8893a, 1);
+          g.beginPath();
+          g.arc(c.x, c.y, 16, -Math.PI / 2, -Math.PI / 2 + (c.burn / sp.blight.burnSeconds) * Math.PI * 2);
+          g.strokePath();
+        }
+      }
+    }
+  }
+
+  /** Story-only checkpoint: falling to the blight returns you to the glade's edge (no real death, no save change). */
+  private retryBlight(): void {
+    const heart = this.chunks.heart;
+    const sp = this.gameData.setpieces.blight;
+    this.survival.stats.health = this.gameData.survival.maxHealth * sp.retryHealth;
+    this.strikes.length = 0;
+    this.blight.nextSlamAt = this.now + 3000;
+    this.playerInvulnUntil = this.now + 2500;
+    if (heart) {
+      const r = (WORLD_GEN.heartGladeRadius + 1) * 32;
+      let spot = { x: heart.x, y: heart.y + r };
+      for (let i = 0; i < 16; i++) {
+        const a = Math.PI / 2 + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * (Math.PI / 8);
+        const x = heart.x + Math.cos(a) * r;
+        const y = heart.y + Math.sin(a) * r;
+        if (!this.chunks.isDeepWater(x, y - 4) && this.physics.overlapRect(x - 8, y - 11, 16, 11, true, true).length === 0) {
+          spot = { x, y };
+          break;
+        }
+      }
+      this.player.body.reset(spot.x, spot.y);
+    }
+    this.blight.active = false;
+    this.cameras.main.fadeIn(600, 20, 4, 24);
+    gameEvents.emit('toast', { text: this.spText('blightRetry'), tone: 'warn' });
   }
 
   // ---------- Side stories (M14) ----------
@@ -2595,6 +2896,7 @@ export class World extends Phaser.Scene {
     this.ambushRolledNight = save.ambushNight;
     this.sideQuests = new SideQuestBook(this.gameData.sidequests, save.story.quests as Record<string, Partial<import('../systems/SideQuests').SideQuestState>>);
     for (const f of save.story.flags) this.storyFlags.add(f);
+    Object.assign(this.setFlags, save.setpieces);
     this.endingLines = [...save.story.endingLines];
     this.applyStoryFlags();
     const ex = save.exploration;

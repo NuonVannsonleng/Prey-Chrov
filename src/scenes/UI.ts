@@ -53,6 +53,10 @@ export class UI extends Phaser.Scene {
   private storage!: StoragePanel;
   private character!: CharacterPanel;
   private map!: MapPanel;
+  /** M15 boss / set-piece bar. */
+  private bossName!: Phaser.GameObjects.Text;
+  private bossHint!: Phaser.GameObjects.Text;
+  private bossBar!: Phaser.GameObjects.Graphics;
   /** Story offers/choices waiting to be shown one at a time. */
   private story: StoryDialog | null = null;
   private readonly storyQueue: Array<() => StoryDialog> = [];
@@ -159,6 +163,9 @@ export class UI extends Phaser.Scene {
     this.storage = new StoragePanel(this);
     this.character = new CharacterPanel(this);
     this.map = new MapPanel(this);
+    this.bossBar = this.add.graphics().setDepth(80).setVisible(false);
+    this.bossName = this.add.text(GAME_WIDTH / 2, 148, '', { fontFamily: FONTS.ui, fontSize: '15px', fontStyle: '700', color: '#f1ede2', stroke: '#071210', strokeThickness: 3 }).setOrigin(0.5, 1).setDepth(80).setVisible(false);
+    this.bossHint = this.add.text(GAME_WIDTH / 2, 172, '', { fontFamily: FONTS.ui, fontSize: '12px', color: '#e6b866', stroke: '#071210', strokeThickness: 3 }).setOrigin(0.5, 0).setDepth(80).setVisible(false);
     this.pointerG = this.add.graphics().setDepth(90);
     for (let i = 0; i < 3; i++) this.pointerT.push(this.add.text(0, 0, '', { fontFamily: FONTS.ui, fontSize: '12px', fontStyle: '700', color: '#f4a090', stroke: '#071210', strokeThickness: 3 }).setOrigin(0.5).setDepth(90).setVisible(false));
     this.journal = new JournalPanel(this);
@@ -178,6 +185,17 @@ export class UI extends Phaser.Scene {
       this.map.setSeed(seed);
     });
     onSceneEvent(this, 'map:data', (d) => this.map.render(d));
+    onSceneEvent(this, 'boss:bar', (b) => {
+      const on = b !== null;
+      this.bossBar.setVisible(on);
+      this.bossName.setVisible(on);
+      this.bossHint.setVisible(on);
+      if (!b) return;
+      const w = 320;
+      this.bossName.setText(b.name);
+      this.bossHint.setText(b.hint);
+      this.bossBar.clear().fillStyle(0x08110f, 0.85).fillRoundedRect(GAME_WIDTH / 2 - w / 2 - 3, 153, w + 6, 16, 4).fillStyle(0xb04a3a, 1).fillRect(GAME_WIDTH / 2 - w / 2, 156, w * Math.max(0, Math.min(1, b.frac)), 10);
+    });
     onSceneEvent(this, 'sidequests:changed', (v) => this.journal.renderSide(v.quests, v.memories));
     onSceneEvent(this, 'story:offer', (o) =>
       this.queueStory(
@@ -487,7 +505,7 @@ export class UI extends Phaser.Scene {
       }
       const len = Math.hypot(dx, dy) || 1;
       // Keep pointers clear of the HUD (top) and the prompt / hotbar (bottom).
-      const k = Math.min((GAME_WIDTH / 2 - 70) / Math.abs(dx || 1e-6), (dy < 0 ? GAME_HEIGHT / 2 - 130 : GAME_HEIGHT / 2 - 190) / Math.abs(dy || 1e-6));
+      const k = Math.min((GAME_WIDTH / 2 - 70) / Math.abs(dx || 1e-6), (dy < 0 ? GAME_HEIGHT / 2 - 200 : GAME_HEIGHT / 2 - 190) / Math.abs(dy || 1e-6));
       const sx = GAME_WIDTH / 2 + dx * k;
       const sy = GAME_HEIGHT / 2 + dy * k;
       const ux = dx / len;
