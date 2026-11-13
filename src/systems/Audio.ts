@@ -20,6 +20,9 @@ export type SfxId =
   | 'splash'
   | 'ui';
 
+/** M16: short original stingers (pentatonic motifs, synthesised). */
+export type MusicId = 'discover' | 'levelup' | 'quest' | 'dawn' | 'danger' | 'victory';
+
 export interface AmbienceLevels {
   /** 0..1 day birds/wind */
   day: number;
@@ -28,6 +31,8 @@ export interface AmbienceLevels {
   rain: number;
   /** 0..1 near a campfire */
   fire: number;
+  /** 0..1 near running water (M16) */
+  river?: number;
 }
 
 /**
@@ -41,12 +46,14 @@ class AudioEngine {
   private master: GainNode | null = null;
   private sfx: GainNode | null = null;
   private amb: GainNode | null = null;
+  private music: GainNode | null = null;
+  private lastStingerAt = -10;
   private noise: AudioBuffer | null = null;
   private readonly loops = new Map<keyof AmbienceLevels, GainNode>();
   private lastPlayed = new Map<SfxId, number>();
   private unlocked = false;
   private ducked = false;
-  private lastLevels: AmbienceLevels = { day: 0, night: 0, rain: 0, fire: 0 };
+  private lastLevels: AmbienceLevels = { day: 0, night: 0, rain: 0, fire: 0, river: 0 };
 
   /** Call once at boot: waits for the first click/key to create the AudioContext. */
   install(): void {
@@ -82,8 +89,10 @@ class AudioEngine {
       this.master = ctx.createGain();
       this.sfx = ctx.createGain();
       this.amb = ctx.createGain();
+      this.music = ctx.createGain();
       this.sfx.connect(this.master);
       this.amb.connect(this.master);
+      this.music.connect(this.master);
       this.master.connect(ctx.destination);
       this.noise = this.makeNoise(ctx, 2);
       this.unlocked = true;
@@ -101,6 +110,7 @@ class AudioEngine {
     this.master?.gain.setTargetAtTime(s.masterVolume, t, 0.05);
     this.sfx?.gain.setTargetAtTime(s.sfxVolume, t, 0.05);
     this.amb?.gain.setTargetAtTime(s.ambienceVolume, t, 0.05);
+    this.music?.gain.setTargetAtTime(s.musicVolume, t, 0.05);
   }
 
   private makeNoise(ctx: AudioContext, seconds: number): AudioBuffer {
@@ -148,6 +158,8 @@ class AudioEngine {
     loop('night', 'bandpass', 4600, 18, 9);
     loop('rain', 'bandpass', 1400, 0.6);
     loop('fire', 'bandpass', 900, 2, 23);
+    // Running water: a soft, slowly swelling low band.
+    loop('river', 'lowpass', 650, 0.7, 0.35);
   }
 
   /** Crossfades ambience layers (call a few times a second). */
@@ -156,9 +168,49 @@ class AudioEngine {
     const ctx = this.ctx;
     if (!ctx) return;
     const scale = this.ducked ? 0 : 1;
-    const peak: AmbienceLevels = { day: 0.06, night: 0.05, rain: 0.22, fire: 0.08 };
+    const peak: AmbienceLevels = { day: 0.06, night: 0.05, rain: 0.22, fire: 0.08, river: 0.07 };
     for (const k of Object.keys(peak) as Array<keyof AmbienceLevels>) {
-      this.loops.get(k)?.gain.setTargetAtTime(Math.max(0, Math.min(1, levels[k])) * peak[k] * scale, ctx.currentTime, this.ducked ? 0.15 : 0.6);
+      this.loops.get(k)?.gain.setTargetAtTime(Math.max(0, Math.min(1, levels[k] ?? 0)) * (peak[k] ?? 0) * scale, ctx.currentTime, this.ducked ? 0.15 : 0.6);
+    }
+  }
+
+  /**
+   * A short musical stinger on its own volume bus. Original motifs on a pentatonic scale;
+   * at most one every 2.5 s so overlapping events never pile up.
+   */
+  stinger(id: MusicId): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.music) return;
+    const now = ctx.currentTime;
+    if (now - this.lastStingerAt < 2.5) return;
+    this.lastStingerAt = now;
+    const scale = [261.6, 293.7, 329.6, 392.0, 440.0, 523.3, 587.3, 659.3];
+    const motifs: Record<MusicId, Array<[number, number, number]>> = {
+      discover: [[2, 0, 0.35], [4, 0.14, 0.35], [5, 0.28, 0.6]],
+      levelup: [[0, 0, 0.25], [2, 0.11, 0.25], [4, 0.22, 0.25], [7, 0.33, 0.7]],
+      quest: [[3, 0, 0.5], [5, 0.18, 0.5], [4, 0.36, 0.5], [7, 0.54, 0.9]],
+      dawn: [[4, 0, 0.9], [2, 0.45, 1.2]],
+      danger: [[0, 0, 0.6], [1, 0.0, 0.6], [0, 0.5, 0.8]],
+      victory: [[2, 0, 0.3], [4, 0.13, 0.3], [5, 0.26, 0.3], [7, 0.39, 1.0]],
+    };
+    const low = id === 'danger' ? 0.5 : 1;
+    for (const [deg, at, dur] of motifs[id]) {
+      const f = (scale[deg] ?? 261.6) * low;
+      const osc = ctx.createOscillator();
+      osc.type = id === 'danger' ? 'sawtooth' : 'triangle';
+      osc.frequency.setValueAtTime(f, now + at);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, now + at);
+      g.gain.exponentialRampToValueAtTime(id === 'danger' ? 0.05 : 0.09, now + at + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + at + dur);
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = id === 'danger' ? 700 : 2400;
+      osc.connect(lp);
+      lp.connect(g);
+      g.connect(this.music);
+      osc.start(now + at);
+      osc.stop(now + at + dur + 0.05);
     }
   }
 

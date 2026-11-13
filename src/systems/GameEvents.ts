@@ -3,7 +3,7 @@ import type { ItemStack } from './Inventory';
 import type { QuestView } from './Quest';
 import type { SideQuestView } from './SideQuests';
 import type { TabletDef } from '../data/schema';
-import type { AmbienceLevels, SfxId } from './Audio';
+import type { AmbienceLevels, MusicId, SfxId } from './Audio';
 
 /** A storage chest's contents (World → UI). */
 export interface StorageView {
@@ -142,6 +142,8 @@ export interface GameEventMap {
   'sfx': SfxId;
   /** Ambience mix levels 0..1 (sent a few times a second). */
   'ambience': AmbienceLevels;
+  /** M16: a short original music stinger. */
+  'music': MusicId;
   /** Pause/menus: silence ambience loops. */
   'audio:duck': boolean;
   /** The game was saved (autosave, pause or sleep). */

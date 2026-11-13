@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { DEBUG_HOOKS, GAME_HEIGHT, GAME_WIDTH } from './config';
+import { DEBUG_HOOKS, GAME_HEIGHT, GAME_WIDTH, applyContrast } from './config';
 import { Boot } from './scenes/Boot';
 import { Ending } from './scenes/Ending';
 import { GameOver } from './scenes/GameOver';
@@ -9,6 +9,7 @@ import { Preload } from './scenes/Preload';
 import { UI } from './scenes/UI';
 import { World } from './scenes/World';
 import { audio } from './systems/Audio';
+import { getSettings, onSettings } from './systems/Settings';
 import { gameEvents } from './systems/GameEvents';
 
 const game = new Phaser.Game({
@@ -37,6 +38,10 @@ audio.install();
 gameEvents.on('sfx', (id) => audio.play(id));
 gameEvents.on('ambience', (levels) => audio.setAmbience(levels));
 gameEvents.on('audio:duck', (on) => audio.duck(on));
+gameEvents.on('music', (id) => audio.stinger(id));
+// High contrast recolours text before scenes build their UI, and again whenever it changes.
+applyContrast(getSettings().highContrast);
+onSettings((s) => applyContrast(s.highContrast));
 
 if (DEBUG_HOOKS) {
   (window as unknown as { __preyChrov: Phaser.Game; __preyAudio: typeof audio }).__preyChrov = game;

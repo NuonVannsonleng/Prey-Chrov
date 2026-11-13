@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { CSS, FONTS, GAME_WIDTH, GAME_HEIGHT } from '../../config';
 import type { ToastTone } from '../../systems/GameEvents';
+import { fontPx, getSettings } from '../../systems/Settings';
+import { backing } from '../../config';
 
 /** Single short message at the top centre; a new message replaces the current one. */
 export class Toast {
@@ -10,10 +12,12 @@ export class Toast {
     this.text = scene.add
       .text(GAME_WIDTH / 2, 104, '', {
         fontFamily: FONTS.ui,
-        fontSize: '17px',
+        fontSize: fontPx(17),
         fontStyle: '600',
         color: CSS.text,
-        backgroundColor: 'rgba(8,17,15,0.85)',
+        backgroundColor: backing(0.85, getSettings().highContrast),
+        wordWrap: { width: GAME_WIDTH - 120 },
+        align: 'center',
         padding: { left: 14, right: 14, top: 7, bottom: 7 },
       })
       .setOrigin(0.5)

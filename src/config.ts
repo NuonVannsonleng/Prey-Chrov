@@ -34,14 +34,26 @@ export const PALETTE = {
   textDim: 0x8d978f,
 } as const;
 
-export const CSS = {
+/** Text colours. Mutable so the high-contrast setting can brighten them (UI rebuilds after). */
+export const CSS: { text: string; textDim: string; gold: string; fire: string; turquoise: string; danger: string } = {
   text: '#e8e4d8',
   textDim: '#8d978f',
   gold: '#e6b866',
   fire: '#e8893a',
   turquoise: '#4fc2b4',
   danger: '#d9644a',
-} as const;
+};
+const CSS_NORMAL = { ...CSS };
+
+/** High contrast: near-white text, brighter secondary text and accents. */
+export function applyContrast(high: boolean): void {
+  Object.assign(CSS, high ? { text: '#ffffff', textDim: '#d6ddd8', gold: '#ffd27a', fire: '#ffaa55', turquoise: '#7fe8dc', danger: '#ff7a5c' } : CSS_NORMAL);
+}
+
+/** Panel / toast backing: fully opaque in high contrast. */
+export function backing(alpha: number, high: boolean): string {
+  return `rgba(8,17,15,${high ? 1 : alpha})`;
+}
 
 export const PLAYER = {
   walkSpeed: 150,

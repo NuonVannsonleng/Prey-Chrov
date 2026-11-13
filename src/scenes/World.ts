@@ -13,7 +13,7 @@ import type { Enemy } from '../entities/Enemy';
 import { hash2, hashString, mulberry32 } from '../utils/random';
 import { forecast, weatherModifiers, type Forecast } from '../systems/Season';
 import { QuestLog } from '../systems/Quest';
-import { getSettings } from '../systems/Settings';
+import { getSettings, onSettings } from '../systems/Settings';
 import { rollLoot } from '../systems/Loot';
 import { GameClock, darknessAt, inHourWindow, phaseOf } from '../systems/Clock';
 import { gameEvents, onSceneEvent, type ClockTick, type PlayerTick, type SurvivalTick } from '../systems/GameEvents';
@@ -33,10 +33,10 @@ import { readSave, writeSave, type SaveData } from '../systems/Save';
 import { buildSave, clampSelected, sanitizeInventory } from '../systems/SaveGame';
 import { Structures, footprintOf, type Structure } from '../systems/Structures';
 import { Survival } from '../systems/Survival';
-import { TILE } from '../textures';
+import { TEX, TILE } from '../textures';
 import { FloatingText } from '../ui/FloatingText';
 import { PropLayer } from '../world/PropLayer';
-import { oncePerKeyEvent } from '../utils/keys';
+import { codeToKeyCode, oncePerKeyEvent } from '../utils/keys';
 import { ChunkManager, type RootWall } from '../world/ChunkManager';
 import type { EndingData } from './Ending';
 import { WorldGen } from '../world/WorldGen';
@@ -201,11 +201,12 @@ export class World extends Phaser.Scene {
   private readonly pressHandler = oncePerKeyEvent((e: KeyboardEvent) => {
     // Keys pressed to close a panel must never act in the world.
     if (e.repeat || this.modalOpen) return;
-    if (e.code === 'KeyF') this.pendingUse = true;
-    else if (e.code === 'Space') this.pendingAttack = true;
-    else if (e.code === 'KeyE') this.pendingInteract = true;
-    else if (e.code === 'KeyR') this.pendingRotate = true;
-    else if (e.code === 'KeyX') this.pendingDismantle = true;
+    const k = getSettings().keys;
+    if (e.code === k.use) this.pendingUse = true;
+    else if (e.code === k.attack) this.pendingAttack = true;
+    else if (e.code === k.interact) this.pendingInteract = true;
+    else if (e.code === k.rotate) this.pendingRotate = true;
+    else if (e.code === k.dismantle) this.pendingDismantle = true;
   });
   private pendingRotate = false;
   private pendingDismantle = false;
@@ -499,6 +500,7 @@ export class World extends Phaser.Scene {
     const cfg = this.gameData.survival;
 
     p.step(this.keys, dt, this.now, inputOn, this.survival.canSprint, this.terrainSpeed(p.x, p.y) * (p.crouching ? this.gameData.stealth.crouchSpeed : 1));
+    this.updateCameraFeel(p, dt, inputOn);
     this.clock.advance(dt / 1000);
     this.updateWeather();
     const wm = weatherModifiers(this.weather, this.gameData.season);
@@ -719,6 +721,7 @@ export class World extends Phaser.Scene {
       this.progression.addXp('combat', 4);
       this.applyProgressionEffects();
       this.emitCharacter();
+      gameEvents.emit('music', 'victory');
       gameEvents.emit('toast', { text: this.spText('tuskerDefeated'), tone: 'info' });
       this.save();
     }
@@ -787,13 +790,14 @@ export class World extends Phaser.Scene {
     const dark = darknessAt(this.clock.hour, this.gameData.survival.darkness);
     let fire = 0;
     for (const s of this.structures.list) if (s.def.lightRadius > 0) fire = Math.max(fire, 1 - Math.hypot(s.x - this.player.x, s.y - this.player.y) / 220);
-    gameEvents.emit('ambience', { day: 1 - dark, night: dark, rain: this.weather.monsoon ? 1 : 0, fire: Math.max(0, fire) });
+    gameEvents.emit('ambience', { day: 1 - dark, night: dark, rain: this.weather.monsoon ? 1 : 0, fire: Math.max(0, fire), river: this.riverLevel() });
     this.chunks.setFlood(this.weather.flood, this.gameData.season.floodRiverWidth);
     const dayNow = this.clock.dayNumber;
     if (dayNow > this.lastDayNumber) {
       const prev = this.lastDayNumber;
       this.lastDayNumber = dayNow;
       if (prev > 0) {
+        gameEvents.emit('music', 'dawn');
         // Surviving teaches most in the first week; after that nights give nothing new.
         if (dayNow <= 8) this.grant('survive_night', dayNow);
         if (forecast(prev, 12, this.gameData.season).monsoon) this.grant('monsoon_day', prev);
@@ -820,6 +824,43 @@ export class World extends Phaser.Scene {
     this.weatherKey = key;
     gameEvents.emit('weather:changed', { raining: this.weather.monsoon, label: this.weather.label, flood: this.chunks.flood });
     if (started) gameEvents.emit('toast', { text: 'The monsoon breaks. Stay near fire or shelter to keep warm. Shoots and herbs grow fast in the rain; berries are scarce.', tone: 'warn' });
+  }
+
+  private lookX = 0;
+  private lookY = 0;
+  private nextBumpAt = 0;
+  private dust: Phaser.GameObjects.Particles.ParticleEmitter | null = null;
+
+  /**
+   * Camera looks a little ahead of where you walk (off with reduced motion), and pushing into
+   * something solid kicks up a small puff of dust so collisions read clearly.
+   */
+  private updateCameraFeel(p: Player, dt: number, inputOn: boolean): void {
+    const moving = Math.hypot(p.body.velocity.x, p.body.velocity.y) > 30;
+    const reduced = getSettings().reducedMotion;
+    const tx = moving && !reduced ? -p.facingVec.x * 26 : 0;
+    const ty = moving && !reduced ? -p.facingVec.y * 18 : 0;
+    const k = 1 - Math.pow(0.04, dt / 1000);
+    this.lookX += (tx - this.lookX) * k;
+    this.lookY += (ty - this.lookY) * k;
+    this.cameras.main.setFollowOffset(this.lookX, 12 + this.lookY);
+    const keys = this.keys;
+    const pushing = inputOn && (keys.up.isDown || keys.down.isDown || keys.left.isDown || keys.right.isDown);
+    const blocked = !p.body.blocked.none || !p.body.touching.none;
+    if (pushing && blocked && !moving && this.now >= this.nextBumpAt) {
+      this.nextBumpAt = this.now + 700;
+      this.dust ??= this.add.particles(0, 0, TEX.chip, { emitting: false, speed: { min: 15, max: 45 }, angle: { min: 200, max: 340 }, lifespan: 380, scale: { start: 0.7, end: 0 }, tint: 0xb8a888, alpha: { start: 0.8, end: 0 } }).setDepth(DEPTH.floatingText - 8);
+      this.dust.explode(5, p.x + p.facingVec.x * 9, p.y - 2 + p.facingVec.y * 6);
+    }
+  }
+
+  /** 0..1: how close running or standing water is (sampled every 2 tiles within 6). */
+  private riverLevel(): number {
+    const tx = Math.floor(this.player.x / 32);
+    const ty = Math.floor(this.player.y / 32);
+    let best = Infinity;
+    for (let oy = -6; oy <= 6; oy += 2) for (let ox = -6; ox <= 6; ox += 2) if (this.gen.waterAt(tx + ox, ty + oy)) best = Math.min(best, Math.hypot(ox, oy));
+    return best === Infinity ? 0 : Math.max(0, 1 - best / 7);
   }
 
   /** Under a shelter's roof or by a campfire's warmth. */
@@ -1067,7 +1108,9 @@ export class World extends Phaser.Scene {
 
   private darkness(): number {
     const base = darknessAt(this.clock.hour, this.gameData.survival.darkness);
-    return this.weather.monsoon ? Math.min(0.85, base + this.gameData.season.rainDarkness) : base;
+    const d = this.weather.monsoon ? Math.min(0.85, base + this.gameData.season.rainDarkness) : base;
+    // High contrast keeps nights readable.
+    return getSettings().highContrast ? d * 0.75 : d;
   }
 
   private renderLighting(): void {
@@ -1813,6 +1856,7 @@ export class World extends Phaser.Scene {
           e.armouredDamage = sp.tusker.armouredDamage;
           this.tusker = e;
           gameEvents.emit('sfx', 'thunder');
+          gameEvents.emit('music', 'danger');
           gameEvents.emit('toast', { text: this.spText('tuskerWake'), tone: 'warn' });
         }
       }
@@ -1840,6 +1884,7 @@ export class World extends Phaser.Scene {
       st.phase = 'warning';
       st.until = this.now + sp.storm.warningSeconds * 1000;
       gameEvents.emit('sfx', 'thunder');
+      gameEvents.emit('music', 'danger');
       gameEvents.emit('toast', { text: this.spText('stormWarning', { s: sp.storm.warningSeconds }), tone: 'warn' });
     } else if (st.phase === 'warning' && this.now >= st.until && (!this.weather.monsoon || !night)) {
       st.phase = 'none';
@@ -1862,6 +1907,7 @@ export class World extends Phaser.Scene {
         const up = this.progression.addXp('survival', sp.storm.xp);
         if (up.levelUp !== null) this.applyProgressionEffects();
         this.emitCharacter();
+        gameEvents.emit('music', 'victory');
         gameEvents.emit('toast', { text: this.spText('stormPassed'), tone: 'info' });
       }
     }
@@ -1880,6 +1926,7 @@ export class World extends Phaser.Scene {
       bl.nextSlamAt = this.now + 1800;
       gameEvents.emit('sfx', 'spirit');
       this.shake(300, 0.004);
+      gameEvents.emit('music', 'danger');
       gameEvents.emit('toast', { text: this.spText('blightStart'), tone: 'warn' });
     }
     if (bl.active) {
@@ -1914,6 +1961,7 @@ export class World extends Phaser.Scene {
         this.blightBarLeft = -1;
         this.progression.addXp('exploration', 3);
         this.emitCharacter();
+        gameEvents.emit('music', 'victory');
         gameEvents.emit('toast', { text: this.spText('blightCleared'), tone: 'info' });
       } else if (inGlade && this.now >= bl.nextSlamAt) {
         bl.nextSlamAt = this.now + sp.blight.slamIntervalMs;
@@ -2115,6 +2163,7 @@ export class World extends Phaser.Scene {
     this.emitCharacter();
     this.emitSideQuests();
     gameEvents.emit('sfx', 'shrine');
+    gameEvents.emit('music', 'quest');
     gameEvents.emit('toast', { text: `${def?.title}: ${res.result}`, tone: 'info' });
     this.save();
   }
@@ -2141,6 +2190,7 @@ export class World extends Phaser.Scene {
       this.found.landmarks.add(key);
       this.grant('landmark', key);
       this.storyEvent('landmark');
+      gameEvents.emit('music', 'discover');
       gameEvents.emit('toast', { text: `Landmark discovered: ${LANDMARK_NAMES[l.id as LandmarkId] ?? l.id}. It is now on your map (M).`, tone: 'info' });
     }
     if (this.gen.steppingAt(ptx, Math.floor((p.y - 4) / 32))) {
@@ -2150,6 +2200,7 @@ export class World extends Phaser.Scene {
         this.found.shortcuts.add(key);
         this.grant('shortcut', key);
         this.storyEvent('shortcut');
+        gameEvents.emit('music', 'discover');
         gameEvents.emit('toast', { text: 'Shortcut found: hidden stepping stones across the river. Marked on your map (M).', tone: 'info' });
       }
     }
@@ -2346,6 +2397,7 @@ export class World extends Phaser.Scene {
     this.time.delayedCall(2500, () => this.storyEvent('puzzle'));
     gameEvents.emit('sfx', 'chest');
     this.shake(220, 0.003);
+    gameEvents.emit('music', 'discover');
     gameEvents.emit('toast', { text: 'A deep grinding sound… the reliquary unseals.', tone: 'info' });
   }
 
@@ -2475,6 +2527,7 @@ export class World extends Phaser.Scene {
     const skill = this.gameData.progression.skills.find((s) => s.id === a.skill);
     this.floating.show(this.player.x + 18, this.player.y - 48, `+${a.xp} ${skill?.name ?? a.skill}`, '#c58be0');
     if (a.levelUp !== null) {
+      gameEvents.emit('music', 'levelup');
       gameEvents.emit('toast', { text: `${skill?.name ?? a.skill} rose to level ${a.levelUp}: ${skill?.effect ?? ''}`, tone: 'info' });
       gameEvents.emit('sfx', 'shrine');
       this.applyProgressionEffects();
@@ -2998,21 +3051,30 @@ export class World extends Phaser.Scene {
     const kb = this.input.keyboard;
     if (!kb) throw new Error('Keyboard input unavailable');
     const K = Phaser.Input.Keyboard.KeyCodes;
-    this.keys = {
-      up: kb.addKey(K.W),
-      down: kb.addKey(K.S),
-      left: kb.addKey(K.A),
-      right: kb.addKey(K.D),
-      sprint: kb.addKey(K.SHIFT),
-      // Z, not Ctrl: Ctrl+W/S/D are browser shortcuts (close tab, save, bookmark).
-      crouch: kb.addKey(K.Z),
-      interact: kb.addKey(K.E),
-      use: kb.addKey(K.F),
-    };
+    this.applyBindings();
+    // Rebind live when the controls change (settings are reachable from the pause menu).
+    this.unsubscribeSettings?.();
+    this.unsubscribeSettings = onSettings(() => this.applyBindings());
     kb.addKey(K.F3, true);
     kb.on('keydown-F3', this.debugHandler);
     kb.on('keydown', this.pressHandler);
     this.input.on(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown, this);
+  }
+
+  private unsubscribeSettings: (() => void) | null = null;
+  private boundSig = '';
+
+  /** Key objects for held actions, from the current bindings (crouch is Z by default, never Ctrl). */
+  private applyBindings(): void {
+    const kb = this.input.keyboard;
+    if (!kb) return;
+    const k = getSettings().keys;
+    const sig = JSON.stringify(k);
+    if (sig === this.boundSig && this.keys) return;
+    this.boundSig = sig;
+    if (this.keys) for (const key of Object.values(this.keys)) if (key) kb.removeKey(key, true);
+    const add = (code: string) => kb.addKey(codeToKeyCode(code));
+    this.keys = { up: add(k.up), down: add(k.down), left: add(k.left), right: add(k.right), sprint: add(k.sprint), crouch: add(k.crouch), interact: add(k.interact), use: add(k.use) };
   }
 
   /** Only fires when no UI element above captured the click (Phaser globalTopOnly). */
@@ -3085,7 +3147,10 @@ export class World extends Phaser.Scene {
     // Scene shutdown destroys every game object and the physics world; just drop references.
     this.chunks.forget();
     this.scene.stop(SCENES.ui);
-    gameEvents.emit('ambience', { day: 0, night: 0, rain: 0, fire: 0 });
+    gameEvents.emit('ambience', { day: 0, night: 0, rain: 0, fire: 0, river: 0 });
+    this.unsubscribeSettings?.();
+    this.unsubscribeSettings = null;
+    this.boundSig = '';
     gameEvents.emit('audio:duck', false);
   }
 }

@@ -3,6 +3,7 @@ import { CSS, FONTS, GAME_HEIGHT, GAME_WIDTH } from '../../config';
 import { itemDef } from '../../data/gameData';
 import type { ItemStack } from '../../systems/Inventory';
 import { RARITY_COLOR } from './ItemSlot';
+import { fontPx } from '../../systems/Settings';
 
 const WIDTH = 240;
 
@@ -15,10 +16,10 @@ export class Tooltip extends Phaser.GameObjects.Container {
   constructor(scene: Phaser.Scene) {
     super(scene, 0, 0);
     this.bg = scene.add.graphics();
-    this.title = scene.add.text(12, 10, '', { fontFamily: FONTS.ui, fontSize: '17px', fontStyle: '700', color: CSS.text });
+    this.title = scene.add.text(12, 10, '', { fontFamily: FONTS.ui, fontSize: fontPx(17), fontStyle: '700', color: CSS.text });
     this.bodyText = scene.add.text(12, 36, '', {
       fontFamily: FONTS.ui,
-      fontSize: '14px',
+      fontSize: fontPx(14),
       color: CSS.textDim,
       wordWrap: { width: WIDTH - 24 },
       lineSpacing: 3,

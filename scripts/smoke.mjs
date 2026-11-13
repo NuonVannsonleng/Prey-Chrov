@@ -911,12 +911,12 @@ try {
   await clickGame(640, 395);
   await sleep(300);
   const flashBefore = await page.evaluate(() => JSON.parse(localStorage.getItem("preychrov.settings") || "{}").reducedFlash === true);
-  await page.evaluate(() => window.__preyChrov.scene.getScene('Pause').settings.buttons[4].activate());
+  await page.evaluate(() => window.__preyChrov.scene.getScene('Pause').settings.buttonFor('reducedFlash').activate());
   await sleep(150);
   const flashAfter = await page.evaluate(() => JSON.parse(localStorage.getItem("preychrov.settings") || "{}").reducedFlash === true);
   await page.screenshot({ path: OUT + '/25-settings.png' });
   check("settings panel changes and persists a setting", flashBefore !== flashAfter);
-  await page.evaluate(() => window.__preyChrov.scene.getScene('Pause').settings.buttons[4].activate());
+  await page.evaluate(() => window.__preyChrov.scene.getScene('Pause').settings.buttonFor('reducedFlash').activate());
   await page.keyboard.press('Escape');
   await sleep(250);
   await page.keyboard.press('Escape');
@@ -1892,6 +1892,147 @@ try {
   const inputOk = await evalW7('return { story: ui.story, journal: ui.journal.isOpen };');
   await page.keyboard.press('KeyJ');
   check('dying with a story dialog open does not freeze input in the next game', died14 && inputOk.story === null && inputOk.journal === true, JSON.stringify(inputOk));
+
+  // ---- M16: settings, controls, accessibility, audio and save slots ----
+  await evalW7('w.encounters.clear(); w.survival.stats.health = 100; w.survival.stats.hunger = 100; w.survival.stats.thirst = 100;');
+  const darkBefore = await evalW7('return w.darkness();');
+  await page.evaluate(() => window.__preyChrov.events.emit('blur'));
+  await sleep(350);
+  check('losing window focus (alt-tab) pauses the game', (await sceneActive('Pause')) && !(await sceneActive('World')));
+  const unchanged16 = await page.evaluate(() => {
+    const p = window.__preyChrov.scene.getScene('Pause');
+    p.openSettings();
+    const keys = ['masterVolume', 'sfxVolume', 'ambienceVolume', 'musicVolume', 'reducedMotion', 'reducedFlash', 'highContrast', 'largeText', 'showHints'];
+    const out = [];
+    for (const k of keys) {
+      const before = JSON.parse(localStorage.getItem('preychrov.settings') || '{}')[k];
+      p.settings.buttonFor(k).activate();
+      const after = JSON.parse(localStorage.getItem('preychrov.settings') || '{}')[k];
+      if (JSON.stringify(before) === JSON.stringify(after)) out.push(k);
+    }
+    // Put back the ones that should stay as they were; keep high contrast and large text on.
+    for (const k of ['reducedMotion', 'reducedFlash', 'showHints']) p.settings.buttonFor(k).activate();
+    return out;
+  });
+  check('every setting changes and persists (4 volumes, 5 display/access toggles)', unchanged16.length === 0, unchanged16.join(','));
+  // Sound off: cycle master volume to 0 %, the master bus goes silent; then back to 100 %.
+  const muted16 = await page.evaluate(async () => {
+    const p = window.__preyChrov.scene.getScene('Pause');
+    const b = p.settings.buttonFor('masterVolume');
+    for (let i = 0; i < 12 && !/: {2}0%/.test(b.text.text); i++) b.activate();
+    await new Promise((r) => setTimeout(r, 400));
+    const g0 = window.__preyAudio.master.gain.value;
+    for (let i = 0; i < 12 && !/100%/.test(b.text.text); i++) b.activate();
+    await new Promise((r) => setTimeout(r, 400));
+    return { off: g0, on: window.__preyAudio.master.gain.value };
+  });
+  check('sound can be turned off and on (master bus)', muted16.off < 0.02 && muted16.on > 0.9, JSON.stringify(muted16));
+  const stung = await page.evaluate(() => {
+    const a = window.__preyAudio;
+    a.lastStingerAt = -10;
+    a.stinger('discover');
+    return { played: a.lastStingerAt > 0, music: a.music !== null };
+  });
+  check('music stingers play on their own volume bus', stung.played && stung.music, JSON.stringify(stung));
+  // Rebinding: interact → G, inventory → N; a reserved key is refused16.
+  await page.evaluate(() => {
+    const p = window.__preyChrov.scene.getScene('Pause');
+    p.settings.setTab('controls');
+    p.settings.buttonFor('interact').activate();
+  });
+  await sleep(150);
+  await page.keyboard.press('KeyG');
+  await sleep(120);
+  await page.evaluate(() => window.__preyChrov.scene.getScene('Pause').settings.buttonFor('map').activate());
+  await sleep(150);
+  await page.keyboard.press('Digit1');
+  await sleep(120);
+  const refused16 = await page.evaluate(() => window.__preyChrov.scene.getScene('Pause').settings.note.text);
+  await page.keyboard.press('Escape');
+  await sleep(150);
+  const capOpen = await page.evaluate(() => window.__preyChrov.scene.getScene('Pause').settings.isOpen);
+  await page.evaluate(() => window.__preyChrov.scene.getScene('Pause').settings.buttonFor('inventory').activate());
+  await sleep(150);
+  await page.keyboard.press('KeyN');
+  await sleep(120);
+  await page.screenshot({ path: OUT + '/60-controls.png' });
+  const bound16 = await page.evaluate(() => JSON.parse(localStorage.getItem('preychrov.settings') || '{}').keys ?? {});
+  check('rebinding saves the new key; reserved keys are refused; Esc cancels only the capture', bound16.interact === 'KeyG' && bound16.inventory === 'KeyN' && bound16.map === 'KeyM' && /reserved/i.test(refused16) && capOpen, JSON.stringify({ bound16, refused16, capOpen }));
+  await page.keyboard.press('Escape');
+  await sleep(250);
+  await page.keyboard.press('Escape');
+  await sleep(500);
+  const rebound = await evalW7(
+    'const ev = (code) => ({ code, repeat: false, preventDefault() {} }); w.pendingInteract = false; w.pressHandler(ev("KeyG")); const g = w.pendingInteract; w.pendingInteract = false; w.pressHandler(ev("KeyE")); const e = w.pendingInteract; w.pendingInteract = false; return { g, e, held: w.keys.interact.keyCode };',
+  );
+  await page.keyboard.press('KeyN');
+  await sleep(200);
+  const invN = await evalW7('return ui.panel.isOpen;');
+  await page.keyboard.press('KeyN');
+  await sleep(150);
+  await page.keyboard.press('KeyI');
+  await sleep(150);
+  const invI = await evalW7('return ui.panel.isOpen;');
+  if (invI) await page.keyboard.press('KeyI');
+  check('rebound keys drive the world and the HUD (G interacts, N opens the bag, E and I no longer do)', rebound.g && !rebound.e && rebound.held === 71 && invN && !invI, JSON.stringify({ rebound, invN, invI }));
+  const access16 = await evalW7('return { color: ui.toast.text.style.color, size: ui.toast.text.style.fontSize, dark: w.darkness() };');
+  check('high contrast and large text apply when play resumes', access16.color === '#ffffff' && access16.size === '20px' && (darkBefore === 0 || access16.dark < darkBefore), JSON.stringify({ access16, darkBefore }));
+  // Save slots: a journey saved in slot 2 leaves slot 1 alone and loads back from the Journeys panel.
+  const slot1Before = await page.evaluate(() => localStorage.getItem('preychrov.save'));
+  await page.evaluate(() => localStorage.setItem('preychrov.slot', '2'));
+  const spot16 = await evalW7('w.player.setPosition(w.player.x + 64, w.player.y); w.save(); return { x: Math.round(w.player.x), y: Math.round(w.player.y) };');
+  const slotWrite = await page.evaluate(() => ({ two: localStorage.getItem('preychrov.save.2') !== null, one: localStorage.getItem('preychrov.save') }));
+  check('saving in slot 2 leaves slot 1 untouched', slotWrite.two && slotWrite.one === slot1Before);
+  await page.evaluate(() => localStorage.setItem('preychrov.save.3', localStorage.getItem('preychrov.save.2')));
+  await page.reload();
+  await waitScene('Menu', 15000);
+  await sleep(500);
+  const menuSlot = await page.evaluate(() => {
+    const m = window.__preyChrov.scene.getScene('Menu');
+    const label = m.children.list.find((c) => c.type === 'Text' && /^(Continue unavailable — )?Slot \d/.test(c.text))?.text ?? '';
+    m.openSlots();
+    const sp = m.slotsPanel;
+    return { label, two: sp.rowFor(2).main.text.text, three: sp.rowFor(3).main.text.text };
+  });
+  await page.screenshot({ path: OUT + '/61-journeys.png' });
+  await page.evaluate(() => window.__preyChrov.scene.getScene('Menu').slotsPanel.rowFor(3).del.activate());
+  await sleep(150);
+  await page.evaluate(() => window.__preyChrov.scene.getScene('Menu').slotsPanel.dialog.answer(true));
+  await sleep(150);
+  const afterDelete = await page.evaluate(() => ({
+    gone: localStorage.getItem('preychrov.save.3') === null,
+    two: localStorage.getItem('preychrov.save.2') !== null,
+    label: window.__preyChrov.scene.getScene('Menu').slotsPanel.rowFor(3).main.text.text,
+  }));
+  check(
+    'Journeys lists each slot; deleting asks first and removes only that slot',
+    /Slot 2/.test(menuSlot.label) && /continue day/.test(menuSlot.two) && /continue day/.test(menuSlot.three) && afterDelete.gone && afterDelete.two && /start a new/.test(afterDelete.label),
+    JSON.stringify({ menuSlot, afterDelete }),
+  );
+  await page.evaluate(() => window.__preyChrov.scene.getScene('Menu').slotsPanel.rowFor(2).main.activate());
+  await waitScene('World', 15000);
+  await sleep(900);
+  const loaded2 = await evalW7('return { x: Math.round(w.player.x), y: Math.round(w.player.y) };');
+  check('a slot-2 journey loads from the Journeys panel', Math.abs(loaded2.x - spot16.x) < 8 && Math.abs(loaded2.y - spot16.y) < 8, JSON.stringify({ spot16, loaded2 }));
+  await page.reload();
+  await waitScene('Menu', 15000);
+  await sleep(500);
+  await page.keyboard.press('Enter');
+  await waitScene('World', 15000);
+  await sleep(900);
+  const cont16 = await evalW7('return { x: Math.round(w.player.x), y: Math.round(w.player.y) };');
+  check('Continue resumes the current slot after a reload', Math.abs(cont16.x - spot16.x) < 40 && Math.abs(cont16.y - spot16.y) < 40, JSON.stringify({ spot16, cont16 }));
+  // Resizing keeps the whole 16:9 game visible, centred.
+  await page.setViewportSize({ width: 820, height: 640 });
+  await sleep(500);
+  const box16 = await page.evaluate(() => {
+    const r = document.querySelector('canvas').getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  });
+  await page.screenshot({ path: OUT + '/62-resized.png' });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await sleep(400);
+  check('the game scales to a resized window without cropping', box16.w <= 821 && box16.h <= 641 && Math.abs(box16.w / box16.h - 16 / 9) < 0.02 && box16.x >= 0 && box16.y >= 0, JSON.stringify(box16));
 
   await page.evaluate(() => localStorage.clear());
 

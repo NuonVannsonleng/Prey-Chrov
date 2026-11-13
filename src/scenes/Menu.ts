@@ -1,11 +1,12 @@
 import Phaser from 'phaser';
 import { CSS, FONTS, GAME_HEIGHT, GAME_WIDTH, SCENES } from '../config';
-import { CAN_LOAD_SAVES, describeSaveStatus, inspectSave } from '../systems/Save';
+import { CAN_LOAD_SAVES, currentSlot, describeSaveStatus, inspectSave } from '../systems/Save';
 import { TEX } from '../textures';
 import { Button } from '../ui/components/Button';
 import { ButtonList } from '../ui/components/ButtonList';
 import { ConfirmDialog } from '../ui/components/ConfirmDialog';
 import { SettingsPanel } from '../ui/panels/SettingsPanel';
+import { SlotsPanel } from '../ui/panels/SlotsPanel';
 import { oncePerKeyEvent } from '../utils/keys';
 import { mulberry32, randRange } from '../utils/random';
 
@@ -14,6 +15,7 @@ export class Menu extends Phaser.Scene {
   private dialog: ConfirmDialog | null = null;
   private list: ButtonList | null = null;
   private settingsPanel: SettingsPanel | null = null;
+  private slotsPanel: SlotsPanel | null = null;
 
   constructor() {
     super(SCENES.menu);
@@ -51,8 +53,8 @@ export class Menu extends Phaser.Scene {
       onActivate: () => (canContinue ? this.confirmNewJourney(save.kind === 'valid' ? save.day : 1) : this.startGame(false)),
     });
     const cont = new Button(this, cx, 500, { label: 'Continue', enabled: canContinue, onActivate: () => this.startGame(true) });
-    const reason =
-      save.kind === 'valid' && !CAN_LOAD_SAVES ? 'Loading saves is not available in this build yet.' : describeSaveStatus(save);
+    const slot = currentSlot();
+    const reason = `Slot ${slot} · ${save.kind === 'valid' && !CAN_LOAD_SAVES ? 'Loading saves is not available in this build yet.' : describeSaveStatus(save)}`;
     this.add
       .text(cx, 536, canContinue ? reason : `Continue unavailable — ${reason}`, {
         fontFamily: FONTS.ui,
@@ -61,13 +63,22 @@ export class Menu extends Phaser.Scene {
       })
       .setOrigin(0.5);
     const settingsBtn = new Button(this, cx, 570, { label: 'Settings', width: 220, height: 40, onActivate: () => this.openSettings() });
-    const order = canContinue ? [cont, play, settingsBtn] : [play, cont, settingsBtn];
+    const journeysBtn = new Button(this, cx, 620, { label: 'Journeys…', width: 220, height: 40, onActivate: () => this.openSlots() });
+    const order = canContinue ? [cont, play, settingsBtn, journeysBtn] : [play, cont, settingsBtn, journeysBtn];
     this.list = new ButtonList(this, order);
     this.settingsPanel = new SettingsPanel(this, () => {
       this.list = new ButtonList(this, order);
     });
+    this.slotsPanel = new SlotsPanel(
+      this,
+      (_slot, load) => this.startGame(load),
+      // Slots may have changed (deleted, switched): rebuild the menu so Continue reflects it.
+      () => this.scene.restart(),
+    );
     const esc = oncePerKeyEvent((e: KeyboardEvent) => {
-      if (e.code === 'Escape' && this.settingsPanel?.isOpen) this.settingsPanel.close();
+      if (e.code !== 'Escape') return;
+      if (this.settingsPanel?.isOpen) this.settingsPanel.close();
+      else if (this.slotsPanel?.isOpen) this.slotsPanel.close();
     });
     this.input.keyboard?.on('keydown', esc);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.input.keyboard?.off('keydown', esc));
@@ -84,13 +95,13 @@ export class Menu extends Phaser.Scene {
     this.cameras.main.fadeIn(400, 4, 10, 9);
   }
 
-  /** A new journey doesn't delete the save; it is only replaced the next time the player sleeps. */
+  /** A new journey replaces this slot's save at its first save; other slots are untouched. */
   private confirmNewJourney(day: number): void {
     if (this.dialog) return;
     this.list?.destroy();
     this.dialog = new ConfirmDialog(
       this,
-      `Start a new journey?\nYour saved journey (day ${day}) stays until you next sleep in a shelter.`,
+      `Start a new journey in slot ${currentSlot()}?\nIts journey (day ${day}) is replaced at the first save. Journeys… lets you pick another slot.`,
       'Start new',
       (ok) => {
         this.dialog = null;
@@ -98,6 +109,12 @@ export class Menu extends Phaser.Scene {
         else this.scene.restart();
       },
     );
+  }
+
+  private openSlots(): void {
+    this.list?.destroy();
+    this.list = null;
+    this.slotsPanel?.open();
   }
 
   private openSettings(): void {

@@ -90,6 +90,15 @@ export class Button extends Phaser.GameObjects.Container {
     return this;
   }
 
+  setEnabled(enabled: boolean): this {
+    if (this.enabled !== enabled) {
+      this.enabled = enabled;
+      if (!enabled) this.hovered = false;
+      this.redraw();
+    }
+    return this;
+  }
+
   private redraw(): void {
     const active = this.enabled && (this.hovered || this.focused);
     const fill = !this.enabled ? COLORS.fillDisabled : active ? COLORS.fillHover : COLORS.fill;

@@ -5,6 +5,7 @@ import type { TabletDef } from '../../data/schema';
 import type { QuestView } from '../../systems/Quest';
 import type { SideQuestView } from '../../systems/SideQuests';
 import { Button } from '../components/Button';
+import { fontPx } from '../../systems/Settings';
 
 const W = 1000;
 const H = 600;
@@ -36,7 +37,7 @@ export class JournalPanel {
     panel.lineStyle(1.5, 0x6e7268, 1).strokeRoundedRect(left, top, W, H, 12);
     const title = scene.add.text(left + 28, top + 18, 'Journal', { fontFamily: FONTS.ui, fontSize: '26px', fontStyle: '700', color: CSS.text });
     const close = scene.add
-      .text(left + W - 28, top + 28, 'J / Esc to close', { fontFamily: FONTS.ui, fontSize: '13px', color: CSS.textDim })
+      .text(left + W - 28, top + 28, 'J / Esc to close', { fontFamily: FONTS.ui, fontSize: fontPx(13), color: CSS.textDim })
       .setOrigin(1, 0);
     this.questText = scene.add.text(left + 28, top + 66, '', {
       fontFamily: FONTS.ui,
@@ -66,7 +67,7 @@ export class JournalPanel {
       left + 520,
       top + 96,
       lore.entries.map((e) => `${e.term}${e.termKm ? ` · ${e.termKm}` : ''}\n${e.text}`).join('\n\n'),
-      { fontFamily: FONTS.ui, fontSize: '13px', color: CSS.text, wordWrap: { width: 450 }, lineSpacing: 3 },
+      { fontFamily: FONTS.ui, fontSize: fontPx(13), color: CSS.text, wordWrap: { width: 450 }, lineSpacing: 3 },
     );
     const disclaimer = scene.add.text(left + 520, top + H - 92, lore.disclaimer, {
       fontFamily: FONTS.ui,
@@ -80,9 +81,9 @@ export class JournalPanel {
     this.mainGroup.push(...children.slice(4));
     // Side stories tab: quests on the left, memories on the right.
     const sideHead = scene.add.text(left + 28, top + 66, 'Side stories', { fontFamily: FONTS.ui, fontSize: '17px', fontStyle: '700', color: CSS.gold });
-    this.sideText = scene.add.text(left + 28, top + 96, '', { fontFamily: FONTS.ui, fontSize: '14px', color: CSS.text, wordWrap: { width: 450 }, lineSpacing: 4 });
+    this.sideText = scene.add.text(left + 28, top + 96, '', { fontFamily: FONTS.ui, fontSize: fontPx(14), color: CSS.text, wordWrap: { width: 450 }, lineSpacing: 4 });
     const memHead = scene.add.text(left + 520, top + 66, 'Memories', { fontFamily: FONTS.ui, fontSize: '17px', fontStyle: '700', color: CSS.gold });
-    this.memText = scene.add.text(left + 520, top + 96, '', { fontFamily: FONTS.ui, fontSize: '14px', fontStyle: 'italic', color: CSS.text, wordWrap: { width: 450 }, lineSpacing: 4 });
+    this.memText = scene.add.text(left + 520, top + 96, '', { fontFamily: FONTS.ui, fontSize: fontPx(14), fontStyle: 'italic', color: CSS.text, wordWrap: { width: 450 }, lineSpacing: 4 });
     this.sideGroup.push(sideHead, this.sideText, memHead, this.memText);
     children.push(...this.sideGroup);
     const mkTab = (label: string, tab: 'main' | 'side', x: number) => {
@@ -216,7 +217,7 @@ export class TabletView {
       })
       .setOrigin(0.5);
     const hint = scene.add
-      .text(cx, cy + 165, 'E / Esc / click to close · recorded in your journal (J)', { fontFamily: FONTS.ui, fontSize: '13px', color: CSS.textDim })
+      .text(cx, cy + 165, 'E / Esc / click to close · recorded in your journal (J)', { fontFamily: FONTS.ui, fontSize: fontPx(13), color: CSS.textDim })
       .setOrigin(0.5);
     backdrop.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => this.close());
     this.root = scene.add.container(0, 0, [backdrop, slab, this.km, this.en, this.body, hint]).setDepth(800).setVisible(false);

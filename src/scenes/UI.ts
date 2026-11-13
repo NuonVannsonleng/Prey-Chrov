@@ -1,10 +1,10 @@
 import Phaser from 'phaser';
-import { CSS, FONTS, GAME_HEIGHT, GAME_WIDTH, SCENES } from '../config';
+import { CSS, FONTS, GAME_HEIGHT, GAME_WIDTH, SCENES, backing } from '../config';
 import { itemDef } from '../data/gameData';
 import { gameEvents, onSceneEvent, type InventoryView, type PlayerTick } from '../systems/GameEvents';
 import { HOTBAR_SLOTS } from '../systems/Inventory';
 import { TEX } from '../textures';
-import { getSettings } from '../systems/Settings';
+import { getSettings, onSettings, keyFor, keyLabel, fontPx, type Action } from '../systems/Settings';
 import { oncePerKeyEvent } from '../utils/keys';
 import { ConfirmDialog } from '../ui/components/ConfirmDialog';
 import { Toast } from '../ui/components/Toast';
@@ -21,24 +21,29 @@ import { QuestArrow } from '../ui/panels/QuestArrow';
 import { WeatherOverlay } from '../ui/panels/WeatherOverlay';
 import { StatusHud } from '../ui/panels/StatusHud';
 
-const HINTS = [
-  ['WASD', 'Move'],
-  ['Shift', 'Sprint'],
-  ['E / Click', 'Gather · drink · use'],
-  ['Click / Space', 'Attack (near a creature)'],
-  ['F', 'Eat / place held item'],
-  ['1–6 / Wheel', 'Hotbar'],
-  ['I', 'Inventory'],
-  ['C', 'Crafting'],
-  ['J', 'Journal (quest, tablets)'],
-  ['K', 'Character (gear, skills)'],
-  ['M', 'Map (click: add/remove marker)'],
-  ['Q', 'Drop one (Ctrl: stack)'],
-  ['R · X', 'Rotate / repair · dismantle'],
-  ['Z (hold)', 'Crouch: quiet; hide in bushes'],
-  ['Esc', 'Close / pause'],
-  ['H', 'Hide help'],
-] as const;
+/** The help panel follows the current key bindings. */
+function hints(): Array<[string, string]> {
+  const k = (a: Action) => keyLabel(keyFor(a));
+  const move = [k('up'), k('left'), k('down'), k('right')].join('');
+  return [
+    [move.length === 4 ? move : `${k('up')}${k('left')}${k('down')}${k('right')}`, 'Move'],
+    [k('sprint'), 'Sprint'],
+    [`${k('interact')} / Click`, 'Gather · drink · use'],
+    [`Click / ${k('attack')}`, 'Attack (near a creature)'],
+    [k('use'), 'Eat / place held item'],
+    ['1–6 / Wheel', 'Hotbar'],
+    [k('inventory'), 'Inventory'],
+    [k('crafting'), 'Crafting'],
+    [k('journal'), 'Journal (quest, tablets)'],
+    [k('character'), 'Character (gear, skills)'],
+    [k('map'), 'Map (click: add/remove marker)'],
+    [k('drop'), 'Drop one (Ctrl: stack)'],
+    [`${k('rotate')} · ${k('dismantle')}`, 'Rotate / repair · dismantle'],
+    [`${k('crouch')} (hold)`, 'Crouch: quiet; hide in bushes'],
+    ['Esc', 'Close / pause · Settings'],
+    [k('help'), 'Hide help'],
+  ];
+}
 
 /** HUD overlay running in parallel with World. Owns UI-only input (panels, hotbar, pause request). */
 export class UI extends Phaser.Scene {
@@ -53,6 +58,9 @@ export class UI extends Phaser.Scene {
   private storage!: StoragePanel;
   private character!: CharacterPanel;
   private map!: MapPanel;
+  /** Display/control settings changed while paused: rebuild the HUD on resume. */
+  private settingsDirty = false;
+  private settingsSig = '';
   /** M15 boss / set-piece bar. */
   private bossName!: Phaser.GameObjects.Text;
   private bossHint!: Phaser.GameObjects.Text;
@@ -113,10 +121,10 @@ export class UI extends Phaser.Scene {
     this.prompt = this.add
       .text(GAME_WIDTH / 2, this.hotbar.top - 40, '', {
         fontFamily: FONTS.ui,
-        fontSize: '17px',
+        fontSize: fontPx(17),
         fontStyle: '700',
         color: CSS.gold,
-        backgroundColor: 'rgba(8,17,15,0.78)',
+        backgroundColor: backing(0.78, getSettings().highContrast),
         padding: { left: 12, right: 12, top: 5, bottom: 5 },
       })
       .setOrigin(0.5, 1)
@@ -297,7 +305,19 @@ export class UI extends Phaser.Scene {
     const kb = this.input.keyboard;
     kb?.on('keydown', this.keyHandler);
     this.input.on(Phaser.Input.Events.POINTER_WHEEL, this.onWheel, this);
+    const unsubscribe = onSettings((s) => {
+      const sig = `${s.highContrast}|${s.largeText}|${JSON.stringify(s.keys)}`;
+      if (sig !== this.settingsSig) this.settingsDirty = true;
+    });
+    this.settingsSig = `${getSettings().highContrast}|${getSettings().largeText}|${JSON.stringify(getSettings().keys)}`;
+    this.settingsDirty = false;
+    const onResume = () => {
+      if (this.settingsDirty) this.scene.restart();
+    };
+    this.events.on(Phaser.Scenes.Events.RESUME, onResume);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      unsubscribe();
+      this.events.off(Phaser.Scenes.Events.RESUME, onResume);
       kb?.off('keydown', this.keyHandler);
       this.input.off(Phaser.Input.Events.POINTER_WHEEL, this.onWheel, this);
       if (this.modal) gameEvents.emit('ui:modal', false);
@@ -343,7 +363,7 @@ export class UI extends Phaser.Scene {
       else gameEvents.emit('game:pause-request');
       return;
     }
-    if (event.code === 'KeyH') {
+    if (event.code === keyFor('help')) {
       this.hints.setVisible(!this.hints.visible);
       this.status.setObjectivesVisible(this.hints.visible);
       return;
@@ -351,15 +371,15 @@ export class UI extends Phaser.Scene {
     if (this.dialog) return;
     if (this.tabletView.isOpen) {
       // Close on the next frame so the same key press can't reach the world.
-      if (event.code === 'KeyE' || event.code === 'Enter' || event.code === 'Space') this.closeTabletNextFrame = true;
+      if (event.code === keyFor('interact') || event.code === 'Enter' || event.code === 'Space') this.closeTabletNextFrame = true;
       return;
     }
     if (this.storage.isOpen) {
       // E closes the chest on the next frame so the same press can't reach the world.
-      if (event.code === 'KeyE') this.time.delayedCall(0, () => this.closeStorage());
+      if (event.code === keyFor('interact')) this.time.delayedCall(0, () => this.closeStorage());
       return;
     }
-    if (event.code === 'KeyM') {
+    if (event.code === keyFor('map')) {
       if (this.panel.isOpen) this.setPanel(false);
       if (this.crafting.isOpen) this.setCrafting(false);
       if (this.journal.isOpen) this.setJournal(false);
@@ -369,13 +389,13 @@ export class UI extends Phaser.Scene {
     }
     if (this.map.isOpen) {
       const step = event.shiftKey ? 20 : 6;
-      if (event.code === 'ArrowLeft' || event.code === 'KeyA') this.map.pan(-step, 0);
-      else if (event.code === 'ArrowRight' || event.code === 'KeyD') this.map.pan(step, 0);
-      else if (event.code === 'ArrowUp' || event.code === 'KeyW') this.map.pan(0, -step);
-      else if (event.code === 'ArrowDown' || event.code === 'KeyS') this.map.pan(0, step);
+      if (event.code === 'ArrowLeft' || event.code === keyFor('left')) this.map.pan(-step, 0);
+      else if (event.code === 'ArrowRight' || event.code === keyFor('right')) this.map.pan(step, 0);
+      else if (event.code === 'ArrowUp' || event.code === keyFor('up')) this.map.pan(0, -step);
+      else if (event.code === 'ArrowDown' || event.code === keyFor('down')) this.map.pan(0, step);
       return;
     }
-    if (event.code === 'KeyK') {
+    if (event.code === keyFor('character')) {
       if (this.map.isOpen) this.setMap(false);
       if (this.panel.isOpen) this.setPanel(false);
       if (this.crafting.isOpen) this.setCrafting(false);
@@ -390,14 +410,14 @@ export class UI extends Phaser.Scene {
       else this.journal.setTab(event.code === 'Digit1' ? 'main' : 'side');
       return;
     }
-    if (event.code === 'KeyJ') {
+    if (event.code === keyFor('journal')) {
       if (this.character.isOpen) this.setCharacter(false);
       if (this.panel.isOpen) this.setPanel(false);
       if (this.crafting.isOpen) this.setCrafting(false);
       this.setJournal(!this.journal.isOpen);
       return;
     }
-    if (event.code === 'KeyI') {
+    if (event.code === keyFor('inventory')) {
       if (this.character.isOpen) this.setCharacter(false);
       if (this.crafting.isOpen) this.setCrafting(false);
       this.setPanel(!this.panel.isOpen);
@@ -408,13 +428,13 @@ export class UI extends Phaser.Scene {
       this.crafting.nextTab(event.shiftKey ? -1 : 1);
       return;
     }
-    if (event.code === 'KeyC') {
+    if (event.code === keyFor('crafting')) {
       if (this.panel.isOpen) this.setPanel(false);
       if (this.character.isOpen) this.setCharacter(false);
       this.setCrafting(!this.crafting.isOpen);
       return;
     }
-    if (event.code === 'KeyQ') {
+    if (event.code === keyFor('drop')) {
       const slot = this.hotbar.selectedSlot;
       const stack = this.view?.slots[slot];
       if (stack) this.requestDrop(slot, event.ctrlKey ? stack.qty : 1);
@@ -551,17 +571,19 @@ export class UI extends Phaser.Scene {
   private buildHints(): Phaser.GameObjects.Container {
     const lineH = 20;
     const w = 262;
-    const h = HINTS.length * lineH + 18;
+    const list = hints();
+    const h = list.length * lineH + 18;
     const c = this.add.container(20, GAME_HEIGHT - h - 20);
     const bg = this.add.graphics();
-    bg.fillStyle(0x08110f, 0.72);
+    bg.fillStyle(0x08110f, getSettings().highContrast ? 0.96 : 0.72);
     bg.fillRoundedRect(0, 0, w, h, 8);
     bg.lineStyle(1, 0x3a5249, 0.8);
     bg.strokeRoundedRect(0, 0, w, h, 8);
     c.add(bg);
-    HINTS.forEach(([key, action], i) => {
+    list.forEach(([key, action], i) => {
       const y = 9 + i * lineH;
       c.add(this.add.text(14, y, key, { fontFamily: FONTS.ui, fontSize: '13px', fontStyle: '700', color: CSS.gold }));
+      if (getSettings().highContrast) bg.lineStyle(1.5, 0xffffff, 0.9).strokeRoundedRect(0, 0, w, h, 8);
       c.add(this.add.text(108, y, action, { fontFamily: FONTS.ui, fontSize: '13px', color: CSS.text }));
     });
     return c;

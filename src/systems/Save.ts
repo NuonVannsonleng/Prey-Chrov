@@ -1,6 +1,42 @@
 import type { ItemStack } from './Inventory';
 
 export const SAVE_KEY = 'preychrov.save';
+/** M16: three save slots. Slot 1 keeps the original key so older saves load as slot 1. */
+export const SAVE_SLOTS = 3;
+const SLOT_KEY = 'preychrov.slot';
+
+export function slotKey(slot: number): string {
+  return slot <= 1 ? SAVE_KEY : `${SAVE_KEY}.${slot}`;
+}
+
+/** The slot the current (or last) journey uses. */
+export function currentSlot(storage: KeyValueStorage | null = defaultStorage()): number {
+  try {
+    const n = Number(storage?.getItem(SLOT_KEY));
+    return Number.isInteger(n) && n >= 1 && n <= SAVE_SLOTS ? n : 1;
+  } catch {
+    return 1;
+  }
+}
+
+export function setCurrentSlot(slot: number, storage: KeyValueStorage | null = defaultStorage()): void {
+  try {
+    storage?.setItem?.(SLOT_KEY, String(Math.max(1, Math.min(SAVE_SLOTS, Math.floor(slot)))));
+  } catch {
+    // Storage unavailable: the slot choice lasts for this session only.
+  }
+}
+
+/** Deletes a slot's journey. Returns false if storage is unavailable. */
+export function deleteSlot(slot: number, storage: KeyValueStorage | null = defaultStorage()): boolean {
+  try {
+    if (!storage?.removeItem) return false;
+    storage.removeItem(slotKey(slot));
+    return true;
+  } catch {
+    return false;
+  }
+}
 export const SAVE_VERSION = 2;
 export const CAN_LOAD_SAVES = true;
 
@@ -15,6 +51,7 @@ export type SaveStatus =
 export interface KeyValueStorage {
   getItem(key: string): string | null;
   setItem?(key: string, value: string): void;
+  removeItem?(key: string): void;
 }
 
 export interface SavedStructure {
@@ -147,10 +184,10 @@ const MIGRATIONS: Record<number, (old: Rec) => Rec> = {
   }),
 };
 
-function readRaw(storage: KeyValueStorage | null): { raw: string | null } | { error: SaveStatus } {
+function readRaw(storage: KeyValueStorage | null, slot: number): { raw: string | null } | { error: SaveStatus } {
   if (!storage) return { error: { kind: 'unavailable' } };
   try {
-    return { raw: storage.getItem(SAVE_KEY) };
+    return { raw: storage.getItem(slotKey(slot)) };
   } catch {
     return { error: { kind: 'unavailable' } };
   }
@@ -348,17 +385,17 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
   return { data };
 }
 
-export function readSave(storage: KeyValueStorage | null = defaultStorage()): { data: SaveData } | { error: SaveStatus } {
-  const r = readRaw(storage);
+export function readSave(storage: KeyValueStorage | null = defaultStorage(), slot = currentSlot(storage)): { data: SaveData } | { error: SaveStatus } {
+  const r = readRaw(storage, slot);
   if ('error' in r) return r;
   return parseSave(r.raw);
 }
 
 /** Writes the save. Returns false (never throws) if storage is unavailable or full. */
-export function writeSave(data: SaveData, storage: KeyValueStorage | null = defaultStorage()): boolean {
+export function writeSave(data: SaveData, storage: KeyValueStorage | null = defaultStorage(), slot = currentSlot(storage)): boolean {
   if (!storage?.setItem) return false;
   try {
-    storage.setItem(SAVE_KEY, JSON.stringify(data));
+    storage.setItem(slotKey(slot), JSON.stringify(data));
     return true;
   } catch {
     return false;
@@ -366,8 +403,8 @@ export function writeSave(data: SaveData, storage: KeyValueStorage | null = defa
 }
 
 /** Inspects the save slot without trusting its contents. Never throws. */
-export function inspectSave(storage: KeyValueStorage | null = defaultStorage(), daySeconds = 480): SaveStatus {
-  const r = readSave(storage);
+export function inspectSave(storage: KeyValueStorage | null = defaultStorage(), daySeconds = 480, slot = currentSlot(storage)): SaveStatus {
+  const r = readSave(storage, slot);
   if ('error' in r) return r.error;
   const clock = Number.isFinite(r.data.clockSeconds) ? r.data.clockSeconds : 0;
   return { kind: 'valid', version: r.data.version, savedAt: r.data.savedAt, day: Math.floor(clock / daySeconds) + 1 };

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { CSS, FONTS, GAME_HEIGHT, GAME_WIDTH } from '../../config';
+import { fontPx } from '../../systems/Settings';
 import { Button } from './Button';
 import { ButtonList } from './ButtonList';
 
@@ -39,7 +40,7 @@ export class StoryDialog {
     panel.lineStyle(2, 0xe6b866, 1).strokeRoundedRect(cx - w / 2, top, w, h, 14);
     const t = scene.add.text(cx, top + 22, title, { fontFamily: FONTS.ui, fontSize: '22px', fontStyle: '700', color: CSS.gold }).setOrigin(0.5, 0);
     const b = scene.add
-      .text(cx, top + 62, body, { fontFamily: FONTS.ui, fontSize: '16px', color: CSS.text, align: 'center', wordWrap: { width: w - 80 }, lineSpacing: 5 })
+      .text(cx, top + 62, body, { fontFamily: FONTS.ui, fontSize: fontPx(16), color: CSS.text, align: 'center', wordWrap: { width: w - 80 }, lineSpacing: 5 })
       .setOrigin(0.5, 0);
     const children: Phaser.GameObjects.GameObject[] = [backdrop, panel, t, b];
     const buttons: Button[] = [];
@@ -49,7 +50,7 @@ export class StoryDialog {
       const desc = scene.add
         .text(cx - w / 2 + 255, y - 24, o.enabled ? o.description : `${o.description}\n${o.note ?? ''}`, {
           fontFamily: FONTS.ui,
-          fontSize: '13px',
+          fontSize: fontPx(13),
           color: o.enabled ? CSS.text : CSS.textDim,
           wordWrap: { width: w - 290 },
           lineSpacing: 2,
