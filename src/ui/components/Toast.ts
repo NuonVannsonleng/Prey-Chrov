@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { CSS, FONTS, GAME_WIDTH, GAME_HEIGHT } from '../../config';
 import type { ToastTone } from '../../systems/GameEvents';
-import { fontPx, getSettings } from '../../systems/Settings';
+import { fontPx, getSettings, keyText } from '../../systems/Settings';
 import { backing } from '../../config';
 
 /** Single short message at the top centre; a new message replaces the current one. */
@@ -30,7 +30,8 @@ export class Toast {
     this.text.setY(low ? GAME_HEIGHT - 150 : 104);
   }
 
-  show(message: string, tone: ToastTone = 'info'): void {
+  show(rawMessage: string, tone: ToastTone = 'info'): void {
+    const message = keyText(rawMessage);
     this.scene.tweens.killTweensOf(this.text);
     this.text.setText(tone === 'warn' ? `⚠ ${message}` : message).setColor(tone === 'warn' ? CSS.gold : CSS.text);
     this.text.setAlpha(1);

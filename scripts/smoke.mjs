@@ -1963,7 +1963,7 @@ try {
   await page.keyboard.press('Escape');
   await sleep(500);
   const rebound = await evalW7(
-    'const ev = (code) => ({ code, repeat: false, preventDefault() {} }); w.pendingInteract = false; w.pressHandler(ev("KeyG")); const g = w.pendingInteract; w.pendingInteract = false; w.pressHandler(ev("KeyE")); const e = w.pendingInteract; w.pendingInteract = false; return { g, e, held: w.keys.interact.keyCode };',
+    'const ev = (code) => ({ code, repeat: false, preventDefault() {} }); w.pendingInteract = false; w.pressHandler(ev("KeyG")); const g = w.pendingInteract; w.pendingInteract = false; w.pressHandler(ev("KeyE")); const e = w.pendingInteract; w.pendingInteract = false; window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyG" })); const heldG = w.keys.interact.isDown; window.dispatchEvent(new KeyboardEvent("keyup", { code: "KeyG" })); window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyE" })); const heldE = w.keys.interact.isDown; window.dispatchEvent(new KeyboardEvent("keyup", { code: "KeyE" })); w.pendingInteract = false; return { g, e, held: heldG && !heldE };',
   );
   await page.keyboard.press('KeyN');
   await sleep(200);
@@ -1974,7 +1974,7 @@ try {
   await sleep(150);
   const invI = await evalW7('return ui.panel.isOpen;');
   if (invI) await page.keyboard.press('KeyI');
-  check('rebound keys drive the world and the HUD (G interacts, N opens the bag, E and I no longer do)', rebound.g && !rebound.e && rebound.held === 71 && invN && !invI, JSON.stringify({ rebound, invN, invI }));
+  check('rebound keys drive the world and the HUD (G interacts, N opens the bag, E and I no longer do)', rebound.g && !rebound.e && rebound.held === true && invN && !invI, JSON.stringify({ rebound, invN, invI }));
   const access16 = await evalW7('return { color: ui.toast.text.style.color, size: ui.toast.text.style.fontSize, dark: w.darkness() };');
   check('high contrast and large text apply when play resumes', access16.color === '#ffffff' && access16.size === '20px' && (darkBefore === 0 || access16.dark < darkBefore), JSON.stringify({ access16, darkBefore }));
   // Save slots: a journey saved in slot 2 leaves slot 1 alone and loads back from the Journeys panel.
@@ -1997,6 +1997,11 @@ try {
   await page.screenshot({ path: OUT + '/61-journeys.png' });
   await page.evaluate(() => window.__preyChrov.scene.getScene('Menu').slotsPanel.rowFor(3).del.activate());
   await sleep(150);
+  const dialogOnTop = await page.evaluate(() => {
+    const sp = window.__preyChrov.scene.getScene('Menu').slotsPanel;
+    return sp.dialog.root.depth > sp.root.depth;
+  });
+  check('the delete confirmation shows above the Journeys panel', dialogOnTop);
   await page.evaluate(() => window.__preyChrov.scene.getScene('Menu').slotsPanel.dialog.answer(true));
   await sleep(150);
   const afterDelete = await page.evaluate(() => ({

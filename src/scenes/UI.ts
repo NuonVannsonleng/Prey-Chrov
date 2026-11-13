@@ -4,7 +4,7 @@ import { itemDef } from '../data/gameData';
 import { gameEvents, onSceneEvent, type InventoryView, type PlayerTick } from '../systems/GameEvents';
 import { HOTBAR_SLOTS } from '../systems/Inventory';
 import { TEX } from '../textures';
-import { getSettings, onSettings, keyFor, keyLabel, fontPx, type Action } from '../systems/Settings';
+import { getSettings, onSettings, keyFor, keyLabel, keyText, fontPx, type Action } from '../systems/Settings';
 import { oncePerKeyEvent } from '../utils/keys';
 import { ConfirmDialog } from '../ui/components/ConfirmDialog';
 import { Toast } from '../ui/components/Toast';
@@ -295,7 +295,7 @@ export class UI extends Phaser.Scene {
       this.hurtFlash.setAlpha(getSettings().reducedFlash ? 0.14 : 0.32);
       this.tweens.add({ targets: this.hurtFlash, alpha: 0, duration: 650, ease: 'Sine.easeOut' });
     });
-    onSceneEvent(this, 'interact:prompt', (text) => this.prompt.setText(text).setVisible(text !== ''));
+    onSceneEvent(this, 'interact:prompt', (text) => this.prompt.setText(keyText(text)).setVisible(text !== ''));
     onSceneEvent(this, 'toast', ({ text, tone }) => this.toast.show(text, tone));
     onSceneEvent(this, 'inventory:full', () => {
       this.toast.show('Inventory full — drop something (Q) or reorganise (I)', 'warn');
@@ -321,6 +321,7 @@ export class UI extends Phaser.Scene {
       kb?.off('keydown', this.keyHandler);
       this.input.off(Phaser.Input.Events.POINTER_WHEEL, this.onWheel, this);
       if (this.modal) gameEvents.emit('ui:modal', false);
+      if (this.story) gameEvents.emit('ui:story', false);
       this.storyQueue.length = 0;
       this.story = null;
     });

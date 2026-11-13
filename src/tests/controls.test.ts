@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SAVE_KEY, SAVE_SLOTS, currentSlot, deleteSlot, readSave, setCurrentSlot, slotKey, type KeyValueStorage } from '../systems/Save';
 import { ACTIONS, DEFAULT_KEYS, bindKey, fontPx, getSettings, isBindable, keyFor, keyLabel, parseSettings, updateSettings } from '../systems/Settings';
-import { codeToKeyCode } from '../utils/keys';
+import { HeldKeys } from '../utils/keys';
 
 describe('key bindings', () => {
   it('defaults are unique and bindable', () => {
@@ -39,14 +39,28 @@ describe('key bindings', () => {
     updateSettings({ keys: { ...DEFAULT_KEYS } });
   });
 
-  it('labels and keyCodes', () => {
+  it('labels', () => {
     expect(keyLabel('KeyW')).toBe('W');
     expect(keyLabel('ShiftLeft')).toBe('Shift');
-    expect(codeToKeyCode('KeyA')).toBe(65);
-    expect(codeToKeyCode('Digit7')).toBe(55);
-    expect(codeToKeyCode('Space')).toBe(32);
-    expect(codeToKeyCode('ArrowLeft')).toBe(37);
-    for (const a of ACTIONS) expect(codeToKeyCode(DEFAULT_KEYS[a])).toBeGreaterThan(0);
+    expect(isBindable('ShiftRight')).toBe(false);
+  });
+
+  it('held keys follow the physical key, treat both Shifts as one and clear on blur', () => {
+    const handlers = new Map<string, (e: unknown) => void>();
+    const target = { addEventListener: (t: string, f: unknown) => void handlers.set(t, f as (e: unknown) => void), removeEventListener: (t: string) => void handlers.delete(t) };
+    const held = new HeldKeys(target as never);
+    const w = held.key('KeyW');
+    const shift = held.key('ShiftLeft');
+    const key = (type: string, code: string) => handlers.get(type)?.({ code, preventDefault() {} });
+    key('keydown', 'KeyW');
+    key('keydown', 'ShiftRight');
+    expect(w.isDown && shift.isDown).toBe(true);
+    key('keyup', 'KeyW');
+    expect(w.isDown).toBe(false);
+    handlers.get('blur')?.({});
+    expect(shift.isDown).toBe(false);
+    held.destroy();
+    expect(handlers.size).toBe(0);
   });
 
   it('large text scales fonts', () => {
@@ -98,5 +112,19 @@ describe('save slots', () => {
     expect(s.m.has(slotKey(2))).toBe(false);
     expect(s.m.has(slotKey(1))).toBe(true);
     expect(deleteSlot(1, { getItem: () => null })).toBe(false);
+  });
+});
+
+describe('keyText', () => {
+  it('leaves text alone on default keys and follows rebinds', async () => {
+    const { keyText, updateSettings: upd, DEFAULT_KEYS: D } = await import('../systems/Settings');
+    upd({ keys: { ...D } });
+    expect(keyText('Hold E or press E (E); map (M)')).toBe('Hold E or press E (E); map (M)');
+    upd({ keys: { ...D, interact: 'KeyG', map: 'KeyN', rotate: 'KeyT' } });
+    expect(keyText('Hold E or press E at water (E)')).toBe('Hold G or press G at water (G)');
+    expect(keyText('Marked on your map (M). Place it (F); R rotates.')).toBe('Marked on your map (N). Place it (F); T rotates.');
+    expect(keyText('E / Esc / click to close')).toBe('G / Esc / click to close');
+    expect(keyText('East River')).toBe('East River');
+    upd({ keys: { ...D } });
   });
 });

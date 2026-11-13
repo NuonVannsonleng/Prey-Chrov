@@ -5,7 +5,7 @@ import type { TabletDef } from '../../data/schema';
 import type { QuestView } from '../../systems/Quest';
 import type { SideQuestView } from '../../systems/SideQuests';
 import { Button } from '../components/Button';
-import { fontPx } from '../../systems/Settings';
+import { fontPx, keyText } from '../../systems/Settings';
 
 const W = 1000;
 const H = 600;
@@ -217,7 +217,7 @@ export class TabletView {
       })
       .setOrigin(0.5);
     const hint = scene.add
-      .text(cx, cy + 165, 'E / Esc / click to close · recorded in your journal (J)', { fontFamily: FONTS.ui, fontSize: fontPx(13), color: CSS.textDim })
+      .text(cx, cy + 165, keyText('E / Esc / click to close · recorded in your journal (J)'), { fontFamily: FONTS.ui, fontSize: fontPx(13), color: CSS.textDim })
       .setOrigin(0.5);
     backdrop.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => this.close());
     this.root = scene.add.container(0, 0, [backdrop, slab, this.km, this.en, this.body, hint]).setDepth(800).setVisible(false);

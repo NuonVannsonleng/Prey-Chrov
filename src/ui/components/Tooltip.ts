@@ -3,7 +3,7 @@ import { CSS, FONTS, GAME_HEIGHT, GAME_WIDTH } from '../../config';
 import { itemDef } from '../../data/gameData';
 import type { ItemStack } from '../../systems/Inventory';
 import { RARITY_COLOR } from './ItemSlot';
-import { fontPx } from '../../systems/Settings';
+import { fontPx, keyText } from '../../systems/Settings';
 
 const WIDTH = 240;
 
@@ -48,7 +48,7 @@ export class Tooltip extends Phaser.GameObjects.Container {
     if (def.tool?.kind === 'rod') extra.push('Hold it and press E at deep water to fish');
     if (def.gear) extra.push(`Wear it (F) — ${def.gear.slot === 'body' ? 'body' : 'feet'} slot; see Character (K)`);
     const tail = extra.length ? `\n${extra.join('\n')}` : '';
-    this.bodyText.setText(`${def.description}\n\n${rarity}${stack.qty} / ${def.stackSize} in stack${tail}`);
+    this.bodyText.setText(keyText(`${def.description}\n\n${rarity}${stack.qty} / ${def.stackSize} in stack${tail}`));
     const h = this.bodyText.y + this.bodyText.height + 12;
     this.bg
       .clear()

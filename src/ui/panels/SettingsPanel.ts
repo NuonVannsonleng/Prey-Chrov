@@ -122,6 +122,7 @@ export class SettingsPanel {
   }
 
   setTab(tab: Tab): void {
+    if (this.capturing) this.endCapture('Cancelled.');
     this.tab = tab;
     for (const [t, list] of this.rows) for (const { button } of list) button.setVisible(t === tab);
     this.reset.setVisible(tab === 'controls');
@@ -156,7 +157,10 @@ export class SettingsPanel {
     this.note.setText(`Press the new key for "${ACTION_LABELS[action]}" (Esc cancels)`).setColor(CSS.gold);
     this.buttonFor(action)?.setLabel(`${ACTION_LABELS[action]}:  …`);
     // Listen from the next event on, so the Enter/click that chose the action isn't captured.
-    this.scene.time.delayedCall(0, () => this.scene.input.keyboard?.on('keydown', this.captureHandler));
+    // (Pause/Menu register their Esc handler first, so Esc cancels the capture, not the panel.)
+    this.scene.time.delayedCall(0, () => {
+      if (this.capturing === action) this.scene.input.keyboard?.on('keydown', this.captureHandler);
+    });
   }
 
   private onCapture(e: KeyboardEvent): void {
@@ -166,13 +170,18 @@ export class SettingsPanel {
       this.endCapture('Cancelled.');
       return;
     }
+    if (e.ctrlKey || e.altKey || e.metaKey) {
+      this.note.setText('Ctrl / Alt / Cmd combinations are reserved — press a single key (Esc cancels)').setColor('#d9644a');
+      return;
+    }
     if (!isBindable(e.code)) {
       this.note.setText(`"${keyLabel(e.code)}" is reserved — choose another key (Esc cancels)`).setColor('#d9644a');
       return;
     }
     const action = this.capturing;
+    const other = ACTIONS.find((a) => a !== action && getSettings().keys[a] === e.code);
     bindKey(action, e.code);
-    this.endCapture(`${ACTION_LABELS[action]} is now ${keyLabel(e.code)}.`);
+    this.endCapture(`${ACTION_LABELS[action]} is now ${keyLabel(e.code)}.${other ? ` Swapped with ${ACTION_LABELS[other]}.` : ''}`);
   }
 
   private endCapture(message: string): void {

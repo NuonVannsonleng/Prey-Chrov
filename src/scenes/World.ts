@@ -36,7 +36,7 @@ import { Survival } from '../systems/Survival';
 import { TEX, TILE } from '../textures';
 import { FloatingText } from '../ui/FloatingText';
 import { PropLayer } from '../world/PropLayer';
-import { codeToKeyCode, oncePerKeyEvent } from '../utils/keys';
+import { HeldKeys, oncePerKeyEvent, type HeldKey } from '../utils/keys';
 import { ChunkManager, type RootWall } from '../world/ChunkManager';
 import type { EndingData } from './Ending';
 import { WorldGen } from '../world/WorldGen';
@@ -48,8 +48,8 @@ const TORCH_DARKNESS = 0.15;
 const ROOT_REGROW_MS = 3000;
 
 interface WorldKeys extends PlayerKeys {
-  interact: Phaser.Input.Keyboard.Key;
-  use: Phaser.Input.Keyboard.Key;
+  interact: HeldKey;
+  use: HeldKey;
 }
 
 export interface WorldStartData {
@@ -403,6 +403,9 @@ export class World extends Phaser.Scene {
       this.openChestUid = -1;
     });
     onSceneEvent(this, 'ui:ready', () => {
+      // A rebuilt HUD has no boss bar: let the blight send it again.
+      this.blightBarShown = false;
+      this.blightBarLeft = -1;
       gameEvents.emit('objectives:changed', this.objectives.view());
       gameEvents.emit('craft:stations', [...this.stations]);
       gameEvents.emit('world:info', { seed: this.seed });
@@ -443,6 +446,10 @@ export class World extends Phaser.Scene {
   }
 
   private resetFlags(): void {
+    this.dust = null;
+    this.nextBumpAt = 0;
+    this.lookX = 0;
+    this.lookY = 0;
     this.debugOn = false;
     this.modalOpen = false;
     this.pointerHeld = false;
@@ -847,7 +854,7 @@ export class World extends Phaser.Scene {
     const keys = this.keys;
     const pushing = inputOn && (keys.up.isDown || keys.down.isDown || keys.left.isDown || keys.right.isDown);
     const blocked = !p.body.blocked.none || !p.body.touching.none;
-    if (pushing && blocked && !moving && this.now >= this.nextBumpAt) {
+    if (pushing && blocked && !moving && !reduced && this.now >= this.nextBumpAt) {
       this.nextBumpAt = this.now + 700;
       this.dust ??= this.add.particles(0, 0, TEX.chip, { emitting: false, speed: { min: 15, max: 45 }, angle: { min: 200, max: 340 }, lifespan: 380, scale: { start: 0.7, end: 0 }, tint: 0xb8a888, alpha: { start: 0.8, end: 0 } }).setDepth(DEPTH.floatingText - 8);
       this.dust.explode(5, p.x + p.facingVec.x * 9, p.y - 2 + p.facingVec.y * 6);
@@ -1724,6 +1731,7 @@ export class World extends Phaser.Scene {
       this.completeObjective('sleep');
       const saved = this.save();
       this.input.keyboard?.resetKeys();
+      this.held?.reset();
       this.pendingUse = false;
       this.pendingInteract = false;
       cam.fadeIn(900, 2, 4, 8);
@@ -3064,17 +3072,18 @@ export class World extends Phaser.Scene {
   private unsubscribeSettings: (() => void) | null = null;
   private boundSig = '';
 
-  /** Key objects for held actions, from the current bindings (crouch is Z by default, never Ctrl). */
+  private held: HeldKeys | null = null;
+
+  /** Held actions from the current bindings, by physical key (crouch is Z by default, never Ctrl). */
   private applyBindings(): void {
-    const kb = this.input.keyboard;
-    if (!kb) return;
     const k = getSettings().keys;
     const sig = JSON.stringify(k);
-    if (sig === this.boundSig && this.keys) return;
+    if (sig === this.boundSig && this.keys && this.held) return;
     this.boundSig = sig;
-    if (this.keys) for (const key of Object.values(this.keys)) if (key) kb.removeKey(key, true);
-    const add = (code: string) => kb.addKey(codeToKeyCode(code));
-    this.keys = { up: add(k.up), down: add(k.down), left: add(k.left), right: add(k.right), sprint: add(k.sprint), crouch: add(k.crouch), interact: add(k.interact), use: add(k.use) };
+    this.held ??= new HeldKeys();
+    this.held.setNoScroll(Object.values(k));
+    const h = this.held;
+    this.keys = { up: h.key(k.up), down: h.key(k.down), left: h.key(k.left), right: h.key(k.right), sprint: h.key(k.sprint), crouch: h.key(k.crouch), interact: h.key(k.interact), use: h.key(k.use) };
   }
 
   /** Only fires when no UI element above captured the click (Phaser globalTopOnly). */
@@ -3122,6 +3131,7 @@ export class World extends Phaser.Scene {
   private onResume(): void {
     // Keys released while paused never reached this scene; clear them to avoid stuck movement.
     this.input.keyboard?.resetKeys();
+    this.held?.reset();
     this.pointerHeld = false;
     gameEvents.emit('audio:duck', false);
   }
@@ -3151,6 +3161,9 @@ export class World extends Phaser.Scene {
     this.unsubscribeSettings?.();
     this.unsubscribeSettings = null;
     this.boundSig = '';
+    this.held?.destroy();
+    this.held = null;
+    this.dust = null;
     gameEvents.emit('audio:duck', false);
   }
 }

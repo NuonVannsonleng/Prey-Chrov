@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.16.0 — M16: Atmosphere, audio, menus and accessibility (2026-11-13)
+
+### Added
+- Settings in three tabs: Audio (master, effects, ambience, music), Display & access (reduced motion, reduced flashes, high contrast, large text, hints) and Controls (18 rebindable actions).
+- Hints, prompts, tooltips and the help panel follow your key bindings.
+- Original music stingers, a river ambience layer, camera look-ahead, collision dust and rain that builds up.
+- Three save slots with a Journeys panel (continue, start new, delete with confirmation).
+
+### Fixed
+- Held keys follow the physical key, so rebinding works on every keyboard layout.
 ## 0.15.0 — M15: Set pieces — the Old Tusker, the Great Storm, the Blight (2026-11-12)
 
 ### Added

@@ -19,8 +19,84 @@ Status legend: **Done** · **In progress** · **Not started**
 | M13 | Exploration tools, mapping and ruins | Done |
 | M14 | Narrative chapters, side quests and choices | Done |
 | M15 | Major challenges and final encounters | Done |
+| M16 | Atmosphere, audio, menus and accessibility | Done |
 
 ---
+
+## M16 — Atmosphere, audio, menus and accessibility
+
+### Implemented (playable)
+
+- **One settings flow, from the main menu or the pause menu (Esc → Settings), in three tabs.** Everything applies at once and is saved separately from journeys.
+  - **Audio:** master, effects, ambience and music volumes.
+  - **Display & access:**
+    - reduced motion and reduced flashes
+    - **high contrast:** white text, brighter accents, opaque backing behind toasts, prompts and the help panel, and lighter nights (darkness ×0.75)
+    - **large text** (×1.2) for toasts, prompts, tooltips, story dialogs and the journal; this is the UI scale option
+    - show help on start
+  - **Controls:** all 18 actions can be rebound.
+    - Choose an action, then press its new key. Esc cancels only the capture.
+    - A key already in use **swaps** with the other action, and the note says so.
+    - Reserved keys are refused with a reason: Esc, Tab, 1–6, F3, and Ctrl/Alt/Cmd and their combinations.
+    - "Reset controls" restores the defaults.
+- **Bindings everywhere:**
+  - Movement and held actions follow the **physical key** (`KeyboardEvent.code`), so a rebinding behaves the same on AZERTY and other layouts and in every browser. Both Shift keys count as one.
+  - The HUD hotkeys, the help panel (H) and every hint follow the current bindings: toasts, prompts, tooltips, objectives, story text and the journal. For example, with interact on G, "press E at water" reads "press G at water".
+  - Display and control changes rebuild the HUD when play resumes. A story dialog or blight bar that was showing is restored.
+- **Atmosphere:**
+  - Original **music stingers** on their own volume bus, built from short pentatonic motifs synthesised in code. They mark discoveries, level-ups, quest steps, dawn, danger (the Tusker, the storm, the blight) and victories, at most one every 2.5 s.
+  - A **river ambience** layer swells near water.
+  - Camera **look-ahead** in the direction you walk (off with reduced motion).
+  - A small **dust puff** when you walk into a tree, rock or wall (off with reduced motion).
+  - Rain now **builds up** over about 2 s instead of switching on at full strength.
+- **Save slots:** three journeys, managed from **Journeys…** on the main menu.
+  - Each slot continues its journey or starts a new one.
+  - **Delete** asks first. The confirmation shows above the panel.
+  - The menu shows the current slot, and Continue resumes it. Slot 1 is the original save key, so earlier saves appear there.
+- **Stability:** losing window focus (alt-tab) or hiding the tab pauses the game. Resizing keeps the whole 16:9 game visible and centred.
+
+### Verification
+
+- `npm run typecheck` and `npm run build` pass.
+- `npm test`: 193 unit tests. New ones cover:
+  - default bindings are unique and bindable, and reserved keys are refused
+  - stored bindings are parsed with invalid and clashing ones dropped
+  - rebinding swaps on conflict
+  - held keys follow the physical key, treat both Shifts as one and clear on blur
+  - hint text follows rebinds and is untouched on defaults
+  - large text scales fonts
+  - save slot keys, the current slot and deleting only one slot
+- `npm run smoke`: 237 browser checks. The M16 ones:
+  - alt-tab (blur) pauses
+  - all 9 settings change and persist
+  - sound off and on (master bus at about 0, then 1)
+  - stingers play on the music bus
+  - rebinding interact to G and inventory to N is saved; a reserved key is refused; Esc cancels only the capture
+  - G interacts, N opens the bag, and E and I no longer do
+  - high contrast and large text apply after resuming
+  - saving in slot 2 leaves slot 1 untouched
+  - Journeys lists the slots, its delete confirmation shows above the panel and removes only that slot
+  - slot 2 loads from Journeys, and Continue resumes it after a reload
+  - an 820×640 window shows the whole game without cropping
+- **Reviews (real agents):**
+  - `phaser-qa` found 2 Criticals and 9 Warnings, all fixed:
+    - **Critical:** the Journeys delete confirmation drew under the panel. Dialogs now take a depth.
+    - **Critical:** the dust emitter survived a scene restart as a destroyed object. It is now reset per run, along with the camera look-ahead and bump timer.
+    - A HUD rebuild while a story dialog was open froze the world. The rebuild now releases the story state, and the blight bar is re-sent.
+    - Layout-dependent held keys (AZERTY, Firefox punctuation), the shared Shift keycode and stale key captures were all solved by tracking held keys by `code`.
+    - Ctrl/Alt combinations could be captured.
+    - Switching tabs during a capture left a live button list.
+    - A delayed capture listener could leak.
+    - Hard-coded key letters in hints.
+    - The dust ignored reduced motion.
+    - The main-menu settings were not restyled after a contrast or text-size change; the menu now redraws.
+  - `content-designer` was not used. M16 adds no game data or lore text.
+
+### Known limitations
+
+- Menu navigation keys (arrows, W/S, Enter, Space) and the tablet and ending screens' "E / Esc to close" are fixed, not rebindable.
+- High contrast recolours text and backings. The painted world art is unchanged apart from lighter nights.
+- Large text scales the main reading surfaces. The fixed layout of panels such as crafting and the map is not reflowed.
 
 ## M15 — Major challenges and final encounters
 

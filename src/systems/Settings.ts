@@ -49,7 +49,7 @@ export const DEFAULT_KEYS: Readonly<Record<Action, string>> = {
  * Ctrl/Alt/Meta (browser shortcuts such as Ctrl+W) are reserved.
  */
 export function isBindable(code: string): boolean {
-  return /^Key[A-Z]$/.test(code) || /^Digit[7-90]$/.test(code) || ['Space', 'ShiftLeft', 'ShiftRight', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backquote', 'Minus', 'Equal', 'BracketLeft', 'BracketRight', 'Semicolon', 'Quote', 'Comma', 'Period', 'Slash', 'Backslash'].includes(code);
+  return /^Key[A-Z]$/.test(code) || /^Digit[7-90]$/.test(code) || ['Space', 'ShiftLeft', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backquote', 'Minus', 'Equal', 'BracketLeft', 'BracketRight', 'Semicolon', 'Quote', 'Comma', 'Period', 'Slash', 'Backslash'].includes(code);
 }
 
 /** Short on-screen name of a key code ("KeyW" → "W"). */
@@ -63,6 +63,28 @@ export function keyLabel(code: string): string {
 /** Binding for an action (current settings). */
 export function keyFor(action: Action): string {
   return current.keys[action];
+}
+
+/**
+ * Player-facing text is written with the default keys ("press E", "(M)", "Hold E", "F to eat").
+ * For every action the player has rebound, this swaps that default letter for the new key, so
+ * hints always match the controls. Text is unchanged while the defaults are in use.
+ */
+export function keyText(text: string): string {
+  let out = text;
+  for (const a of ACTIONS) {
+    const def = DEFAULT_KEYS[a];
+    const now = current.keys[a];
+    if (def === now || !/^Key[A-Z]$/.test(def)) continue;
+    const d = def.slice(3);
+    const label = keyLabel(now);
+    out = out
+      .replace(new RegExp(String.raw`\(${d}\)`, 'g'), `(${label})`)
+      .replace(new RegExp(String.raw`\b([Pp]ress|[Hh]old|[Uu]se) ${d}\b`, 'g'), `$1 ${label}`)
+      .replace(new RegExp(String.raw`\b${d} (to|rotates|\(hold\)|/ Esc)`, 'g'), `${label} $1`)
+      .replace(new RegExp(String.raw`(^|[^A-Za-z])${d} / `, 'g'), `$1${label} / `);
+  }
+  return out;
 }
 
 /** Font size scaled for the "Large text" setting. */

@@ -1,29 +1,60 @@
-const NAMED_KEYCODES: Record<string, number> = {
-  Space: 32,
-  ShiftLeft: 16,
-  ShiftRight: 16,
-  ArrowLeft: 37,
-  ArrowUp: 38,
-  ArrowRight: 39,
-  ArrowDown: 40,
-  Semicolon: 186,
-  Equal: 187,
-  Comma: 188,
-  Minus: 189,
-  Period: 190,
-  Slash: 191,
-  Backquote: 192,
-  BracketLeft: 219,
-  Backslash: 220,
-  BracketRight: 221,
-  Quote: 222,
-};
+/** A held action key: true while its physical key is down. */
+export interface HeldKey {
+  readonly isDown: boolean;
+}
 
-/** KeyboardEvent.code (layout-independent) → the keyCode Phaser's Key objects use. */
-export function codeToKeyCode(code: string): number {
-  if (/^Key[A-Z]$/.test(code)) return code.charCodeAt(3);
-  if (/^Digit[0-9]$/.test(code)) return code.charCodeAt(5);
-  return NAMED_KEYCODES[code] ?? 0;
+/** Both Shift keys count as one (players expect either to sprint). */
+const normalise = (code: string) => (code === 'ShiftRight' ? 'ShiftLeft' : code);
+
+/**
+ * Held-key state by KeyboardEvent.code — the physical key position, the same thing the bindings
+ * store — so movement and the HUD agree on every keyboard layout and browser. Cleared on blur
+ * and when play resumes so nothing sticks.
+ */
+export class HeldKeys {
+  private readonly down = new Set<string>();
+  private readonly onDown = (e: KeyboardEvent) => {
+    this.down.add(normalise(e.code));
+    // Stop Space and the arrows from scrolling the page while they are bound to actions.
+    if (this.noScroll.has(e.code)) e.preventDefault();
+  };
+  private readonly onUp = (e: KeyboardEvent): void => {
+    this.down.delete(normalise(e.code));
+  };
+  private readonly onBlur = () => this.down.clear();
+  private noScroll = new Set<string>();
+
+  constructor(private readonly target: Pick<Window, 'addEventListener' | 'removeEventListener'> = window) {
+    target.addEventListener('keydown', this.onDown as EventListener);
+    target.addEventListener('keyup', this.onUp as EventListener);
+    target.addEventListener('blur', this.onBlur);
+  }
+
+  /** A live view of one binding. */
+  key(code: string): HeldKey {
+    const c = normalise(code);
+    const down = this.down;
+    return {
+      get isDown() {
+        return down.has(c);
+      },
+    };
+  }
+
+  setNoScroll(codes: readonly string[]): void {
+    this.noScroll = new Set(codes.filter((c) => c === 'Space' || c.startsWith('Arrow')));
+  }
+
+  reset(): void {
+    this.down.clear();
+  }
+
+  destroy(): void {
+    this.target.removeEventListener('keydown', this.onDown as EventListener);
+    this.target.removeEventListener('keyup', this.onUp as EventListener);
+    this.target.removeEventListener('blur', this.onBlur);
+    this.down.clear();
+  }
 }
 
 /**

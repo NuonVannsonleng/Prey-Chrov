@@ -1,16 +1,17 @@
 import Phaser from 'phaser';
 import { PLAYER, ySort } from '../config';
+import type { HeldKey } from '../utils/keys';
 import { approachVelocity, targetVelocity, type MoveInput, type Vec2 } from '../systems/Movement';
 import { PLAYER_DIRS, TEX, playerFrameName, type PlayerDir } from '../textures';
 
 export interface PlayerKeys {
-  up: Phaser.Input.Keyboard.Key;
-  down: Phaser.Input.Keyboard.Key;
-  left: Phaser.Input.Keyboard.Key;
-  right: Phaser.Input.Keyboard.Key;
-  sprint: Phaser.Input.Keyboard.Key;
+  up: HeldKey;
+  down: HeldKey;
+  left: HeldKey;
+  right: HeldKey;
+  sprint: HeldKey;
   /** M12: crouch (hold Z). */
-  crouch?: Phaser.Input.Keyboard.Key;
+  crouch?: HeldKey;
 }
 
 /** Registers player animations once per game (animations are global). */

@@ -14,6 +14,8 @@ export class ConfirmDialog {
     message: string,
     confirmLabel: string,
     private readonly onAnswer: (confirmed: boolean) => void,
+    /** Above any panel that opened it (panels sit at 5000). */
+    depth = 3000,
   ) {
     const cx = GAME_WIDTH / 2;
     const cy = GAME_HEIGHT / 2;
@@ -26,7 +28,7 @@ export class ConfirmDialog {
       .setOrigin(0.5);
     const yes = new Button(scene, cx - 100, cy + 45, { label: confirmLabel, width: 170, height: 48, onActivate: () => this.answer(true) });
     const no = new Button(scene, cx + 100, cy + 45, { label: 'Keep', width: 170, height: 48, onActivate: () => this.answer(false) });
-    this.root = scene.add.container(0, 0, [backdrop, panel, text, yes, no]).setDepth(3000);
+    this.root = scene.add.container(0, 0, [backdrop, panel, text, yes, no]).setDepth(depth);
     this.list = new ButtonList(scene, [no, yes]);
   }
 

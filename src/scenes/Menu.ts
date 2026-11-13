@@ -5,6 +5,7 @@ import { TEX } from '../textures';
 import { Button } from '../ui/components/Button';
 import { ButtonList } from '../ui/components/ButtonList';
 import { ConfirmDialog } from '../ui/components/ConfirmDialog';
+import { getSettings } from '../systems/Settings';
 import { SettingsPanel } from '../ui/panels/SettingsPanel';
 import { SlotsPanel } from '../ui/panels/SlotsPanel';
 import { oncePerKeyEvent } from '../utils/keys';
@@ -67,7 +68,10 @@ export class Menu extends Phaser.Scene {
     const order = canContinue ? [cont, play, settingsBtn, journeysBtn] : [play, cont, settingsBtn, journeysBtn];
     this.list = new ButtonList(this, order);
     this.settingsPanel = new SettingsPanel(this, () => {
-      this.list = new ButtonList(this, order);
+      // The menu was drawn with the old text style: redraw it if contrast or text size changed.
+      const s = getSettings();
+      if (s.highContrast !== this.styleAtOpen.highContrast || s.largeText !== this.styleAtOpen.largeText) this.scene.restart();
+      else this.list = new ButtonList(this, order);
     });
     this.slotsPanel = new SlotsPanel(
       this,
@@ -117,7 +121,11 @@ export class Menu extends Phaser.Scene {
     this.slotsPanel?.open();
   }
 
+  private styleAtOpen = { highContrast: false, largeText: false };
+
   private openSettings(): void {
+    const s = getSettings();
+    this.styleAtOpen = { highContrast: s.highContrast, largeText: s.largeText };
     this.list?.destroy();
     this.list = null;
     this.settingsPanel?.open();

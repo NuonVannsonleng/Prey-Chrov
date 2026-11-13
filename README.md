@@ -3,7 +3,7 @@
 A 2D top-down survival adventure set in a fictional Cambodian jungle, built with **Phaser 3 + TypeScript + Vite**.
 All art is generated in code as replaceable placeholders.
 
-> Status: **Milestone 15**. Face the Old Tusker, survive the Great Storm and burn away the Blight at the Heart. Side stories with memories and choices that shape the world and the ending. Open the map (M), mark it, follow your compass, find landmarks and solve ruin puzzles. Sneak (hold Z) and hide in bushes; creatures investigate noises before they attack. Grow five skills, learn new recipes, wear gear and craft flint and fang tools. Build walled camps with roofs, storage chests, rain collectors and beds, and mark outposts on your map. Fish, boil water, brew medicine and cook in a pot. Survive days, nights, creatures, Ap/Arak spirits and the monsoon, find the five stone tablets, open the Heart of the Forest's root ring with fire and make the offering to reach the ending, then keep playing. The game autosaves; Settings has volume, reduced motion and reduced flashes. Sound is synthesised in code and starts after your first click or key. Add `?seed=1234` to the URL to pick a world. See [docs/MILESTONES.md](docs/MILESTONES.md).
+> Status: **Milestone 16**. Rebind every control, switch on high contrast or large text, and keep three journeys in separate save slots. Face the Old Tusker, survive the Great Storm and burn away the Blight at the Heart. Side stories with memories and choices that shape the world and the ending. Open the map (M), mark it, follow your compass, find landmarks and solve ruin puzzles. Sneak (hold Z) and hide in bushes; creatures investigate noises before they attack. Grow five skills, learn new recipes, wear gear and craft flint and fang tools. Build walled camps with roofs, storage chests, rain collectors and beds, and mark outposts on your map. Fish, boil water, brew medicine and cook in a pot. Survive days, nights, creatures, Ap/Arak spirits and the monsoon, find the five stone tablets, open the Heart of the Forest's root ring with fire and make the offering to reach the ending, then keep playing. The game autosaves into the current slot (Journeys… on the menu). Settings has four volumes, reduced motion, reduced flashes, high contrast, large text and key rebinding. Sound is synthesised in code and starts after your first click or key. Add `?seed=1234` to the URL to pick a world. See [docs/MILESTONES.md](docs/MILESTONES.md).
 
 ## Run
 
@@ -23,6 +23,8 @@ npm run dev        # http://localhost:5173
 
 ## Controls
 
+These are the default keys. Every action except Esc, Tab, 1–6 and F3 can be rebound in Settings › Controls, and the in-game hints follow your bindings.
+
 | Key | Action |
 | --- | --- |
 | W A S D | Move |
@@ -37,6 +39,9 @@ npm run dev        # http://localhost:5173
 | Q / Ctrl+Q | Drop one / the whole selected stack (rare items ask first) |
 | Esc | Close dialog / panel / build mode, otherwise pause / resume |
 | H | Hide / show control hints and the first-day checklist |
+| R / X | Rotate a held wall or repair (R) · dismantle a structure (X, twice) |
+| Z (hold) | Crouch: quieter, and hidden in bushes |
+| K / M | Character (gear, skills) / full map |
 | F3 | Debug overlay (FPS, position, collision boxes) |
 | ↑ ↓ / Enter | Navigate menus |
 

@@ -99,6 +99,7 @@ export class SlotsPanel {
         else this.refresh();
         if (!ok || this.list === null) this.rebuildList();
       },
+      6000,
     );
   }
 

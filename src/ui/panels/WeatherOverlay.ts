@@ -14,6 +14,7 @@ export class WeatherOverlay {
   private readonly flash: Phaser.GameObjects.Rectangle;
   private raining = false;
   private nextFlashAt = 0;
+  private rampTimer: Phaser.Time.TimerEvent | null = null;
 
   constructor(private readonly scene: Phaser.Scene) {
     this.gloom = scene.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x203040, 0).setOrigin(0);
@@ -36,10 +37,26 @@ export class WeatherOverlay {
   setRaining(raining: boolean): void {
     if (raining === this.raining) return;
     this.raining = raining;
+    this.rampTimer?.remove();
+    this.rampTimer = null;
+    // Rain builds up over ~2 s instead of switching on at full strength.
     // Reduced motion: far fewer streaks.
-    this.rain.setQuantity(getSettings().reducedMotion ? 1 : 3);
-    if (raining) this.rain.start();
-    else this.rain.stop();
+    const full = getSettings().reducedMotion ? 1 : 3;
+    this.rain.setQuantity(1);
+    if (raining) {
+      this.rain.start();
+      if (full > 1) {
+        let q = 1;
+        this.rampTimer = this.scene.time.addEvent({
+          delay: 900,
+          repeat: full - 2,
+          callback: () => {
+            q = Math.min(full, q + 1);
+            if (this.raining) this.rain.setQuantity(q);
+          },
+        });
+      }
+    } else this.rain.stop();
     this.scene.tweens.killTweensOf(this.gloom);
     this.scene.tweens.add({ targets: this.gloom, alpha: raining ? 0.16 : 0, duration: 1500 });
     this.nextFlashAt = this.scene.time.now + 12000;

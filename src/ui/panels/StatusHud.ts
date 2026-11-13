@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { CSS, FONTS, GAME_WIDTH } from '../../config';
 import type { ClockTick, ObjectiveView, SurvivalTick } from '../../systems/GameEvents';
 import { TEX } from '../../textures';
+import { keyText } from '../../systems/Settings';
 
 interface Bar {
   key: keyof Pick<SurvivalTick, 'health' | 'hunger' | 'thirst' | 'stamina' | 'warmth'>;
@@ -163,7 +164,7 @@ export class StatusHud {
         this.objectiveLines.push(line);
         this.objectives.add(line);
       }
-      line.setText(`${o.done ? '✓' : '○'}  ${o.text}`).setColor(o.done ? CSS.textDim : CSS.text).setAlpha(o.done ? 0.7 : 1);
+      line.setText(keyText(`${o.done ? '✓' : '○'}  ${o.text}`)).setColor(o.done ? CSS.textDim : CSS.text).setAlpha(o.done ? 0.7 : 1);
     });
     if (allDone) {
       this.objectiveTitle.setText('First day — complete. Survive and explore.');
