@@ -116,6 +116,7 @@ export class Ending extends Phaser.Scene {
           `Days survived: ${Math.max(0, s.day - 1)} (reached day ${s.day})`,
           `Stone tablets read: ${s.tablets}`,
           `Creatures faced down: ${s.kills}   ·   Things crafted: ${s.crafted}   ·   Structures built: ${s.built}   ·   Resources gathered: ${s.gathered}`,
+          ...((this.registry.get('pendingAchievements') as string[] | undefined)?.length ? [`★ ${(this.registry.get('pendingAchievements') as string[]).join('  ·  ★ ')}`] : []),
         ].join('\n'),
         { fontFamily: FONTS.ui, fontSize: '16px', color: CSS.text, align: 'center', lineSpacing: 6 },
       )

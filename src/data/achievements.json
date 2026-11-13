@@ -12,7 +12,7 @@
     { "id": "all_tablets", "name": "The Whole Telling", "description": "Read all five tablets.", "event": "tablet_read", "count": 5, "hidden": true },
     { "id": "kind_neighbour", "name": "Kind Neighbour", "description": "Complete a side story.", "event": "side_story_completed", "count": 1 },
     { "id": "all_stories", "name": "Three Small Tales", "description": "Complete all three side stories.", "event": "side_story_completed", "count": 3 },
-    { "id": "guardian_respect", "name": "Respect Paid", "description": "Leave an offering at a Neak Ta shrine.", "event": "shrine_restored", "count": 1 },
+    { "id": "guardian_respect", "name": "A Quiet Bow", "description": "Bow at a Neak Ta shrine and leave an offering of food.", "event": "shrine_restored", "count": 1, "hidden": true },
     { "id": "river_patience", "name": "River Patience", "description": "Catch ten fish across your journeys.", "event": "fish_caught", "count": 10 },
     { "id": "warm_pot", "name": "A Warm Pot", "description": "Cook ten meals across your journeys.", "event": "meal_cooked", "count": 10 },
     { "id": "claim_clearing", "name": "A Place to Return To", "description": "Build a structure and mark an outpost.", "event": "outpost_marked", "count": 1 },

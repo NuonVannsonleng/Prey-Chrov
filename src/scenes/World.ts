@@ -141,6 +141,11 @@ export class World extends Phaser.Scene {
   private records!: RecordsState;
   private ruleColdCache = new WeakMap<object, SeasonConfig['cold']>();
 
+  /** Difficulty scales every landed hit (creatures, traps, strikes); telegraphs never change. */
+  private scaledHit(raw: number): number {
+    return Math.max(1, Math.round(raw * this.rfx.enemyDamage));
+  }
+
   /** Tool wear: skills slow it, difficulty may speed it up. */
   private get wearMult(): number {
     return this.fx.toolWear * this.rfx.toolWear;
@@ -161,8 +166,28 @@ export class World extends Phaser.Scene {
   private record(ev: RecordEvent, value = 1): void {
     if (!this.records) return;
     const earned = recordEvent(this.records, this.gameData.achievements, ev, { difficulty: this.rules.difficulty, permadeath: this.rules.permadeath }, value);
+    if (earned.length === 0) {
+      this.recordsDirty = true;
+      return;
+    }
     saveRecords(this.records);
+    this.recordsDirty = false;
+    // The ending stops the HUD: those achievements are shown on the ending screen instead.
+    if (this.busy) {
+      const pending = (this.registry.get('pendingAchievements') as string[] | undefined) ?? [];
+      this.registry.set('pendingAchievements', [...pending, ...earned.map((a) => a.name)]);
+    }
     for (const a of earned) gameEvents.emit('achievement', { name: a.name, description: a.description });
+  }
+
+  private recordsDirty = false;
+  private savedThisJourney = false;
+
+  private flushRecords(): void {
+    if (this.recordsDirty && this.records) {
+      saveRecords(this.records);
+      this.recordsDirty = false;
+    }
   }
   private feetGear: ItemDef['gear'] | undefined;
   private coldWorn: SeasonConfig['cold'] | null = null;
@@ -286,9 +311,15 @@ export class World extends Phaser.Scene {
     const modIds = this.gameData.difficulty.modifiers.map((m) => m.id);
     this.rules = save ? parseRules(save.rules, modIds) : start?.rules ? { ...parseRules(start.rules, modIds), content: CONTENT_VERSION } : defaultRules();
     this.rfx = ruleEffects(this.rules, this.gameData.difficulty);
+    // Scaled cold configs belong to this journey's rules (the scene instance is reused).
+    this.ruleColdCache = new WeakMap();
+    this.stormCold = null;
     this.registry.set('journeyRules', describeRules(this.rules, this.gameData.difficulty));
+    this.registry.remove('pendingAchievements');
     this.records = loadRecords();
-    if (!save) {
+    this.recordsDirty = false;
+    this.savedThisJourney = save !== null;
+    if (!start?.load) {
       this.records.journeys++;
       saveRecords(this.records);
     }
@@ -362,7 +393,7 @@ export class World extends Phaser.Scene {
       playerX: () => this.player.x,
       playerY: () => this.player.y - 10,
       inLight: (x, y) => this.lightAt(x, y, 0) !== null,
-      hitPlayer: (dmg, fx, fy) => this.hurtPlayer(Math.max(1, Math.round(dmg * this.rfx.enemyDamage)), 'spirit', fx, fy),
+      hitPlayer: (dmg, fx, fy) => this.hurtPlayer(this.scaledHit(dmg), 'spirit', fx, fy),
     });
     this.encounters = new Encounters(this, this.gameData, this.props.solids, {
       isDeepWater: (x, y) => this.chunks.isDeepWater(x, y),
@@ -738,7 +769,7 @@ export class World extends Phaser.Scene {
   private enemyHitsPlayer(enemy: Enemy, rawDamage: number): void {
     const cause = enemy.def.kind === 'spirit' ? 'spirit' : 'wildlife';
     // Difficulty scales how hard a landed blow is; every attack keeps its telegraph.
-    const damage = Math.max(1, Math.round(rawDamage * this.rfx.enemyDamage));
+    const damage = this.scaledHit(rawDamage);
     if (!this.hurtPlayer(damage, cause, enemy.x, enemy.cy)) return;
     const poison = enemy.def.poison;
     if (poison) {
@@ -972,7 +1003,7 @@ export class World extends Phaser.Scene {
     const isNew = this.quest.readTablet(id);
     if (isNew) {
       this.grant('tablet', id);
-      this.record('tablet_read');
+      this.record('tablet_read', this.quest.tabletsRead.length);
     }
     gameEvents.emit('tablet:read', tablet);
     gameEvents.emit('sfx', 'tablet');
@@ -1851,8 +1882,11 @@ export class World extends Phaser.Scene {
         now: this.now,
       }),
     );
-    if (ok) gameEvents.emit('game:saved', { auto });
-    else if (auto && !this.autosaveWarned) {
+    this.flushRecords();
+    if (ok) {
+      this.savedThisJourney = true;
+      gameEvents.emit('game:saved', { auto });
+    } else if (auto && !this.autosaveWarned) {
       this.autosaveWarned = true;
       gameEvents.emit('toast', { text: 'Autosave failed — browser storage is unavailable or full', tone: 'warn' });
     }
@@ -2063,7 +2097,7 @@ export class World extends Phaser.Scene {
         this.shake(120, 0.003);
       }
       const shelteredNow = s.kind === 'storm' && this.isSheltered(p.x, p.y);
-      if (!shelteredNow && Math.hypot(p.x - s.x, p.y - 6 - s.y) <= cfgS.radius && this.hurtPlayer(cfgS.damage, 'injury', s.x, s.y) && s.kind === 'blight') this.lastBlightHitAt = this.now;
+      if (!shelteredNow && Math.hypot(p.x - s.x, p.y - 6 - s.y) <= cfgS.radius && this.hurtPlayer(this.scaledHit(cfgS.damage), 'injury', s.x, s.y) && s.kind === 'blight') this.lastBlightHitAt = this.now;
     }
     this.drawTelegraphs();
   }
@@ -2244,7 +2278,7 @@ export class World extends Phaser.Scene {
     this.emitSideQuests();
     gameEvents.emit('sfx', 'shrine');
     gameEvents.emit('music', 'quest');
-    this.record('side_story_completed');
+    this.record('side_story_completed', Object.values(this.sideQuests.serialize()).filter((q) => q.status === 'done').length);
     gameEvents.emit('toast', { text: `${def?.title}: ${res.result}`, tone: 'info' });
     this.save();
   }
@@ -2451,14 +2485,14 @@ export class World extends Phaser.Scene {
       this.grant('secret', cartKey);
       this.dropLoot('hidden_cache', l.x, l.y + 10, hashString(cartKey));
       this.record('cache_found');
-      gameEvents.emit('toast', { text: 'Under the rotting cart bed, someone left a wrapped bundle long ago.', tone: 'info' });
+      gameEvents.emit('toast', { text: 'Beneath the rotting cart bed: a bundle wrapped in cloth, left long ago.', tone: 'info' });
       return;
     }
     const text: Record<string, string> = {
       great_fig: 'A strangler fig older than any trail, its roots a cathedral of wood.',
       termite_mound: 'A termite mound taller than a person. The whole hill hums faintly.',
       split_boulder: 'A boulder split clean in two by lightning; ferns already grow in the crack.',
-      honey_tree: 'Wild bees have hung their combs high in this pale giant. Best admired from below.',
+      honey_tree: 'Wild bees have hung their combs high in this pale giant. Best admired from a respectful distance.',
       old_oxcart: 'An ox-cart left to the forest long ago. Its wheels have not turned in years.',
     };
     gameEvents.emit('toast', { text: text[l.id] ?? '', tone: 'info' });
@@ -2537,7 +2571,7 @@ export class World extends Phaser.Scene {
         // Through hurtPlayer: armour and invulnerability frames apply as for any other hit.
         if (phase === 'up' && this.now >= this.nextTrapHitAt && Math.abs(p.x - f.x) < 15 && Math.abs(p.y - (f.y + 2)) < 12) {
           this.nextTrapHitAt = this.now + 900;
-          this.hurtPlayer(8, 'injury', f.x, f.y + 10);
+          this.hurtPlayer(this.scaledHit(8), 'injury', f.x, f.y + 10);
         }
       }
       if (frame && f.image.frame.name !== frame) f.image.setFrame(frame);
@@ -3105,7 +3139,9 @@ export class World extends Phaser.Scene {
     this.projectiles.clear();
     const cause = this.survival.lastDamageCause ?? 'injury';
     // Opt-in permadeath: the journey and its save end here (nothing autosaves after this point).
-    if (this.rules.permadeath) deleteSlot(currentSlot());
+    // Only this journey's own save: a slot still holding an older journey (never overwritten yet) is kept.
+    if (this.rules.permadeath && this.savedThisJourney) deleteSlot(currentSlot());
+    this.flushRecords();
     const summary = { day: this.clock.dayNumber, time: this.clock.label(), cause, rules: { ...this.rules }, permadeath: this.rules.permadeath };
     const cam = this.cameras.main;
     this.shake(250, 0.004);
@@ -3255,6 +3291,7 @@ export class World extends Phaser.Scene {
     this.boundSig = '';
     this.held?.destroy();
     this.held = null;
+    this.flushRecords();
     this.dust = null;
     gameEvents.emit('audio:duck', false);
   }

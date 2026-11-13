@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { CSS, FONTS, GAME_HEIGHT, GAME_WIDTH } from '../../config';
-import { completion, loadRecords, type AchievementDef } from '../../systems/Records';
+import { BEST_EVENTS, completion, loadRecords, type AchievementDef } from '../../systems/Records';
 import { Button } from '../components/Button';
 import { ButtonList } from '../components/ButtonList';
 
@@ -55,7 +55,7 @@ export class RecordsPanel {
       const secret = a.hidden && !got;
       const count = a.count ?? 1;
       const have = Math.min(count, r.counters[a.event] ?? 0);
-      const progress = !got && !secret && count > 1 && a.event !== 'skill_level' ? `  (${have}/${count})` : '';
+      const progress = !got && !secret && count > 1 && !BEST_EVENTS.includes(a.event) ? `  (${have}/${count})` : !got && !secret && count > 1 && a.event !== 'skill_level' ? `  (best ${have}/${count})` : '';
       this.rows[i]
         ?.setText(`${got ? '★' : '☆'}  ${secret ? '???' : a.name}${progress}\n     ${secret ? 'A hidden achievement.' : a.description}`)
         .setColor(got ? CSS.gold : CSS.textDim);

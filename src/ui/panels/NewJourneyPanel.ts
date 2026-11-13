@@ -42,7 +42,7 @@ export class NewJourneyPanel {
     const backdrop = scene.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x040a09, 0.92).setOrigin(0).setInteractive();
     const title = scene.add.text(cx, top, 'A new journey', { fontFamily: FONTS.ui, fontSize: '34px', fontStyle: '700', color: CSS.text }).setOrigin(0.5);
     const note = scene.add
-      .text(cx, top + 36, 'These rules stay with the journey and its save. You can’t change them later.', { fontFamily: FONTS.ui, fontSize: '15px', color: CSS.textDim })
+      .text(cx, top + 36, 'These rules stay with the journey and its save. You can’t change them once you begin.', { fontFamily: FONTS.ui, fontSize: '15px', color: CSS.textDim })
       .setOrigin(0.5);
     const children: Phaser.GameObjects.GameObject[] = [backdrop, title, note];
     this.seedBtn = new Button(scene, cx - 150, top + 96, { label: '', width: 400, height: 44, fontSize: 18, onActivate: () => this.beginTyping() });
@@ -141,7 +141,7 @@ export class NewJourneyPanel {
     this.rules.permadeath = !this.rules.permadeath;
     this.info.setText(
       this.rules.permadeath
-        ? 'Permadeath: when you fall, this journey and its save end for good. Set-piece retries still apply.'
+        ? 'Permadeath: when you fall, this journey and its save end for good. Retries during the great trials (the Tusker, the Storm, the Blight) still apply.'
         : 'Permadeath off: when you fall, you can load your last save.',
     );
     this.refresh(false);
@@ -161,7 +161,10 @@ export class NewJourneyPanel {
     this.list?.destroy();
     this.list = null;
     this.refresh(false);
-    this.scene.time.delayedCall(0, () => this.scene.input.keyboard?.on('keydown', this.typeHandler));
+    // (The menu's Esc handler is registered first, so Esc ends typing before it could close the panel.)
+    this.scene.time.delayedCall(0, () => {
+      if (this.typing) this.scene.input.keyboard?.on('keydown', this.typeHandler);
+    });
   }
 
   private onType(e: KeyboardEvent): void {

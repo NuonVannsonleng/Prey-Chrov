@@ -4,7 +4,7 @@
     {
       "id": "story",
       "name": "Story",
-      "description": "Slower hunger and thirst, softer bites, fewer and duller-eyed creatures, kinder tools and richer foraging.",
+      "description": "Slower hunger and thirst, softer bites, fewer and duller-eyed creatures, fewer elites, kinder tools, richer foraging and a gentler monsoon chill.",
       "effects": {
         "hungerDrain": 0.7,
         "thirstDrain": 0.7,
@@ -26,7 +26,7 @@
     {
       "id": "hard",
       "name": "Hard",
-      "description": "Faster hunger and thirst, more and sharper-eyed creatures, more elites, faster tool wear, colder monsoon.",
+      "description": "Faster hunger and thirst, harder bites, more and sharper-eyed creatures, more elites, faster tool wear, leaner foraging and a colder monsoon.",
       "effects": {
         "hungerDrain": 1.25,
         "thirstDrain": 1.25,

@@ -122,6 +122,15 @@ describe('records and achievements', () => {
     expect(r.endings).toEqual({ story: 1, hard: 1, permadeath: 1 });
   });
 
+  it('"all five tablets" needs five different tablets in one journey, not re-reads across reloads', () => {
+    const r = emptyRecords();
+    for (let i = 0; i < 6; i++) recordEvent(r, defs, 'tablet_read', ctx, 1);
+    expect(r.earned['all_tablets']).toBeUndefined();
+    expect(recordEvent(r, defs, 'tablet_read', ctx, 5).map((a) => a.id)).toContain('all_tablets');
+    for (let i = 0; i < 3; i++) recordEvent(r, defs, 'side_story_completed', ctx, 1);
+    expect(r.earned['all_stories']).toBeUndefined();
+  });
+
   it('skill_level keeps the best level reached', () => {
     const r = emptyRecords();
     recordEvent(r, defs, 'skill_level', ctx, 2);

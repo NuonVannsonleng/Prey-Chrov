@@ -98,12 +98,18 @@ export interface RecordContext {
 }
 
 /**
+ * Events whose value is a total within one journey (the counter keeps the best), so "all five
+ * tablets" means five different tablets in one journey, never one tablet re-read five times.
+ */
+export const BEST_EVENTS: readonly RecordEvent[] = ['skill_level', 'tablet_read', 'side_story_completed'];
+
+/**
  * Applies an event and returns the achievements it newly earns. `value` is the amount to add
- * (default 1) — except for skill_level, where it is the level reached (the counter keeps the best).
+ * (default 1) — for BEST_EVENTS it is the journey's total (the counter keeps the best).
  */
 export function recordEvent(state: RecordsState, defs: readonly AchievementDef[], event: RecordEvent, ctx: RecordContext, value = 1, now = Date.now()): AchievementDef[] {
   const prev = state.counters[event] ?? 0;
-  state.counters[event] = event === 'skill_level' ? Math.max(prev, value) : prev + Math.max(0, value);
+  state.counters[event] = BEST_EVENTS.includes(event) ? Math.max(prev, value) : prev + Math.max(0, value);
   if (event === 'ending_reached') {
     state.endings[ctx.difficulty] = (state.endings[ctx.difficulty] ?? 0) + 1;
     if (ctx.permadeath) state.endings.permadeath = (state.endings.permadeath ?? 0) + 1;

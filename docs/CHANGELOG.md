@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.17.0 — M17: Replayability (2026-11-13)
+
+### Added
+- New journey setup: typed or random world seed, Story / Survival / Hard, six challenge modifiers and opt-in permadeath, all saved with the journey.
+- Records: 24 local achievements (5 hidden), completion, journeys and endings per difficulty.
+- Two new landmark kinds in new worlds: the Wild Honey Tree and the Abandoned Ox-Cart.
+
+### Compatibility
+- Saves from before M17 load as Survival with their original landmarks.
 ## 0.16.0 — M16: Atmosphere, audio, menus and accessibility (2026-11-13)
 
 ### Added

@@ -61,7 +61,7 @@ export class GameOver extends Phaser.Scene {
     });
     const menu = new Button(this, cx, 490, { label: 'Main menu', width: 320, onActivate: () => this.go(SCENES.menu) });
     this.add
-      .text(cx, 535, perma ? 'Permadeath: this journey has ended, and its save with it. A new journey keeps the same rules.' : canLoad ? describeSaveStatus(save) : 'No save to load yet.', {
+      .text(cx, 535, perma ? 'This journey has ended, and its save with it. Begin a new one with the same rules, or return to the menu to choose others.' : canLoad ? describeSaveStatus(save) : 'No save to load yet.', {
         fontFamily: FONTS.ui,
         fontSize: '14px',
         color: CSS.textDim,

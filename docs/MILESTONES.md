@@ -20,8 +20,79 @@ Status legend: **Done** · **In progress** · **Not started**
 | M14 | Narrative chapters, side quests and choices | Done |
 | M15 | Major challenges and final encounters | Done |
 | M16 | Atmosphere, audio, menus and accessibility | Done |
+| M17 | Replayability and content expansion | Done |
 
 ---
+
+## M17 — Replayability and content expansion
+
+### Implemented (playable)
+
+- **New journey setup:** "Play" or "New journey" on the menu, or an empty slot in Journeys…, opens a setup screen. The rules you choose are written into the journey's save and never change afterwards. The pause screen shows the seed and the rules.
+  - **World seed:** random, or typed. Digits are used as-is, and words are hashed the same way every time, so "river" always makes the same world. `?seed=` in the URL still works.
+  - **Difficulty presets** (`src/data/difficulty.json`):
+    - **Story:** slower hunger and thirst, softer bites, fewer and duller-eyed creatures, fewer elites, kinder tools, richer foraging and a gentler monsoon chill.
+    - **Survival:** the intended game, unchanged.
+    - **Hard:** faster drain, slightly harder bites (×1.2), more and sharper-eyed creatures, more elites, faster tool wear, leaner foraging and a colder monsoon.
+    - Difficulty changes **pressures and behaviour**: drain, creature numbers, sight range, elite odds, tool wear, forage and cold. Landed hits are scaled for creatures, traps and set-piece strikes.
+    - **Telegraphs, warnings and stun windows are never changed.** The validator only accepts known pressure keys within 0.4–2. Stacked modifiers are clamped to that range too.
+  - **Challenge modifiers (opt-in, combinable):** Lean Season, Restless Nights, Brittle Tools, Parched Earth, Cold Monsoon and Wary Forest.
+  - **Permadeath (opt-in only, off by default):** when you fall, the journey and its save end. Game Over says so, and a new journey keeps the same rules in a new world.
+    - Only a save this journey made or loaded is deleted. A slot still holding an older journey is kept.
+    - The blight's checkpoint retry still applies.
+- **Records (menu › Records), local only:**
+  - **24 achievements, focused on discovery:** landmarks, shortcuts, puzzles, caches, tablets, side stories, fishing, cooking, outposts, skills, the three set pieces, and endings per difficulty and with permadeath.
+  - Five are hidden and show "???" until earned, with no progress hint.
+  - The panel also shows completion %, journeys begun and endings per difficulty.
+  - Counters add up across journeys. "All five tablets" and "all three side stories" mean all of them **within one journey**, so re-reading after a reload does not count.
+  - Achievements appear in their own banner, queued and never over a toast. Those earned at the offering are listed on the ending screen.
+  - Nothing leaves the browser.
+- **New landmark kinds:** the **Wild Honey Tree** and the **Abandoned Ox-Cart** (search under its bed for a cache). They are drawn in code.
+  - They appear only in worlds created from M17 on (`rules.content = 2`).
+  - Worlds and saves made before M17 load as Survival with exactly the same landmarks and prop keys, which the unit tests check.
+
+### Verification
+
+- `npm run typecheck` and `npm run build` pass.
+- `npm test`: 208 unit tests. New ones cover:
+  - Survival is neutral, and Story and Hard move every pressure the right way
+  - Hard bites at most ×1.25
+  - stacks stay within 0.4–2
+  - the validator refuses unknown or out-of-range effects
+  - pre-M17 saves load as legacy rules
+  - stored rules round-trip without inventing modifiers
+  - typed seeds are stable
+  - old worlds keep identical landmarks
+  - records earn once, endings count per difficulty, "best within one journey" totals work, and corrupt records parse safely
+- `npm run smoke`: 253 checks. The M17 ones:
+  - the setup offers seed, difficulty, modifiers and permadeath
+  - Hard with Restless Nights is in force
+  - rules survive save and reload
+  - permadeath deletes the save, disables loading and explains why
+  - a new journey after permadeath keeps the rules
+  - **Story and Hard both finish the main story**, and the ending is recorded
+  - Records shows completion, endings and hidden entries
+- **Reviews (real agents):**
+  - `content-designer` wrote the presets, modifiers and achievements, then reviewed them:
+    - "Respect Paid" became the hidden **"A Quiet Bow"**, so an offering at a Neak Ta shrine is not a visible trophy to farm.
+    - Difficulty descriptions now match the numbers.
+    - Wording was softened for the ox-cart cache, honey tree, permadeath and Game Over.
+  - `phaser-qa` found 1 Critical and 5 Warnings, all fixed:
+    - **Critical:** the scaled monsoon-cold cache leaked from one journey into the next.
+    - Permadeath could delete an older journey still in the slot.
+    - "All five tablets" and "all three side stories" could be earned by repeats across reloads.
+    - Ending achievements were never shown.
+    - Journeys were counted on a fresh fallback start.
+    - Records were written on every event; they are now written on earn, save or shutdown.
+  - QA suggestions also applied: traps and strikes follow difficulty, and the seed-typing listener is tightened.
+
+### Known limitations and notes
+
+- Counters such as nights, caches and fish add up across journeys, so loading an earlier save and repeating an action counts again. Those achievements are worded "across your journeys".
+- Permadeath is not strict. Quitting to the menu mid-fight keeps the last autosave (autosaves pause while you're in danger). This is deliberate: there is no "quit-to-delete".
+- Needs native-speaker or cultural review:
+  - "A Quiet Bow" (the shrine offering)
+  - the honey tree and ox-cart flavour text (local customs about wild honey trees)
 
 ## M16 — Atmosphere, audio, menus and accessibility
 
