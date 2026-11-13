@@ -19,6 +19,8 @@ import sidequests from './sidequests.json';
 import setpieces from './setpieces.json';
 import structures from './structures.json';
 import survival from './survival.json';
+import difficulty from './difficulty.json';
+import achievements from './achievements.json';
 import { validateGameData, type GameData, type ItemDef } from './schema';
 
 /** Raw JSON bundle (also used by tests). */
@@ -44,6 +46,8 @@ export const RAW_GAME_DATA = {
   stealth,
   sidequests,
   setpieces,
+  difficulty,
+  achievements,
 };
 
 let cached: GameData | null = null;

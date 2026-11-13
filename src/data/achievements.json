@@ -1,0 +1,28 @@
+{
+  "achievements": [
+    { "id": "first_dawn", "name": "First Dawn", "description": "Survive your first night in the forest.", "event": "night_survived", "count": 1 },
+    { "id": "seven_nights", "name": "Seven Nights", "description": "Survive seven nights across your journeys.", "event": "night_survived", "count": 7 },
+    { "id": "first_landmark", "name": "Something Old", "description": "Discover your first landmark.", "event": "landmark_found", "count": 1 },
+    { "id": "landmark_wanderer", "name": "Waymarks", "description": "Discover six landmarks across your journeys.", "event": "landmark_found", "count": 6 },
+    { "id": "short_way", "name": "The Short Way", "description": "Find a hidden shortcut.", "event": "shortcut_found", "count": 1 },
+    { "id": "stone_riddle", "name": "Stone Riddle", "description": "Solve a ruin puzzle.", "event": "puzzle_solved", "count": 1 },
+    { "id": "hidden_hollow", "name": "Hidden Hollow", "description": "Find a hidden cache.", "event": "cache_found", "count": 1 },
+    { "id": "sharp_eyes", "name": "Sharp Eyes", "description": "Find eight hidden caches across your journeys.", "event": "cache_found", "count": 8 },
+    { "id": "first_tablet", "name": "Words in Stone", "description": "Read your first tablet.", "event": "tablet_read", "count": 1 },
+    { "id": "all_tablets", "name": "The Whole Telling", "description": "Read all five tablets.", "event": "tablet_read", "count": 5, "hidden": true },
+    { "id": "kind_neighbour", "name": "Kind Neighbour", "description": "Complete a side story.", "event": "side_story_completed", "count": 1 },
+    { "id": "all_stories", "name": "Three Small Tales", "description": "Complete all three side stories.", "event": "side_story_completed", "count": 3 },
+    { "id": "guardian_respect", "name": "Respect Paid", "description": "Leave an offering at a Neak Ta shrine.", "event": "shrine_restored", "count": 1 },
+    { "id": "river_patience", "name": "River Patience", "description": "Catch ten fish across your journeys.", "event": "fish_caught", "count": 10 },
+    { "id": "warm_pot", "name": "A Warm Pot", "description": "Cook ten meals across your journeys.", "event": "meal_cooked", "count": 10 },
+    { "id": "claim_clearing", "name": "A Place to Return To", "description": "Build a structure and mark an outpost.", "event": "outpost_marked", "count": 1 },
+    { "id": "well_skilled", "name": "Practised", "description": "Reach level 3 in any skill.", "event": "skill_level", "count": 3 },
+    { "id": "old_tusker", "name": "The Old Tusker", "description": "Defeat the Old Tusker.", "event": "tusker_defeated", "count": 1, "hidden": true },
+    { "id": "great_storm", "name": "Weathered", "description": "Endure the Great Storm.", "event": "storm_weathered", "count": 1 },
+    { "id": "blight_cleared", "name": "Clear Air", "description": "Clear the Blight.", "event": "blight_cleared", "count": 1, "hidden": true },
+    { "id": "ending_story", "name": "Home, Gently", "description": "Reach the ending on Story difficulty.", "event": "ending_reached", "difficulty": "story" },
+    { "id": "ending_survival", "name": "The Forest Settles", "description": "Reach the ending on Survival difficulty.", "event": "ending_reached", "difficulty": "survival" },
+    { "id": "ending_hard", "name": "Against the Dark", "description": "Reach the ending on Hard difficulty.", "event": "ending_reached", "difficulty": "hard" },
+    { "id": "ending_permadeath", "name": "One Life", "description": "Reach the ending with permadeath on.", "event": "ending_reached", "permadeath": true, "hidden": true }
+  ]
+}

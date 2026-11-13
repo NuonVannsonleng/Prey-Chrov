@@ -1,0 +1,81 @@
+{
+  "default": "survival",
+  "presets": [
+    {
+      "id": "story",
+      "name": "Story",
+      "description": "Slower hunger and thirst, softer bites, fewer and duller-eyed creatures, kinder tools and richer foraging.",
+      "effects": {
+        "hungerDrain": 0.7,
+        "thirstDrain": 0.7,
+        "enemyDamage": 0.6,
+        "spawnCap": 0.7,
+        "detection": 0.75,
+        "eliteChance": 0.5,
+        "toolWear": 0.7,
+        "forageYield": 1.3,
+        "warmthLoss": 0.7
+      }
+    },
+    {
+      "id": "survival",
+      "name": "Survival",
+      "description": "The intended journey. Nothing is changed.",
+      "effects": {}
+    },
+    {
+      "id": "hard",
+      "name": "Hard",
+      "description": "Faster hunger and thirst, more and sharper-eyed creatures, more elites, faster tool wear, colder monsoon.",
+      "effects": {
+        "hungerDrain": 1.25,
+        "thirstDrain": 1.25,
+        "enemyDamage": 1.2,
+        "spawnCap": 1.3,
+        "detection": 1.25,
+        "eliteChance": 1.5,
+        "toolWear": 1.25,
+        "forageYield": 0.85,
+        "warmthLoss": 1.25
+      }
+    }
+  ],
+  "modifiers": [
+    {
+      "id": "lean_season",
+      "name": "Lean Season",
+      "description": "The forest gives less: foraging yields are reduced and hunger comes sooner.",
+      "effects": { "forageYield": 0.7, "hungerDrain": 1.15 }
+    },
+    {
+      "id": "restless_nights",
+      "name": "Restless Nights",
+      "description": "More creatures stir after dark, and they notice you from further away.",
+      "effects": { "spawnCap": 1.4, "detection": 1.2 }
+    },
+    {
+      "id": "brittle_tools",
+      "name": "Brittle Tools",
+      "description": "Tools and weapons wear out much faster.",
+      "effects": { "toolWear": 1.6 }
+    },
+    {
+      "id": "dry_season_thirst",
+      "name": "Parched Earth",
+      "description": "Thirst builds faster, so clean water matters more.",
+      "effects": { "thirstDrain": 1.4 }
+    },
+    {
+      "id": "cold_monsoon",
+      "name": "Cold Monsoon",
+      "description": "The monsoon chills deeper; staying warm and dry matters more.",
+      "effects": { "warmthLoss": 1.5 }
+    },
+    {
+      "id": "wary_forest",
+      "name": "Wary Forest",
+      "description": "Elite creatures appear more often, but never bite harder.",
+      "effects": { "eliteChance": 1.6 }
+    }
+  ]
+}

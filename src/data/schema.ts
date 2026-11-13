@@ -1,3 +1,5 @@
+import { DIFFICULTY_IDS, EFFECT_KEYS, type DifficultyData, type DifficultyId } from '../systems/Rules';
+import { RECORD_EVENTS, type AchievementDef } from '../systems/Records';
 import {
   CREATURE_SPRITES,
   GROUND_TILE_KEYS,
@@ -305,6 +307,8 @@ export interface SurvivalConfig {
 }
 
 export interface GameData {
+  difficulty: DifficultyData;
+  achievements: readonly AchievementDef[];
   items: ReadonlyMap<string, ItemDef>;
   loot: ReadonlyMap<string, LootTable>;
   resources: ReadonlyMap<string, ResourceDef>;
@@ -329,6 +333,8 @@ export interface GameData {
 }
 
 export interface RawGameData {
+  difficulty: unknown;
+  achievements: unknown;
   items: unknown;
   loot: unknown;
   resources: unknown;
@@ -569,6 +575,80 @@ function validateStructures(p: string[], structures: Rec[]): void {
     if (s['rotatable'] === true && !STRUCTURE_SPRITES.includes(s['sprite'] as StructureSprite)) p.push(`${w}: rotatable needs a sprite`);
     const sb = s['sleepBonus'];
     if (sb !== undefined && (!isRec(sb) || !isNum(sb['health']) || num(sb['health']) < 0)) p.push(`${w}: sleepBonus.health must be >= 0`);
+  }
+}
+
+/** difficulty.json (M17): presets change pressures only; telegraphs and stun windows are never touched. */
+function validateDifficulty(p: string[], raw: unknown): void {
+  if (!isRec(raw)) {
+    p.push('difficulty.json: must be an object');
+    return;
+  }
+  const effects = (where: string, e: unknown) => {
+    if (!isRec(e)) {
+      p.push(`${where}.effects must be an object`);
+      return;
+    }
+    for (const [k, v] of Object.entries(e)) {
+      if (!(EFFECT_KEYS as readonly string[]).includes(k)) p.push(`${where}.effects.${k} is not a known effect`);
+      else if (!isNum(v) || v < 0.4 || v > 2) p.push(`${where}.effects.${k} must be 0.4–2`);
+    }
+  };
+  const presets = Array.isArray(raw['presets']) ? raw['presets'] : [];
+  const seen = new Set<string>();
+  for (const pr of presets) {
+    if (!isRec(pr) || !DIFFICULTY_IDS.includes(pr['id'] as DifficultyId)) {
+      p.push('difficulty.presets: each needs id story|survival|hard');
+      continue;
+    }
+    if (seen.has(pr['id'] as string)) p.push(`difficulty.presets: duplicate ${String(pr['id'])}`);
+    seen.add(pr['id'] as string);
+    if (!isStr(pr['name']) || !isStr(pr['description'])) p.push(`difficulty.${String(pr['id'])}: name and description required`);
+    effects(`difficulty.${String(pr['id'])}`, pr['effects']);
+  }
+  for (const id of DIFFICULTY_IDS) if (!seen.has(id)) p.push(`difficulty.presets: missing ${id}`);
+  if (!DIFFICULTY_IDS.includes(raw['default'] as DifficultyId)) p.push('difficulty.default must be a preset id');
+  const survival = presets.find((x) => isRec(x) && x['id'] === 'survival');
+  if (isRec(survival) && isRec(survival['effects']) && Object.values(survival['effects']).some((v) => v !== 1)) p.push('difficulty.survival must change nothing');
+  const mods = Array.isArray(raw['modifiers']) ? raw['modifiers'] : null;
+  if (!mods) p.push('difficulty.modifiers must be an array');
+  const modIds = new Set<string>();
+  for (const m of mods ?? []) {
+    if (!isRec(m) || !isStr(m['id']) || !/^[a-z0-9_]+$/.test(m['id'] as string)) {
+      p.push('difficulty.modifiers: each needs a snake_case id');
+      continue;
+    }
+    if (modIds.has(m['id'] as string)) p.push(`difficulty.modifiers: duplicate ${String(m['id'])}`);
+    modIds.add(m['id'] as string);
+    if (!isStr(m['name']) || !isStr(m['description'])) p.push(`difficulty.modifier ${String(m['id'])}: name and description required`);
+    effects(`difficulty.modifier ${String(m['id'])}`, m['effects']);
+  }
+}
+
+/** achievements.json (M17): local discovery achievements. */
+function validateAchievements(p: string[], raw: unknown, tabletCount: number, sideStoryCount: number): void {
+  const list = isRec(raw) && Array.isArray(raw['achievements']) ? raw['achievements'] : null;
+  if (!list) {
+    p.push('achievements.json: { achievements: [] } required');
+    return;
+  }
+  const ids = new Set<string>();
+  for (const a of list) {
+    if (!isRec(a) || !isStr(a['id']) || !/^[a-z0-9_]{1,48}$/.test(a['id'] as string)) {
+      p.push('achievements: each needs a snake_case id');
+      continue;
+    }
+    const id = a['id'] as string;
+    if (ids.has(id)) p.push(`achievement ${id}: duplicate id`);
+    ids.add(id);
+    if (!isStr(a['name']) || !isStr(a['description'])) p.push(`achievement ${id}: name and description required`);
+    if (!(RECORD_EVENTS as readonly string[]).includes(a['event'] as string)) p.push(`achievement ${id}: unknown event ${String(a['event'])}`);
+    if (a['count'] !== undefined && (!Number.isInteger(a['count']) || (a['count'] as number) < 1)) p.push(`achievement ${id}: count must be a whole number >= 1`);
+    if (a['difficulty'] !== undefined && (a['event'] !== 'ending_reached' || !DIFFICULTY_IDS.includes(a['difficulty'] as DifficultyId))) p.push(`achievement ${id}: difficulty only on ending_reached`);
+    if (a['permadeath'] !== undefined && (a['event'] !== 'ending_reached' || a['permadeath'] !== true)) p.push(`achievement ${id}: permadeath only on ending_reached`);
+    // Reachable within one journey where the count is capped by content.
+    if (a['event'] === 'tablet_read' && ((a['count'] as number) ?? 1) > tabletCount) p.push(`achievement ${id}: only ${tabletCount} tablets exist`);
+    if (a['event'] === 'side_story_completed' && ((a['count'] as number) ?? 1) > sideStoryCount * 50) p.push(`achievement ${id}: count too high`);
   }
 }
 
@@ -979,6 +1059,8 @@ export function validateGameData(raw: RawGameData): GameData {
   validateStealth(p, raw.stealth);
   validateSideQuests(p, raw.sidequests, itemIds);
   validateSetPieces(p, raw.setpieces, enemies);
+  validateDifficulty(p, raw.difficulty);
+  validateAchievements(p, raw.achievements, tablets.length, Array.isArray(raw.sidequests) ? raw.sidequests.length : 0);
 
   if (p.length) throw new DataValidationError(p);
 
@@ -1004,6 +1086,8 @@ export function validateGameData(raw: RawGameData): GameData {
     stealth: raw.stealth as StealthConfig,
     sidequests: raw.sidequests as SideQuestDef[],
     setpieces: raw.setpieces as SetPiecesConfig,
+    difficulty: raw.difficulty as DifficultyData,
+    achievements: (raw.achievements as { achievements: AchievementDef[] }).achievements,
   };
 
   // Reachability: every item must be gatherable or craftable from gatherable items.
