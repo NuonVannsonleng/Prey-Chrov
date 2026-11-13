@@ -1,3 +1,8 @@
+declare const __APP_VERSION__: string;
+
+/** Game version (package.json), shown on the menu and in the credits. */
+export const APP_VERSION: string = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
+
 export const GAME_WIDTH = 1280;
 export const GAME_HEIGHT = 720;
 export const TILE_SIZE = 32;

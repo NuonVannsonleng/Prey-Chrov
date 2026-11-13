@@ -2089,7 +2089,7 @@ try {
     loadEnabled: window.__preyChrov.scene.getScene('GameOver').children.list.filter((o) => typeof o.activate === 'function')[1].enabled,
   }));
   await page.screenshot({ path: OUT + '/64-permadeath.png' });
-  check('permadeath: the save is gone, loading is off and the screen says why', diedPd17 && pd17.gone && !pd17.loadEnabled && /Permadeath/.test(pd17.text), JSON.stringify({ gone: pd17.gone, loadEnabled: pd17.loadEnabled }));
+  check('permadeath: the save is gone, loading is off and the screen says why', diedPd17 && pd17.gone && !pd17.loadEnabled && /journey has ended, and its save with it/.test(pd17.text), JSON.stringify({ gone: pd17.gone, loadEnabled: pd17.loadEnabled }));
   await clickGame(640, 350);
   await waitScene('World', 15000);
   await sleep(900);
@@ -2134,6 +2134,122 @@ try {
   await page.keyboard.press('Escape');
   await sleep(300);
   check('Esc closes Records back to the menu', !(await page.evaluate(() => window.__preyChrov.scene.getScene('Menu').recordsPanel.isOpen)));
+
+  // ---- M18: release hardening ----
+  // Keyboard only: Enter (Play) → setup → ↑ to Begin → Enter starts a journey.
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await waitScene('Menu', 15000);
+  await sleep(600);
+  await page.keyboard.press('Enter');
+  await sleep(300);
+  const kbSetup = await page.evaluate(() => window.__preyChrov.scene.getScene('Menu').journeyPanel.isOpen);
+  await page.keyboard.press('ArrowUp');
+  await sleep(120);
+  await page.keyboard.press('Enter');
+  check('keyboard alone starts a journey (menu → setup → Begin)', kbSetup && (await waitScene('World', 15000)), JSON.stringify({ kbSetup }));
+  await sleep(600);
+  const version = await page.evaluate(() => {
+    window.__preyChrov.scene.getScene('World').scene.stop('UI');
+    window.__preyChrov.scene.getScene('World').scene.start('Menu');
+    return true;
+  });
+  await waitScene('Menu', 15000);
+  await sleep(400);
+  const footer = await page.evaluate(() => window.__preyChrov.scene.getScene('Menu').children.list.filter((o) => o.type === 'Text').map((o) => o.text).join(' | '));
+  check('the menu shows the game version', version && /v\d+\.\d+\.\d+/.test(footer), footer.slice(-90));
+  // Several window sizes keep the whole game visible.
+  const sizes = [];
+  for (const [vw, vh] of [[390, 844], [1024, 768], [1920, 1080], [1366, 600]]) {
+    await page.setViewportSize({ width: vw, height: vh });
+    await sleep(350);
+    const r = await page.evaluate(() => {
+      const b = document.querySelector('canvas').getBoundingClientRect();
+      return { x: b.x, y: b.y, w: b.width, h: b.height };
+    });
+    sizes.push({ vw, vh, ok: r.x >= -1 && r.y >= -1 && r.x + r.w <= vw + 1 && r.y + r.h <= vh + 1 && Math.abs(r.w / r.h - 16 / 9) < 0.02 });
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await sleep(300);
+  check('phone, tablet, desktop and wide windows all fit the whole game', sizes.every((s) => s.ok), JSON.stringify(sizes));
+  // An unexpected error shows a clear message (saves are kept) instead of a silent freeze.
+  const fatal = await page.evaluate(() => {
+    window.dispatchEvent(new ErrorEvent('error', { message: 'test failure' }));
+    const box = document.getElementById('fatal');
+    const text = box?.textContent ?? '';
+    box?.querySelectorAll('button')[1]?.click();
+    return { text, gone: document.getElementById('fatal') === null };
+  });
+  check('unexpected errors show a clear, dismissible message', /Something went wrong: test failure/.test(fatal.text) && /saved journeys are kept/.test(fatal.text) && fatal.gone, JSON.stringify(fatal));
+  // Storage blocked (private windows, strict settings): the game still starts and plays, and says why it can't save.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    await ctx.addInitScript(() => {
+      Object.defineProperty(window, 'localStorage', {
+        get() {
+          throw new DOMException('The operation is insecure.', 'SecurityError');
+        },
+      });
+    });
+    const p2 = await ctx.newPage();
+    const errs2 = [];
+    p2.on('pageerror', (e) => errs2.push(String(e)));
+    p2.on('console', (m) => m.type() === 'error' && errs2.push(m.text()));
+    await p2.goto(url);
+    await p2.waitForFunction(() => window.__preyChrov?.scene.isActive('Menu'), null, { timeout: 20000 });
+    await p2.waitForTimeout(500);
+    const menuMsg = await p2.evaluate(() => window.__preyChrov.scene.getScene('Menu').children.list.filter((o) => o.type === 'Text').map((o) => o.text).join(' | '));
+    await p2.evaluate(() => {
+      const m = window.__preyChrov.scene.getScene('Menu');
+      m.openNewJourney();
+      m.journeyPanel.buttonFor('begin').activate();
+    });
+    await p2.waitForFunction(() => window.__preyChrov.scene.isActive('World') && window.__preyChrov.scene.isActive('UI'), null, { timeout: 20000 });
+    await p2.waitForTimeout(800);
+    const played = await p2.evaluate(() => {
+      const w = window.__preyChrov.scene.getScene('World');
+      return { saved: w.save(), records: w.records !== undefined };
+    });
+    check('blocked browser storage: the menu explains it and a journey still starts and plays', /storage is unavailable/i.test(menuMsg) && played.saved === false && played.records && errs2.length === 0, JSON.stringify({ played, errs2: errs2.slice(0, 3) }));
+    await ctx.close();
+  }
+  // Static hosting under a sub-path (as on GitHub Pages: /Prey-Chrov/): every asset resolves.
+  {
+    const { createServer } = await import('node:http');
+    const { readFile } = await import('node:fs/promises');
+    const { extname, join, normalize } = await import('node:path');
+    const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff', '.json': 'application/json' };
+    const sub = createServer(async (req, res) => {
+      const u = decodeURIComponent((req.url ?? '/').split('?')[0]);
+      if (!u.startsWith('/Prey-Chrov/')) {
+        res.writeHead(404).end();
+        return;
+      }
+      const rel = normalize(u.slice('/Prey-Chrov/'.length) || 'index.html').replace(/^([/\\])+/, '');
+      try {
+        const body = await readFile(join('dist', rel.endsWith('/') || rel === '.' ? 'index.html' : rel));
+        res.writeHead(200, { 'Content-Type': types[extname(rel)] ?? 'application/octet-stream' }).end(body);
+      } catch {
+        res.writeHead(404).end();
+      }
+    });
+    await new Promise((r) => sub.listen(PORT + 7, r));
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    const p3 = await ctx.newPage();
+    const bad = [];
+    p3.on('response', (r) => r.status() >= 400 && bad.push(`${r.status()} ${r.url()}`));
+    p3.on('requestfailed', (r) => bad.push(`failed ${r.url()}`));
+    const thirdParty = [];
+    p3.on('request', (r) => !r.url().startsWith(`http://localhost:${PORT + 7}/`) && !r.url().startsWith('data:') && !r.url().startsWith('blob:') && thirdParty.push(r.url()));
+    await p3.goto(`http://localhost:${PORT + 7}/Prey-Chrov/?debug`);
+    const booted = await p3.waitForFunction(() => window.__preyChrov?.scene.isActive('Menu'), null, { timeout: 20000 }).then(() => true, () => false);
+    await p3.waitForTimeout(800);
+    const fontsOk = await p3.evaluate(() => document.fonts.check('24px "Kantumruy Pro"') && document.fonts.check('96px "Moul"', 'ព្រៃជ្រៅ'));
+    check('the built game runs from a sub-path (GitHub Pages style) with every asset found', booted && bad.length === 0, bad.slice(0, 3).join(' | '));
+    check('no third-party requests (fonts ship with the game, no telemetry)', thirdParty.length === 0 && fontsOk, JSON.stringify({ thirdParty: thirdParty.slice(0, 3), fontsOk }));
+    await ctx.close();
+    await new Promise((r) => sub.close(r));
+  }
 
   await page.evaluate(() => localStorage.clear());
 

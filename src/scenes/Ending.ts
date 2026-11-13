@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { CSS, FONTS, GAME_HEIGHT, GAME_WIDTH, SCENES } from '../config';
+import { APP_VERSION, CSS, FONTS, GAME_HEIGHT, GAME_WIDTH, SCENES } from '../config';
 import { getGameData } from '../data/gameData';
 import { TEX } from '../textures';
 import { Button } from '../ui/components/Button';
@@ -122,7 +122,7 @@ export class Ending extends Phaser.Scene {
       )
       .setOrigin(0.5);
     this.add
-      .text(cx, 360, ending.credits.join('\n'), {
+      .text(cx, 360, [...ending.credits, `Version ${APP_VERSION}`].join('\n'), {
         fontFamily: FONTS.ui,
         fontSize: '14px',
         color: CSS.textDim,

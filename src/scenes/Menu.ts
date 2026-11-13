@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { CSS, FONTS, GAME_HEIGHT, GAME_WIDTH, SCENES } from '../config';
+import { APP_VERSION, CSS, FONTS, GAME_HEIGHT, GAME_WIDTH, SCENES } from '../config';
 import { CAN_LOAD_SAVES, currentSlot, describeSaveStatus, inspectSave } from '../systems/Save';
 import { TEX } from '../textures';
 import { Button } from '../ui/components/Button';
@@ -102,7 +102,7 @@ export class Menu extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.input.keyboard?.off('keydown', esc));
 
     this.add
-      .text(cx, GAME_HEIGHT - 34, '↑/↓ to choose · Enter to select    ·    Prototype build — all art is generated placeholder', {
+      .text(cx, GAME_HEIGHT - 34, `↑/↓ to choose · Enter to select    ·    v${APP_VERSION} · all art is generated in code`, {
         fontFamily: FONTS.ui,
         fontSize: '14px',
         color: CSS.textDim,
