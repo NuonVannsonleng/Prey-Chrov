@@ -67,6 +67,8 @@ export class WorldGen {
     private readonly biomes: ReadonlyMap<BiomeId, BiomeDef>,
     /** Chance (0..1) that a clearing chunk holds a Neak Ta shrine (shrines.json). */
     private readonly shrineChance = 0,
+    /** M17: content generation (2 adds the newer landmark kinds); old saves stay on 1. */
+    private readonly content = 1,
   ) {
     this.seed = seed >>> 0;
     const n = (salt: number) => createNoise2D(mulberry32(hash2(salt, 7919, this.seed)));
@@ -183,7 +185,7 @@ export class WorldGen {
     const cached = this.landmarkCache.get(key);
     if (cached !== undefined) return cached;
     let out: { tx: number; ty: number; id: LandmarkId } | null = null;
-    const raw = landmarkCandidate(cellX, cellY, this.seed);
+    const raw = landmarkCandidate(cellX, cellY, this.seed, this.content);
     const N = CHUNK_TILES;
     const snap = (t: number) => {
       const ch = Math.floor(t / N);

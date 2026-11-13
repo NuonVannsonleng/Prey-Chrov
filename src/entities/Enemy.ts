@@ -30,6 +30,8 @@ export interface EnemyWorld {
   readonly hidden: boolean;
   readonly crouching: boolean;
   readonly night: boolean;
+  /** M17 difficulty: sight-range multiplier (1 = unchanged). */
+  readonly detection?: number;
 }
 
 const WANDER_SPEED = 0.35;
@@ -246,7 +248,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     // M12 perception: sight shrinks when the player hides or crouches (and for animals at night);
     // noise carries further than sight when the player runs or works.
     const cfg = w.stealth;
-    const sight = sightRange(cfg, d.aggroRadius, w.hidden, w.crouching, w.night, d.kind === 'wildlife');
+    const sight = sightRange(cfg, d.aggroRadius, w.hidden, w.crouching, w.night, d.kind === 'wildlife') * (w.detection ?? 1);
     if (!passive && this.aiState !== 'flee') {
       const s = perceive(cfg, this.awareness, dist, sight, w.noise, d.hearing ?? 1, dtMs / 1000, this.sense);
       this.awareness = s.awareness;

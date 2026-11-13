@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { CSS, FONTS, GAME_HEIGHT, GAME_WIDTH, SCENES } from '../config';
 import { describeSaveStatus, inspectSave } from '../systems/Save';
+import type { JourneyRules } from '../systems/Rules';
 import { Button } from '../ui/components/Button';
 import { ButtonList } from '../ui/components/ButtonList';
 
@@ -8,6 +9,9 @@ export interface GameOverData {
   day: number;
   time: string;
   cause: 'starvation' | 'dehydration' | 'injury' | 'wildlife' | 'spirit' | 'poison' | 'cold';
+  /** M17: the fallen journey's rules (a new journey keeps them, in a new world). */
+  rules?: JourneyRules;
+  permadeath?: boolean;
 }
 
 const CAUSE_TEXT: Record<GameOverData['cause'], string> = {
@@ -20,7 +24,7 @@ const CAUSE_TEXT: Record<GameOverData['cause'], string> = {
   poison: 'Venom took you. Poison wears off with time — rest and keep your distance from vipers.',
 };
 
-/** Short death summary with restart options. Never deletes the save. */
+/** Short death summary with restart options. Never deletes the save (permadeath journeys delete theirs before this). */
 export class GameOver extends Phaser.Scene {
   constructor() {
     super(SCENES.gameOver);
@@ -45,9 +49,10 @@ export class GameOver extends Phaser.Scene {
       .text(cx, 255, CAUSE_TEXT[data?.cause ?? 'injury'], { fontFamily: FONTS.ui, fontSize: '17px', color: CSS.textDim })
       .setOrigin(0.5);
 
+    const perma = data?.permadeath === true;
     const save = inspectSave();
-    const canLoad = save.kind === 'valid';
-    const fresh = new Button(this, cx, 350, { label: 'New journey', width: 320, onActivate: () => this.go(SCENES.world, {}) });
+    const canLoad = save.kind === 'valid' && !perma;
+    const fresh = new Button(this, cx, 350, { label: 'New journey', width: 320, onActivate: () => this.go(SCENES.world, data?.rules ? { rules: data.rules } : {}) });
     const load = new Button(this, cx, 420, {
       label: 'Load last save',
       width: 320,
@@ -56,7 +61,7 @@ export class GameOver extends Phaser.Scene {
     });
     const menu = new Button(this, cx, 490, { label: 'Main menu', width: 320, onActivate: () => this.go(SCENES.menu) });
     this.add
-      .text(cx, 535, canLoad ? describeSaveStatus(save) : 'No save to load yet.', {
+      .text(cx, 535, perma ? 'Permadeath: this journey has ended, and its save with it. A new journey keeps the same rules.' : canLoad ? describeSaveStatus(save) : 'No save to load yet.', {
         fontFamily: FONTS.ui,
         fontSize: '14px',
         color: CSS.textDim,

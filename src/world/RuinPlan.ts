@@ -130,24 +130,29 @@ export function trapPhase(nowMs: number, index: number): 'down' | 'warn' | 'up' 
 
 // ---------- Landmarks ----------
 
-export type LandmarkId = 'great_fig' | 'termite_mound' | 'split_boulder';
+export type LandmarkId = 'great_fig' | 'termite_mound' | 'split_boulder' | 'honey_tree' | 'old_oxcart';
 export const LANDMARK_IDS: readonly LandmarkId[] = ['great_fig', 'termite_mound', 'split_boulder'];
+/** M17 worlds (content 2) also hold these; worlds made earlier keep exactly the original three. */
+export const LANDMARK_IDS_V2: readonly LandmarkId[] = [...LANDMARK_IDS, 'honey_tree', 'old_oxcart'];
 export const LANDMARK_NAMES: Record<LandmarkId, string> = {
   great_fig: 'Great Strangler Fig',
   termite_mound: 'Towering Termite Mound',
   split_boulder: 'Lightning-Split Boulder',
+  honey_tree: 'Wild Honey Tree',
+  old_oxcart: 'Abandoned Ox-Cart',
 };
 /** Landmark cells are this many tiles square; about half hold one landmark. */
 export const LANDMARK_CELL = 128;
 
 /** Candidate landmark in a cell (validated against terrain by WorldGen). Pure. */
-export function landmarkCandidate(cellX: number, cellY: number, seed: number): { tx: number; ty: number; id: LandmarkId } | null {
+export function landmarkCandidate(cellX: number, cellY: number, seed: number, content = 1): { tx: number; ty: number; id: LandmarkId } | null {
   const h = hash2(cellX, cellY, seed ^ 0x1a4d);
   if (h % 100 >= 50) return null;
   const rng = mulberry32(h);
   const tx = cellX * LANDMARK_CELL + 20 + Math.floor(rng() * (LANDMARK_CELL - 40));
   const ty = cellY * LANDMARK_CELL + 20 + Math.floor(rng() * (LANDMARK_CELL - 40));
-  return { tx, ty, id: LANDMARK_IDS[(h >>> 4) % LANDMARK_IDS.length] ?? 'great_fig' };
+  const ids = content >= 2 ? LANDMARK_IDS_V2 : LANDMARK_IDS;
+  return { tx, ty, id: ids[(h >>> 4) % ids.length] ?? 'great_fig' };
 }
 
 // ---------- Shortcuts: hidden stepping stones across rivers ----------

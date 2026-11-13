@@ -34,6 +34,10 @@ export interface EncounterFrame {
   crouching: boolean;
   monsoon: boolean;
   distTiles: number;
+  /** M17 difficulty: creature cap, how far they notice you, elite odds (1 = unchanged). */
+  spawnScale?: number;
+  detection?: number;
+  eliteScale?: number;
 }
 
 export { distanceDanger, eliteChance } from './Encounters.pure';
@@ -72,6 +76,7 @@ export class Encounters {
     hidden: boolean;
     crouching: boolean;
     night: boolean;
+    detection: number;
   };
 
   constructor(
@@ -98,6 +103,7 @@ export class Encounters {
       hidden: false,
       crouching: false,
       night: false,
+      detection: 1,
     };
   }
 
@@ -118,6 +124,7 @@ export class Encounters {
     w.hidden = f.hidden;
     w.crouching = f.crouching;
     w.night = f.darkness > NIGHT_DARKNESS;
+    w.detection = f.detection ?? 1;
 
     for (const e of this.enemies) {
       if (!e.active) continue;
@@ -145,12 +152,14 @@ export class Encounters {
   /** Population cap: gentle first night, ramping with days survived, scaled by local biome danger. */
   cap(night: boolean, f: EncounterFrame): number {
     const cfg = this.data.encounters;
-    if (!night) return Math.max(1, Math.round(cfg.maxAlive.day * distanceDanger(this.data.stealth.distanceDanger, f.distTiles)));
+    const scale = f.spawnScale ?? 1;
+    if (!night) return Math.max(1, Math.round(cfg.maxAlive.day * distanceDanger(this.data.stealth.distanceDanger, f.distTiles) * scale));
     const ramp = cfg.firstNightMax + Math.max(0, f.day - 1) * cfg.nightRampPerDay;
     const biome = this.data.biomes.get(this.services.biomeAt(Math.floor(f.playerX / TILE_SIZE), Math.floor(f.playerY / TILE_SIZE)));
     const danger = biome?.nightDanger ?? 1;
     const far = distanceDanger(this.data.stealth.distanceDanger, f.distTiles);
-    const cap = Math.max(1, Math.min(cfg.maxAlive.night, Math.round(ramp * danger * far)));
+    // Difficulty scales the ramp and, upwards only, the ceiling (the pool is bounded anyway).
+    const cap = Math.max(1, Math.min(Math.round(cfg.maxAlive.night * Math.max(1, scale)), Math.round(ramp * danger * far * scale)));
     return this.calmed ? Math.max(1, Math.round(cap / 2)) : cap;
   }
 
@@ -207,7 +216,7 @@ export class Encounters {
       const e = this.obtain();
       if (!e) return;
       const el = this.data.stealth.elite;
-      const elite = Math.random() < eliteChance(el, f.day);
+      const elite = Math.random() < eliteChance(el, f.day) * (f.eliteScale ?? 1);
       e.spawn(def, x, y, now, elite, el.hp, el.damage);
       if (def.kind === 'spirit') gameEvents.emit('sfx', 'spirit');
       return;

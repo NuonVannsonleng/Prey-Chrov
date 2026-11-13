@@ -58,6 +58,29 @@ export class UI extends Phaser.Scene {
   private storage!: StoragePanel;
   private character!: CharacterPanel;
   private map!: MapPanel;
+  private achBanner!: Phaser.GameObjects.Text;
+  private readonly achQueue: string[] = [];
+  private achShowing = false;
+
+  /** Achievement banner: one at a time, each for about 4 s. */
+  private showNextAchievement(): void {
+    if (this.achShowing) return;
+    const next = this.achQueue.shift();
+    if (!next) return;
+    this.achShowing = true;
+    gameEvents.emit('music', 'discover');
+    this.achBanner.setText(next).setAlpha(1);
+    this.tweens.add({
+      targets: this.achBanner,
+      alpha: 0,
+      delay: 3800,
+      duration: 500,
+      onComplete: () => {
+        this.achShowing = false;
+        this.showNextAchievement();
+      },
+    });
+  }
   /** Display/control settings changed while paused: rebuild the HUD on resume. */
   private settingsDirty = false;
   private settingsSig = '';
@@ -179,6 +202,14 @@ export class UI extends Phaser.Scene {
     this.journal = new JournalPanel(this);
     this.tabletView = new TabletView(this);
     this.toast = new Toast(this);
+    // M17: achievements get their own banner (right, under the minimap), queued, so they never hide a toast.
+    this.achBanner = this.add
+      .text(GAME_WIDTH - 20, 214, '', { fontFamily: FONTS.ui, fontSize: fontPx(15), fontStyle: '700', color: CSS.gold, backgroundColor: backing(0.85, getSettings().highContrast), padding: { x: 12, y: 8 }, wordWrap: { width: 380 }, align: 'right' })
+      .setOrigin(1, 0)
+      .setDepth(85)
+      .setAlpha(0);
+    this.achQueue.length = 0;
+    this.achShowing = false;
     this.savedText = this.add
       .text(GAME_WIDTH - 20, GAME_HEIGHT - 20, '', { fontFamily: FONTS.ui, fontSize: '13px', fontStyle: '600', color: CSS.textDim })
       .setOrigin(1, 1)
@@ -188,6 +219,10 @@ export class UI extends Phaser.Scene {
       this.status.setObjectivesVisible(false);
     }
 
+    onSceneEvent(this, 'achievement', (a) => {
+      this.achQueue.push(`★ Achievement: ${a.name}\n${a.description}`);
+      this.showNextAchievement();
+    });
     onSceneEvent(this, 'world:info', ({ seed }) => {
       this.minimap.setSeed(seed);
       this.map.setSeed(seed);

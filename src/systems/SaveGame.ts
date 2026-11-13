@@ -29,6 +29,7 @@ export interface WorldState {
   exploration: SaveData['exploration'];
   story: SaveData['story'];
   setpieces: SaveData['setpieces'];
+  rules: SaveData['rules'];
   progression: SaveData['progression'];
   equipment: SaveData['equipment'];
   quest: { tabletsRead: readonly string[]; heartReached: boolean; restored: boolean };
@@ -70,6 +71,7 @@ export function buildSave(w: WorldState): SaveData {
     exploration: w.exploration,
     story: w.story,
     setpieces: { ...w.setpieces },
+    rules: w.rules,
     progression: w.progression,
     equipment: w.equipment,
     tabletsRead: [...w.quest.tabletsRead],

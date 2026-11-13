@@ -8,6 +8,9 @@ import { ConfirmDialog } from '../ui/components/ConfirmDialog';
 import { getSettings } from '../systems/Settings';
 import { SettingsPanel } from '../ui/panels/SettingsPanel';
 import { SlotsPanel } from '../ui/panels/SlotsPanel';
+import { NewJourneyPanel, type JourneySetup } from '../ui/panels/NewJourneyPanel';
+import { RecordsPanel } from '../ui/panels/RecordsPanel';
+import { getGameData } from '../data/gameData';
 import { oncePerKeyEvent } from '../utils/keys';
 import { mulberry32, randRange } from '../utils/random';
 
@@ -17,6 +20,8 @@ export class Menu extends Phaser.Scene {
   private list: ButtonList | null = null;
   private settingsPanel: SettingsPanel | null = null;
   private slotsPanel: SlotsPanel | null = null;
+  private journeyPanel: NewJourneyPanel | null = null;
+  private recordsPanel: RecordsPanel | null = null;
 
   constructor() {
     super(SCENES.menu);
@@ -51,7 +56,7 @@ export class Menu extends Phaser.Scene {
     const canContinue = CAN_LOAD_SAVES && save.kind === 'valid';
     const play = new Button(this, cx, 430, {
       label: canContinue ? 'New journey' : 'Play',
-      onActivate: () => (canContinue ? this.confirmNewJourney(save.kind === 'valid' ? save.day : 1) : this.startGame(false)),
+      onActivate: () => (canContinue ? this.confirmNewJourney(save.kind === 'valid' ? save.day : 1) : this.openNewJourney()),
     });
     const cont = new Button(this, cx, 500, { label: 'Continue', enabled: canContinue, onActivate: () => this.startGame(true) });
     const slot = currentSlot();
@@ -63,9 +68,10 @@ export class Menu extends Phaser.Scene {
         color: CSS.textDim,
       })
       .setOrigin(0.5);
-    const settingsBtn = new Button(this, cx, 570, { label: 'Settings', width: 220, height: 40, onActivate: () => this.openSettings() });
-    const journeysBtn = new Button(this, cx, 620, { label: 'Journeys…', width: 220, height: 40, onActivate: () => this.openSlots() });
-    const order = canContinue ? [cont, play, settingsBtn, journeysBtn] : [play, cont, settingsBtn, journeysBtn];
+    const settingsBtn = new Button(this, cx - 240, 590, { label: 'Settings', width: 220, height: 40, onActivate: () => this.openSettings() });
+    const journeysBtn = new Button(this, cx, 590, { label: 'Journeys…', width: 220, height: 40, onActivate: () => this.openSlots() });
+    const recordsBtn = new Button(this, cx + 240, 590, { label: 'Records', width: 220, height: 40, onActivate: () => this.openRecords() });
+    const order = canContinue ? [cont, play, settingsBtn, journeysBtn, recordsBtn] : [play, cont, settingsBtn, journeysBtn, recordsBtn];
     this.list = new ButtonList(this, order);
     this.settingsPanel = new SettingsPanel(this, () => {
       // The menu was drawn with the old text style: redraw it if contrast or text size changed.
@@ -75,14 +81,22 @@ export class Menu extends Phaser.Scene {
     });
     this.slotsPanel = new SlotsPanel(
       this,
-      (_slot, load) => this.startGame(load),
+      (_slot, load) => (load ? this.startGame(true) : this.openNewJourney()),
       // Slots may have changed (deleted, switched): rebuild the menu so Continue reflects it.
       () => this.scene.restart(),
     );
     const esc = oncePerKeyEvent((e: KeyboardEvent) => {
       if (e.code !== 'Escape') return;
       if (this.settingsPanel?.isOpen) this.settingsPanel.close();
+      else if (this.journeyPanel?.isOpen) this.journeyPanel.close();
       else if (this.slotsPanel?.isOpen) this.slotsPanel.close();
+      else if (this.recordsPanel?.isOpen) this.recordsPanel.close();
+    });
+    const data = getGameData();
+    // Back from setup returns to a fresh menu (it may have been opened from Journeys).
+    this.journeyPanel = new NewJourneyPanel(this, data.difficulty, (setup) => this.startGame(false, setup), () => this.scene.restart());
+    this.recordsPanel = new RecordsPanel(this, data.achievements, () => {
+      this.list = new ButtonList(this, order);
     });
     this.input.keyboard?.on('keydown', esc);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.input.keyboard?.off('keydown', esc));
@@ -109,10 +123,24 @@ export class Menu extends Phaser.Scene {
       'Start new',
       (ok) => {
         this.dialog = null;
-        if (ok) this.startGame(false);
+        if (ok) this.openNewJourney();
         else this.scene.restart();
       },
     );
+  }
+
+  /** New journey setup: seed, difficulty, challenge modifiers, opt-in permadeath. */
+  private openNewJourney(): void {
+    this.list?.destroy();
+    this.list = null;
+    if (this.slotsPanel?.isOpen) this.slotsPanel.hide();
+    this.journeyPanel?.open();
+  }
+
+  private openRecords(): void {
+    this.list?.destroy();
+    this.list = null;
+    this.recordsPanel?.open();
   }
 
   private openSlots(): void {
@@ -131,12 +159,13 @@ export class Menu extends Phaser.Scene {
     this.settingsPanel?.open();
   }
 
-  private startGame(load: boolean): void {
+  private startGame(load: boolean, setup?: JourneySetup): void {
     if (this.starting) return;
     this.starting = true;
     this.input.enabled = false;
+    const data = load ? { load } : { load, rules: setup?.rules, ...(setup?.seed !== null && setup?.seed !== undefined ? { seed: setup.seed } : {}) };
     this.cameras.main.fadeOut(300, 4, 10, 9);
-    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => this.scene.start(SCENES.world, { load }));
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => this.scene.start(SCENES.world, data));
   }
 
   private spawnFireflies(): void {

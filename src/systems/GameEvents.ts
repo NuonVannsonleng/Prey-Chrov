@@ -144,6 +144,8 @@ export interface GameEventMap {
   'ambience': AmbienceLevels;
   /** M16: a short original music stinger. */
   'music': MusicId;
+  /** M17: an achievement was earned (shown in its own banner, never over a toast). */
+  'achievement': { name: string; description: string };
   /** Pause/menus: silence ambience loops. */
   'audio:duck': boolean;
   /** The game was saved (autosave, pause or sleep). */

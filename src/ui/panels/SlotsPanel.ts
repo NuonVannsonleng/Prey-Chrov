@@ -66,6 +66,13 @@ export class SlotsPanel {
     this.onClose();
   }
 
+  /** Hides the panel without the close callback (another panel takes over). */
+  hide(): void {
+    this.root.setVisible(false);
+    this.list?.destroy();
+    this.list = null;
+  }
+
   /** The row buttons for a slot (tests). */
   rowFor(slot: number): { main: Button; del: Button } | undefined {
     return this.rows[slot - 1];

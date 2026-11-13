@@ -126,6 +126,8 @@ export interface SaveData {
     puzzles: string[];
     markers: Array<{ x: number; y: number; kind: 'pin' | 'note'; text: string }>;
   };
+  /** M17: journey rules (difficulty, modifiers, permadeath, content); parsed by the World. Absent = pre-M17 save. */
+  rules?: unknown;
   /** M15: set-piece progress. */
   setpieces: { tuskerDefeated: boolean; tuskerRumour: boolean; stormDone: boolean; blightCleared: boolean };
   /** M14: side stories, story flags and the epilogue lines they add. */
@@ -311,6 +313,7 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
     }),
     openedChests: (Array.isArray(rec['openedChests']) ? rec['openedChests'] : []).filter((o): o is string => typeof o === 'string'),
     ambushNight: Math.floor(finite(rec['ambushNight'], -1)),
+    rules: isRec(rec['rules']) ? rec['rules'] : undefined,
     setpieces: ((sp: unknown) => {
       const r = isRec(sp) ? sp : {};
       return { tuskerDefeated: r['tuskerDefeated'] === true, tuskerRumour: r['tuskerRumour'] === true, stormDone: r['stormDone'] === true, blightCleared: r['blightCleared'] === true };

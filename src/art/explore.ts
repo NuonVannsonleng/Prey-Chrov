@@ -160,7 +160,7 @@ function drawStones(ctx: Ctx, ox: number): void {
 }
 
 export const LANDMARK_SIZE = { w: 112, h: 120 } as const;
-export const LANDMARK_FRAMES = ['great_fig', 'termite_mound', 'split_boulder'] as const;
+export const LANDMARK_FRAMES = ['great_fig', 'termite_mound', 'split_boulder', 'honey_tree', 'old_oxcart'] as const;
 
 function drawFig(ctx: Ctx, ox: number): void {
   const { w, h } = LANDMARK_SIZE;
@@ -231,6 +231,92 @@ function drawSplitBoulder(ctx: Ctx, ox: number): void {
   for (let i = 0; i < 5; i++) ellipse(ctx, ox + w / 2 - 6 + i * 3, h - 10, 3, 2, hex(0x4f9a46));
 }
 
+/** M17: a tall pale forest tree with wild combs hanging from its branches. */
+function drawHoneyTree(ctx: Ctx, ox: number): void {
+  const { w, h } = LANDMARK_SIZE;
+  const cx = ox + w / 2;
+  ellipse(ctx, cx, h - 6, 24, 6, 'rgba(0,0,0,0.4)');
+  // buttressed pale trunk
+  ctx.fillStyle = hex(0xcfc6b0);
+  ctx.beginPath();
+  ctx.moveTo(cx - 16, h - 6);
+  ctx.quadraticCurveTo(cx - 7, h - 30, cx - 6, h - 96);
+  ctx.lineTo(cx + 6, h - 96);
+  ctx.quadraticCurveTo(cx + 7, h - 30, cx + 16, h - 6);
+  ctx.closePath();
+  ctx.fill();
+  px(ctx, cx + 2, h - 92, 3, 84, hex(0xa89f88));
+  // branches
+  ctx.strokeStyle = hex(0xb9b098);
+  ctx.lineWidth = 4;
+  for (const [dx, dy] of [[-34, -100], [32, -104], [-24, -84], [26, -80]] as const) {
+    ctx.beginPath();
+    ctx.moveTo(cx, h - 88);
+    ctx.lineTo(cx + dx, h + dy);
+    ctx.stroke();
+  }
+  const rng = mulberry32(4411);
+  for (let i = 0; i < 14; i++) ellipse(ctx, cx + randRange(rng, -44, 44), randRange(rng, 6, 26), 13, 9, hex(shade(0x3c6a33, rng() * 0.3 - 0.15)));
+  // hanging combs
+  for (const [dx, y, s] of [[-24, h - 82, 1], [20, h - 76, 0.8], [-12, h - 70, 0.7]] as const) {
+    ctx.fillStyle = hex(0x6b4a1e);
+    ctx.beginPath();
+    ctx.ellipse(cx + dx, y, 7 * s, 12 * s, 0, 0, Math.PI);
+    ctx.fill();
+    ctx.fillStyle = hex(0xd9a441);
+    ctx.beginPath();
+    ctx.ellipse(cx + dx, y + 2, 4 * s, 7 * s, 0, 0, Math.PI);
+    ctx.fill();
+  }
+  for (let i = 0; i < 10; i++) px(ctx, cx + randRange(rng, -36, 30), h - randRange(rng, 64, 96), 2, 2, hex(0x2a2015));
+}
+
+/** M17: a broken wooden ox-cart, one wheel fallen, half taken by vines. */
+function drawOxcart(ctx: Ctx, ox: number): void {
+  const { w, h } = LANDMARK_SIZE;
+  const cx = ox + w / 2;
+  ellipse(ctx, cx, h - 6, 46, 8, 'rgba(0,0,0,0.4)');
+  // shafts resting on the ground
+  ctx.strokeStyle = hex(0x6a4a2c);
+  ctx.lineWidth = 3;
+  for (const dy of [-2, 4]) {
+    ctx.beginPath();
+    ctx.moveTo(cx - 10, h - 30 + dy);
+    ctx.lineTo(cx - 50, h - 8 + dy);
+    ctx.stroke();
+  }
+  // tilted cart bed
+  ctx.save();
+  ctx.translate(cx + 4, h - 32);
+  ctx.rotate(0.12);
+  for (let i = 0; i < 5; i++) px(ctx, -26, -14 + i * 5, 54, 4, hex(shade(0x7a5634, (i % 2) * 0.08 - 0.04)));
+  px(ctx, -28, -20, 4, 30, hex(0x5c3f24));
+  px(ctx, 26, -20, 4, 30, hex(0x5c3f24));
+  ctx.restore();
+  // standing wheel (spoked) and fallen wheel
+  const wheel = (x: number, y: number, rx: number, ry: number) => {
+    ctx.strokeStyle = hex(0x4e3520);
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.lineWidth = 2;
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.cos(a) * rx, y + Math.sin(a) * ry);
+      ctx.stroke();
+    }
+    ellipse(ctx, x, y, 3, 3, hex(0x3a2716));
+  };
+  wheel(cx + 14, h - 22, 16, 16);
+  wheel(cx + 34, h - 8, 16, 5);
+  // vines
+  const rng = mulberry32(3131);
+  for (let i = 0; i < 18; i++) ellipse(ctx, cx + randRange(rng, -30, 36), h - randRange(rng, 8, 44), 3, 2, hex(shade(0x4f8a3e, rng() * 0.3 - 0.15)));
+}
+
 export function generateExploreTextures(scene: Phaser.Scene): void {
   const tex = createCanvasTexture(scene, TEX.ruinParts, PART_W * RUIN_PART_FRAMES.length, PART_H, (ctx) => {
     RUIN_PART_FRAMES.forEach((f, i) => {
@@ -247,10 +333,12 @@ export function generateExploreTextures(scene: Phaser.Scene): void {
     });
   });
   RUIN_PART_FRAMES.forEach((f, i) => tex.add(f, 0, i * PART_W, 0, PART_W, PART_H));
-  const lm = createCanvasTexture(scene, TEX.landmarks, LANDMARK_SIZE.w * 3, LANDMARK_SIZE.h, (ctx) => {
+  const lm = createCanvasTexture(scene, TEX.landmarks, LANDMARK_SIZE.w * LANDMARK_FRAMES.length, LANDMARK_SIZE.h, (ctx) => {
     drawFig(ctx, 0);
     drawMound(ctx, LANDMARK_SIZE.w);
     drawSplitBoulder(ctx, LANDMARK_SIZE.w * 2);
+    drawHoneyTree(ctx, LANDMARK_SIZE.w * 3);
+    drawOxcart(ctx, LANDMARK_SIZE.w * 4);
   });
   LANDMARK_FRAMES.forEach((f, i) => lm.add(f, 0, i * LANDMARK_SIZE.w, 0, LANDMARK_SIZE.w, LANDMARK_SIZE.h));
 }

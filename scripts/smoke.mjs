@@ -46,6 +46,11 @@ page.on('console', (m) => {
 });
 
 const sleep = (ms) => page.waitForTimeout(ms);
+const beginIfSetup = async () => {
+  await sleep(200);
+  const open = await page.evaluate(() => window.__preyChrov.scene.isActive('Menu') && window.__preyChrov.scene.getScene('Menu').journeyPanel?.isOpen === true);
+  if (open) await page.evaluate(() => window.__preyChrov.scene.getScene('Menu').journeyPanel.buttonFor('begin').activate());
+};
 const sceneActive = (key) => page.evaluate((k) => window.__preyChrov.scene.isActive(k), key);
 const waitScene = (key, timeout = 8000) =>
   page.waitForFunction((k) => window.__preyChrov?.scene?.isActive(k), key, { timeout }).then(
@@ -99,6 +104,7 @@ try {
   check('Play enabled, Continue disabled without save', contDisabled);
 
   await clickGame(640, 430);
+  await beginIfSetup();
   check('Play starts World + UI', (await waitScene('World')) && (await waitScene('UI')));
   await sleep(600);
   await page.screenshot({ path: `${OUT}/02-world.png` });
@@ -865,6 +871,7 @@ try {
     await sleep(300);
     // Pausing autosaves, so the menu now asks before starting a new journey.
     if (await page.evaluate(() => window.__preyChrov.scene.getScene('Menu').dialog !== null)) await clickGame(640 - 100, 360 + 45);
+    await beginIfSetup();
     const worldOk = await waitScene('World');
     await sleep(500);
     counts.push(
@@ -933,6 +940,7 @@ try {
   const menuText = await page.evaluate(() => window.__preyChrov.scene.getScene('Menu').children.list.filter((o) => o.type === 'Text').map((o) => o.text).join(' | '));
   check('corrupt save: menu explains it, Continue disabled', /damaged/.test(menuText), menuText.slice(0, 160));
   await clickGame(640, 430);
+  await beginIfSetup();
   check('corrupt save: Play still starts a journey', await waitScene('World'));
   await sleep(500);
 
@@ -2038,6 +2046,94 @@ try {
   await page.setViewportSize({ width: 1280, height: 720 });
   await sleep(400);
   check('the game scales to a resized window without cropping', box16.w <= 821 && box16.h <= 641 && Math.abs(box16.w / box16.h - 16 / 9) < 0.02 && box16.x >= 0 && box16.y >= 0, JSON.stringify(box16));
+
+  // ---- M17: journey setup, difficulty, modifiers, permadeath, records ----
+  await page.evaluate(() => localStorage.setItem('preychrov.slot', '3'));
+  await page.reload();
+  await waitScene('Menu', 15000);
+  await sleep(500);
+  const setupOpen17 = await page.evaluate(() => {
+    const m = window.__preyChrov.scene.getScene('Menu');
+    m.openNewJourney();
+    const jp = m.journeyPanel;
+    jp.setSeed('river');
+    jp.buttonFor('difficulty').activate(); // survival → hard17
+    jp.buttonFor('restless_nights').activate();
+    jp.buttonFor('permadeath').activate();
+    return { open: jp.isOpen, setup: jp.setup, label: jp.buttonFor('difficulty').text.text };
+  });
+  await page.screenshot({ path: OUT + '/63-new-journey.png' });
+  check('new journey setup offers seed, difficulty, modifiers and opt-in permadeath', setupOpen17.open && setupOpen17.setup.rules.difficulty === 'hard' && setupOpen17.setup.rules.modifiers.includes('restless_nights') && setupOpen17.setup.rules.permadeath && typeof setupOpen17.setup.seed === 'number', JSON.stringify(setupOpen17));
+  await page.evaluate(() => window.__preyChrov.scene.getScene('Menu').journeyPanel.buttonFor('begin').activate());
+  await waitScene('World', 15000);
+  await sleep(900);
+  const hard17 = await evalW7('return { rules: w.rules, seed: w.seed, fx: w.rfx, cap: w.encounters.cap(true, { ...w.encFrame, day: 4, spawnScale: 1 }), capHard: w.encounters.cap(true, { ...w.encFrame, day: 4 }) };');
+  check('the chosen seed and rules are in force (Hard + Restless Nights: more creatures, sharper eyes)', hard17.seed === setupOpen17.setup.seed && hard17.rules.difficulty === 'hard' && hard17.rules.permadeath && hard17.fx.spawnCap > 1.3 && hard17.fx.detection > 1 && hard17.capHard >= hard17.cap, JSON.stringify({ seed: hard17.seed, rules: hard17.rules, spawn: hard17.fx.spawnCap, cap: hard17.cap, capHard: hard17.capHard }));
+  await evalW7('w.save();');
+  const stored17 = await page.evaluate(() => JSON.parse(localStorage.getItem('preychrov.save.3') || '{}').rules);
+  await page.reload();
+  await waitScene('Menu', 15000);
+  await sleep(500);
+  await page.keyboard.press('Enter');
+  await waitScene('World', 15000);
+  await sleep(900);
+  const kept17 = await evalW7('return { rules: w.rules, label: w.registry.get("journeyRules") };');
+  check('saves keep the chosen rules and reloading never changes them', JSON.stringify(stored17) === JSON.stringify(kept17.rules) && /Hard/.test(kept17.label) && /permadeath/.test(kept17.label), JSON.stringify({ stored17, kept17 }));
+  // Permadeath: falling ends the journey and deletes its save; a new journey keeps the rules.
+  await evalW7('w.encounters.clear(); w.survival.stats.thirst = 0; w.survival.stats.hunger = 0; w.survival.stats.health = 0.5;');
+  const diedPd17 = await waitScene('GameOver', 12000);
+  await sleep(700);
+  const pd17 = await page.evaluate(() => ({
+    gone: localStorage.getItem('preychrov.save.3') === null,
+    text: window.__preyChrov.scene.getScene('GameOver').children.list.filter((o) => o.type === 'Text').map((o) => o.text).join(' | '),
+    loadEnabled: window.__preyChrov.scene.getScene('GameOver').children.list.filter((o) => typeof o.activate === 'function')[1].enabled,
+  }));
+  await page.screenshot({ path: OUT + '/64-permadeath.png' });
+  check('permadeath: the save is gone, loading is off and the screen says why', diedPd17 && pd17.gone && !pd17.loadEnabled && /Permadeath/.test(pd17.text), JSON.stringify({ gone: pd17.gone, loadEnabled: pd17.loadEnabled }));
+  await clickGame(640, 350);
+  await waitScene('World', 15000);
+  await sleep(900);
+  const again17 = await evalW7('return { rules: w.rules, day: w.clock.dayNumber };');
+  check('a new journey after permadeath keeps the same rules in a new world', again17.rules.difficulty === 'hard' && again17.rules.permadeath && again17.day === 1, JSON.stringify(again17));
+  // Every mode can finish the main story: the ending path is never gated by difficulty.
+  const finishOn17 = async (difficulty) => {
+    await page.reload();
+    await waitScene('Menu', 15000);
+    await sleep(400);
+    await page.evaluate((d) => {
+      const m = window.__preyChrov.scene.getScene('Menu');
+      m.openNewJourney();
+      const jp = m.journeyPanel;
+      for (let i = 0; i < 3 && jp.setup.rules.difficulty !== d; i++) jp.buttonFor('difficulty').activate();
+      jp.buttonFor('begin').activate();
+    }, difficulty);
+    await waitScene('World', 15000);
+    await sleep(900);
+    await evalW7(
+      'w.encounters.clear(); w.quest = new w.quest.constructor(w.gameData, w.gameData.tablets.map((t) => t.id), true, 5, false); w.setFlags.blightCleared = true; const inv = w.inventory.inventory; const s = inv.snapshot().map(() => null); s[0] = { item: "cooked_meat", qty: 2 }; s[1] = { item: "spirit_dust", qty: 3 }; inv.restore(s); w.inventory.selected = 0; w.inventory.broadcast(); w.offerAtHeart();',
+    );
+    const ok = await waitScene('Ending', 9000);
+    const rec = await page.evaluate(() => JSON.parse(localStorage.getItem('preychrov.records') || '{}'));
+    return { ok, rec };
+  };
+  const storyEnd17 = await finishOn17('story');
+  check('Story mode can finish the main story (ending recorded and earned)', storyEnd17.ok && (storyEnd17.rec.endings?.story ?? 0) >= 1 && storyEnd17.rec.earned?.ending_story !== undefined, JSON.stringify(storyEnd17.rec.endings));
+  const hardEnd17 = await finishOn17('hard');
+  check('Hard mode can finish the main story too', hardEnd17.ok && (hardEnd17.rec.endings?.hard ?? 0) >= 1 && hardEnd17.rec.earned?.ending_hard !== undefined, JSON.stringify(hardEnd17.rec.endings));
+  await page.reload();
+  await waitScene('Menu', 15000);
+  await sleep(400);
+  const recs17 = await page.evaluate(() => {
+    const m = window.__preyChrov.scene.getScene('Menu');
+    m.openRecords();
+    const rp = m.recordsPanel;
+    return { open: rp.isOpen, summary: rp.summary.text, first: rp.rows[0].text, hidden: rp.rows.map((r) => r.text).filter((t) => t.includes('???')).length };
+  });
+  await page.screenshot({ path: OUT + '/65-records.png' });
+  check('Records shows completion, endings per difficulty and hidden achievements as ???', recs17.open && /achievements/.test(recs17.summary) && /Story 1/.test(recs17.summary) && /Hard 1/.test(recs17.summary) && recs17.hidden >= 1, JSON.stringify(recs17));
+  await page.keyboard.press('Escape');
+  await sleep(300);
+  check('Esc closes Records back to the menu', !(await page.evaluate(() => window.__preyChrov.scene.getScene('Menu').recordsPanel.isOpen)));
 
   await page.evaluate(() => localStorage.clear());
 

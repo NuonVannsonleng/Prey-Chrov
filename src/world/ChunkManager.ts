@@ -83,6 +83,8 @@ const LANDMARK_FOOTPRINT: Record<string, { w: number; h: number }> = {
   great_fig: { w: 44, h: 16 },
   termite_mound: { w: 30, h: 12 },
   split_boulder: { w: 50, h: 14 },
+  honey_tree: { w: 26, h: 12 },
+  old_oxcart: { w: 58, h: 14 },
 };
 
 /** Ruin chest or key tablet (state — opened/read — is owned by the World). */

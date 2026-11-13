@@ -35,7 +35,7 @@ export class Pause extends Phaser.Scene {
     const seed = this.registry.get('worldSeed');
     if (typeof seed === 'number') {
       this.add
-        .text(cx, 282, `World seed ${seed}`, { fontFamily: FONTS.ui, fontSize: '14px', color: CSS.textDim })
+        .text(cx, 282, `World seed ${seed}${typeof this.registry.get('journeyRules') === 'string' ? `  ·  ${this.registry.get('journeyRules') as string}` : ''}`, { fontFamily: FONTS.ui, fontSize: '14px', color: CSS.textDim })
         .setOrigin(0.5);
     }
     const resume = new Button(this, cx, 330, { label: 'Resume', onActivate: () => this.resume() });
