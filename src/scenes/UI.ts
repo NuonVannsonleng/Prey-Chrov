@@ -254,6 +254,9 @@ export class UI extends Phaser.Scene {
           ], (id) => this.endStory(() => gameEvents.emit('story:answer', { id: o.id, accept: id === 'accept' }))),
       ),
     );
+    onSceneEvent(this, 'talk:open', (c) =>
+      this.queueStory(() => new StoryDialog(this, c.title, c.prompt, c.options, (id) => this.endStory(() => gameEvents.emit('talk:pick', { id: c.id, option: id })))),
+    );
     onSceneEvent(this, 'story:choice', (c) =>
       this.queueStory(() => new StoryDialog(this, c.title, c.prompt, c.options, (id) => this.endStory(() => gameEvents.emit('story:choose', { id: c.id, option: id })))),
     );
@@ -546,6 +549,8 @@ export class UI extends Phaser.Scene {
     this.story = null;
     this.syncModal();
     send();
+    // The answer may open the next part of a conversation at once (M20 talk): it is showing now.
+    if (this.story) return;
     if (this.storyQueue.length) this.time.delayedCall(200, () => this.nextStory());
     else gameEvents.emit('ui:story', false);
   }

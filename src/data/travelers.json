@@ -1,0 +1,151 @@
+{
+  "firstVisitDay": 2,
+  "gapDays": [2, 3],
+  "arriveHour": 8,
+  "leaveHour": 17,
+  "passage": {
+    "traveler": "river_trader",
+    "trust": 3,
+    "requires": [
+      { "item": "cooked_fish", "qty": 3 },
+      { "item": "boiled_water", "qty": 2 }
+    ],
+    "offerLabel": "Ask about the river road",
+    "offerText": "The river runs out of the trees, three days down. My boat has room for one more. Bring food and clean water for the trip, and I will pole you out.",
+    "acceptLabel": "Leave on the river road",
+    "acceptDescription": "Board the boat and leave the forest. This ends this journey.",
+    "declineLabel": "Not yet",
+    "declineDescription": "Stay in the forest a while longer. She will pass this way again.",
+    "notReadyText": "The river road? Sit and trade with me a few more times first. I like to know who rides in my boat."
+  },
+  "travelers": [
+    {
+      "id": "river_trader",
+      "name": "Sokha",
+      "nameKm": "សុខា",
+      "role": "river trader",
+      "look": "trader",
+      "where": "river",
+      "greetings": [
+        "Easy water today. I saw your smoke from the bend. Care to trade?",
+        "Another dry hull, another good morning. What do you have for me?",
+        "Careful on the bank, the mud is slick. Come, look at what I carry."
+      ],
+      "farewell": "The current waits for no one. Be well until next time.",
+      "trades": [
+        {
+          "id": "fish_for_fiber",
+          "label": "Trade fish for fiber",
+          "description": "Three raw fish for four bundles of plant fiber.",
+          "give": [{ "item": "raw_fish", "qty": 3 }],
+          "get": [{ "item": "plant_fiber", "qty": 4 }]
+        },
+        {
+          "id": "hide_for_tubes",
+          "label": "Trade hide for tubes",
+          "description": "Two hides for two bamboo tubes, good for carrying water.",
+          "give": [{ "item": "hide", "qty": 2 }],
+          "get": [{ "item": "bamboo_tube", "qty": 2 }]
+        },
+        {
+          "id": "berries_for_notes",
+          "label": "Trade berries for notes",
+          "description": "Four berries for two navigation notes.",
+          "give": [{ "item": "berries", "qty": 4 }],
+          "get": [{ "item": "nav_note", "qty": 2 }]
+        }
+      ],
+      "stories": [
+        "I have poled this river since I was twelve. My mother taught me to read the brown water and the green water.",
+        "Down at the delta there is a market where nobody asks where you slept. I carry fish sauce and news there.",
+        "You keep a good camp. If you ever tire of the trees, my boat goes where the river goes. Think on it."
+      ]
+    },
+    {
+      "id": "honey_gatherer",
+      "name": "Vibol",
+      "nameKm": "វិបុល",
+      "role": "honey gatherer",
+      "look": "gatherer",
+      "where": "clearing",
+      "greetings": [
+        "Mind the bees, friend. They are quiet today. So am I, mostly.",
+        "Ah, a face! I talk to the trees all week. Let us trade.",
+        "Smoke on the wind and a fire in the clearing. Good. I am hungry."
+      ],
+      "farewell": "The comb is waiting up in the high branches. Walk gently.",
+      "trades": [
+        {
+          "id": "berries_for_leaves",
+          "label": "Trade berries for leaves",
+          "description": "Three berries for three healing leaves.",
+          "give": [{ "item": "berries", "qty": 3 }],
+          "get": [{ "item": "healing_leaf", "qty": 3 }]
+        },
+        {
+          "id": "bamboo_for_flint",
+          "label": "Trade bamboo for flint",
+          "description": "Three bamboo for one shard of flint.",
+          "give": [{ "item": "bamboo", "qty": 3 }],
+          "get": [{ "item": "flint", "qty": 1 }]
+        },
+        {
+          "id": "fish_for_antidote",
+          "label": "Trade fish for antidote",
+          "description": "Two grilled fish for one bitter root brew.",
+          "give": [{ "item": "cooked_fish", "qty": 2 }],
+          "get": [{ "item": "antidote", "qty": 1 }]
+        }
+      ],
+      "rumor": "There is a great old tree standing alone {place}. Its trunk is wider than a hut. I rest in its shade.",
+      "stories": [
+        "Wild bees nest high up. You learn patience, or you learn to run. I learned both.",
+        "My brother used to climb with me. Now he keeps a stall in town and I keep the trees.",
+        "Once I got lost for two days. A lamp glowed between the trunks and I followed it home. I never found who lit it."
+      ]
+    },
+    {
+      "id": "mapmaker",
+      "name": "Dara",
+      "nameKm": "ដារា",
+      "role": "lowland mapmaker",
+      "look": "mapmaker",
+      "where": "any",
+      "greetings": [
+        "Forgive the ink on my hands. I am drawing the edges of this forest, and it keeps moving.",
+        "A fellow walker! Tell me, which way did the stream bend for you?",
+        "Ah, good. Someone who knows these paths. Let us trade notes, and more."
+      ],
+      "farewell": "I will draw your camp on my map. A small mark, but a true one.",
+      "trades": [
+        {
+          "id": "hide_for_notes",
+          "label": "Trade hide for notes",
+          "description": "Two hides for four navigation notes.",
+          "give": [{ "item": "hide", "qty": 2 }],
+          "get": [{ "item": "nav_note", "qty": 4 }]
+        },
+        {
+          "id": "stone_for_flint",
+          "label": "Trade stone for flint",
+          "description": "Four stones for one shard of flint.",
+          "give": [{ "item": "stone", "qty": 4 }],
+          "get": [{ "item": "flint", "qty": 1 }]
+        },
+        {
+          "id": "meat_for_bandages",
+          "label": "Trade meat for bandages",
+          "description": "Two cooked meat for two leaf bandages.",
+          "give": [{ "item": "cooked_meat", "qty": 2 }],
+          "get": [{ "item": "bandage", "qty": 2 }]
+        }
+      ],
+      "rumor": "My old survey notes speak of carved stone tablets in a ruin {place}. I never dared go closer than the ridge.",
+      "stories": [
+        "I measure the land with knotted rope and counted steps. My steps are not what they were.",
+        "My maps show the forest as empty green. Everyone who walks it knows better.",
+        "The old surveyors left a note: the forest was once cared for, and then the caring stopped. They did not write why."
+      ]
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import { DIFFICULTY_IDS, EFFECT_KEYS, type DifficultyData, type DifficultyId } from '../systems/Rules';
+import { TRAVELER_LOOKS, type TravelerLook } from '../textures';
 import { RECORD_EVENTS, type AchievementDef } from '../systems/Records';
 import {
   CREATURE_SPRITES,
@@ -330,9 +331,11 @@ export interface GameData {
   stealth: StealthConfig;
   sidequests: readonly SideQuestDef[];
   setpieces: SetPiecesConfig;
+  travelers: TravelersConfig;
 }
 
 export interface RawGameData {
+  travelers: unknown;
   difficulty: unknown;
   achievements: unknown;
   items: unknown;
@@ -649,6 +652,100 @@ function validateAchievements(p: string[], raw: unknown, tabletCount: number, si
     // Reachable within one journey where the count is capped by content.
     if (a['event'] === 'tablet_read' && ((a['count'] as number) ?? 1) > tabletCount) p.push(`achievement ${id}: only ${tabletCount} tablets exist`);
     if (a['event'] === 'side_story_completed' && ((a['count'] as number) ?? 1) > sideStoryCount * 50) p.push(`achievement ${id}: count too high`);
+  }
+}
+
+/** Items travelers never sell: quest-critical, unique set-piece rewards and anything worn or wielded. */
+const TRAVELER_NEVER_SELLS = new Set(['spirit_dust', 'tiger_fang', 'great_tusk', 'ember_lantern', 'compass']);
+const TRAVELER_NEVER_SELLS_CATEGORIES = new Set(['tool', 'gear', 'structure', 'light']);
+
+/** travelers.json (M20): visits, barter and the River Road passage. */
+function validateTravelers(p: string[], raw: unknown, items: ReadonlyMap<string, Rec>): void {
+  if (!isRec(raw)) {
+    p.push('travelers.json: must be an object');
+    return;
+  }
+  const qtyList = (where: string, v: unknown, min: number, max: number): Array<{ item: string; qty: number }> => {
+    if (!Array.isArray(v) || v.length < min || v.length > max) {
+      p.push(`${where}: needs ${min}–${max} {item, qty} entries`);
+      return [];
+    }
+    const out: Array<{ item: string; qty: number }> = [];
+    for (const e of v) {
+      if (!isRec(e) || !items.has(e['item'] as string) || !isInt(e['qty']) || num(e['qty']) < 1 || num(e['qty']) > 20) p.push(`${where}: unknown item or bad qty ${JSON.stringify(e)}`);
+      else out.push({ item: e['item'] as string, qty: num(e['qty']) });
+    }
+    return out;
+  };
+  if (!isInt(raw['firstVisitDay']) || num(raw['firstVisitDay']) < 1) p.push('travelers.firstVisitDay must be a whole number >= 1');
+  const gap = raw['gapDays'];
+  if (!Array.isArray(gap) || gap.length !== 2 || !gap.every((g) => isInt(g) && num(g) >= 1) || num(gap[0]) > num(gap[1])) p.push('travelers.gapDays must be [min, max] whole days >= 1');
+  const a = raw['arriveHour'];
+  const l = raw['leaveHour'];
+  if (!isNum(a) || !isNum(l) || num(a) < 0 || num(l) > 24 || num(a) >= num(l)) p.push('travelers: arriveHour < leaveHour within 0–24');
+  const list = Array.isArray(raw['travelers']) ? raw['travelers'] : [];
+  if (list.length < 1) p.push('travelers.travelers: at least one traveler');
+  const ids = new Set<string>();
+  // Exchange rates for the arbitrage check: rate[a][b] = most b obtainable per a given.
+  const rate = new Map<string, Map<string, number>>();
+  for (const t of list) {
+    if (!isRec(t) || !isStr(t['id']) || !/^[a-z0-9_]+$/.test(t['id'] as string)) {
+      p.push('travelers: each needs a snake_case id');
+      continue;
+    }
+    const id = t['id'] as string;
+    if (ids.has(id)) p.push(`traveler ${id}: duplicate id`);
+    ids.add(id);
+    for (const k of ['name', 'role', 'farewell']) if (!isStr(t[k])) p.push(`traveler ${id}: ${k} required`);
+    if (!TRAVELER_LOOKS.includes(t['look'] as TravelerLook)) p.push(`traveler ${id}: look must be ${TRAVELER_LOOKS.join('|')}`);
+    if (!['river', 'clearing', 'any'].includes(t['where'] as string)) p.push(`traveler ${id}: where must be river|clearing|any`);
+    const greetings = t['greetings'];
+    if (!Array.isArray(greetings) || greetings.length < 1 || !greetings.every(isStr)) p.push(`traveler ${id}: greetings required`);
+    const stories = t['stories'];
+    if (!Array.isArray(stories) || !stories.every(isStr)) p.push(`traveler ${id}: stories must be strings`);
+    if (t['rumor'] !== undefined && (!isStr(t['rumor']) || !(t['rumor'] as string).includes('{place}'))) p.push(`traveler ${id}: rumor must contain {place}`);
+    const trades = Array.isArray(t['trades']) ? t['trades'] : [];
+    // The talk dialog fits three trades beside news, passage and farewell.
+    if (trades.length < 1 || trades.length > 3) p.push(`traveler ${id}: 1–3 trades`);
+    const tradeIds = new Set<string>();
+    for (const tr of trades) {
+      if (!isRec(tr) || !isStr(tr['id']) || !isStr(tr['label']) || !isStr(tr['description'])) {
+        p.push(`traveler ${id}: each trade needs id, label and description`);
+        continue;
+      }
+      if (tradeIds.has(tr['id'] as string)) p.push(`traveler ${id}: duplicate trade ${String(tr['id'])}`);
+      tradeIds.add(tr['id'] as string);
+      const give = qtyList(`traveler ${id}.${String(tr['id'])}.give`, tr['give'], 1, 2);
+      const get = qtyList(`traveler ${id}.${String(tr['id'])}.get`, tr['get'], 1, 2);
+      for (const g of get) {
+        const def = items.get(g.item);
+        if (TRAVELER_NEVER_SELLS.has(g.item) || TRAVELER_NEVER_SELLS_CATEGORIES.has(def?.['category'] as string)) p.push(`traveler ${id}: never sells ${g.item}`);
+      }
+      for (const gv of give)
+        for (const gt of get) {
+          const row = rate.get(gv.item) ?? new Map<string, number>();
+          row.set(gt.item, Math.max(row.get(gt.item) ?? 0, gt.qty / gv.qty));
+          rate.set(gv.item, row);
+        }
+    }
+  }
+  // No chain of trades may turn something into more of itself (a max-product cycle above 1).
+  const nodes = [...new Set([...rate.keys(), ...[...rate.values()].flatMap((r) => [...r.keys()])])];
+  const best = new Map(nodes.map((x) => [x, new Map(nodes.map((y) => [y, rate.get(x)?.get(y) ?? 0]))]));
+  for (const k of nodes)
+    for (const i of nodes)
+      for (const j of nodes) {
+        const via = (best.get(i)?.get(k) ?? 0) * (best.get(k)?.get(j) ?? 0);
+        if (via > (best.get(i)?.get(j) ?? 0)) best.get(i)?.set(j, Math.min(via, 1e6));
+      }
+  for (const n of nodes) if ((best.get(n)?.get(n) ?? 0) > 1.0001) p.push(`travelers: trades can turn ${n} into more ${n}`);
+  const ps = raw['passage'];
+  if (!isRec(ps)) p.push('travelers.passage required');
+  else {
+    if (!ids.has(ps['traveler'] as string)) p.push('travelers.passage.traveler must be a traveler id');
+    if (!isInt(ps['trust']) || num(ps['trust']) < 1 || num(ps['trust']) > 10) p.push('travelers.passage.trust must be 1..10');
+    qtyList('travelers.passage.requires', ps['requires'], 1, 3);
+    for (const k of ['offerLabel', 'offerText', 'acceptLabel', 'acceptDescription', 'declineLabel', 'declineDescription', 'notReadyText']) if (!isStr(ps[k])) p.push(`travelers.passage.${k} required`);
   }
 }
 
@@ -1022,6 +1119,9 @@ function validateM6(p: string[], raw: RawGameData, tablets: Rec[], quests: Rec[]
     const ep = e['epilogue'];
     if (!Array.isArray(ep) || ep.length < 3 || ep.length > 8 || !ep.every(isStr)) p.push('ending.epilogue needs 3–8 lines');
     if (!Array.isArray(e['credits']) || !(e['credits'] as unknown[]).every(isStr)) p.push('ending.credits must be strings');
+    const river = e['river'];
+    const lines = (v: unknown) => Array.isArray(v) && v.length >= 3 && v.length <= 8 && v.every(isStr);
+    if (!isRec(river) || !isStr(river['title']) || !lines(river['epilogueUnrestored']) || !lines(river['epilogueRestored'])) p.push('ending.river needs a title and two 3–8 line epilogues');
   }
   const main = quests.find((q) => q['id'] === 'the_five_tablets');
   const steps = main && Array.isArray(main['steps']) ? (main['steps'] as Rec[]) : [];
@@ -1061,6 +1161,7 @@ export function validateGameData(raw: RawGameData): GameData {
   validateSetPieces(p, raw.setpieces, enemies);
   validateDifficulty(p, raw.difficulty);
   validateAchievements(p, raw.achievements, tablets.length, Array.isArray(raw.sidequests) ? raw.sidequests.length : 0);
+  validateTravelers(p, raw.travelers, new Map(items.map((i) => [i['id'] as string, i])));
 
   if (p.length) throw new DataValidationError(p);
 
@@ -1088,6 +1189,7 @@ export function validateGameData(raw: RawGameData): GameData {
     setpieces: raw.setpieces as SetPiecesConfig,
     difficulty: raw.difficulty as DifficultyData,
     achievements: (raw.achievements as { achievements: AchievementDef[] }).achievements,
+    travelers: raw.travelers as TravelersConfig,
   };
 
   // Reachability: every item must be gatherable or craftable from gatherable items.
@@ -1350,6 +1452,53 @@ export interface LoreConfig {
 
 // ---------- Ending (M8) ----------
 
+/** travelers.json (M20). */
+export interface ItemQty {
+  item: string;
+  qty: number;
+}
+export interface TravelerTrade {
+  id: string;
+  label: string;
+  description: string;
+  give: ItemQty[];
+  get: ItemQty[];
+}
+export interface TravelerDef {
+  id: string;
+  name: string;
+  nameKm?: string;
+  role: string;
+  look: TravelerLook;
+  where: 'river' | 'clearing' | 'any';
+  greetings: string[];
+  farewell: string;
+  trades: TravelerTrade[];
+  /** News with a {place} placeholder; the place is marked on the map. */
+  rumor?: string;
+  /** Told after the 1st, 2nd, 3rd … trade with this traveler. */
+  stories: string[];
+}
+export interface TravelersConfig {
+  firstVisitDay: number;
+  gapDays: [number, number];
+  arriveHour: number;
+  leaveHour: number;
+  passage: {
+    traveler: string;
+    trust: number;
+    requires: ItemQty[];
+    offerLabel: string;
+    offerText: string;
+    acceptLabel: string;
+    acceptDescription: string;
+    declineLabel: string;
+    declineDescription: string;
+    notReadyText: string;
+  };
+  travelers: TravelerDef[];
+}
+
 /** ending.json: the Heart of the Forest finale (single object). */
 export interface EndingConfig {
   /** Item category accepted as the offering at the Heart Tree. */
@@ -1366,5 +1515,7 @@ export interface EndingConfig {
   };
   /** Ending sequence lines shown one after another (3–8). */
   epilogue: string[];
+  /** M20: The River Road — leaving the forest with the river trader. */
+  river: { title: string; epilogueUnrestored: string[]; epilogueRestored: string[] };
   credits: string[];
 }

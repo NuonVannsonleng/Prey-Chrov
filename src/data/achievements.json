@@ -23,6 +23,10 @@
     { "id": "ending_story", "name": "Home, Gently", "description": "Reach the ending on Story difficulty.", "event": "ending_reached", "difficulty": "story" },
     { "id": "ending_survival", "name": "The Forest Settles", "description": "Reach the ending on Survival difficulty.", "event": "ending_reached", "difficulty": "survival" },
     { "id": "ending_hard", "name": "Against the Dark", "description": "Reach the ending on Hard difficulty.", "event": "ending_reached", "difficulty": "hard" },
-    { "id": "ending_permadeath", "name": "One Life", "description": "Reach the ending with permadeath on.", "event": "ending_reached", "permadeath": true, "hidden": true }
+    { "id": "ending_permadeath", "name": "One Life", "description": "Reach the ending with permadeath on.", "event": "ending_reached", "permadeath": true, "hidden": true },
+    { "id": "stranger_on_path", "name": "A Stranger on the Path", "description": "Meet a traveler passing through the forest.", "event": "traveler_met", "count": 1 },
+    { "id": "first_barter", "name": "Fair Barter", "description": "Trade with a traveler.", "event": "traveler_trade", "count": 1 },
+    { "id": "good_trading", "name": "Good Neighbours on the Road", "description": "Make ten trades with travelers across your journeys.", "event": "traveler_trade", "count": 10 },
+    { "id": "ending_river", "name": "The River Road", "description": "Leave the forest downriver with the river trader.", "event": "ending_river", "count": 1 }
   ]
 }

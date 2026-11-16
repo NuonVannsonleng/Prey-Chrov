@@ -28,6 +28,7 @@ import { generateRuinTextures } from './ruins';
 import { generateHeartTextures } from './heart';
 import { generateCookingTextures } from './cooking';
 import { generateExploreTextures } from './explore';
+import { generateTravelerTextures } from './travelers';
 
 /** Draws every placeholder texture on canvases. Keys and frame layout live in textures.ts. */
 
@@ -553,6 +554,7 @@ export function generateAllTextures(scene: Phaser.Scene): void {
   generateHeartTextures(scene);
   generateCookingTextures(scene);
   generateExploreTextures(scene);
+  generateTravelerTextures(scene);
 
   const crisp = [
     TEX.tiles,

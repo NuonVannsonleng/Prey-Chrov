@@ -47,6 +47,7 @@ export class Button extends Phaser.GameObjects.Container {
       .text(0, 0, opts.label, { fontFamily: FONTS.ui, fontSize: `${opts.fontSize ?? 24}px`, fontStyle: '600', color: COLORS.text })
       .setOrigin(0.5);
     this.add([this.bg, this.text]);
+    this.fitLabel();
     this.setSize(this.btnW, this.btnH);
     this.setInteractive({ useHandCursor: true });
 
@@ -87,7 +88,15 @@ export class Button extends Phaser.GameObjects.Container {
 
   setLabel(label: string): this {
     this.text.setText(label);
+    this.fitLabel();
     return this;
+  }
+
+  /** Long labels (data-driven text, large fonts) shrink to fit instead of spilling out. */
+  private fitLabel(): void {
+    this.text.setScale(1);
+    const room = this.btnW - 16;
+    if (this.text.width > room) this.text.setScale(room / this.text.width);
   }
 
   setEnabled(enabled: boolean): this {

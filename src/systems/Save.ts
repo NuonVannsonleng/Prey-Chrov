@@ -128,6 +128,8 @@ export interface SaveData {
   };
   /** M17: journey rules (difficulty, modifiers, permadeath, content); parsed by the World. Absent = pre-M17 save. */
   rules?: unknown;
+  /** M20: travelers met, trust and the visit in progress; parsed by the World. */
+  travelers?: unknown;
   /** M15: set-piece progress. */
   setpieces: { tuskerDefeated: boolean; tuskerRumour: boolean; stormDone: boolean; blightCleared: boolean };
   /** M14: side stories, story flags and the epilogue lines they add. */
@@ -314,6 +316,7 @@ export function parseSave(raw: string | null): { data: SaveData } | { error: Sav
     openedChests: (Array.isArray(rec['openedChests']) ? rec['openedChests'] : []).filter((o): o is string => typeof o === 'string'),
     ambushNight: Math.floor(finite(rec['ambushNight'], -1)),
     rules: isRec(rec['rules']) ? rec['rules'] : undefined,
+    travelers: isRec(rec['travelers']) ? rec['travelers'] : undefined,
     setpieces: ((sp: unknown) => {
       const r = isRec(sp) ? sp : {};
       return { tuskerDefeated: r['tuskerDefeated'] === true, tuskerRumour: r['tuskerRumour'] === true, stormDone: r['stormDone'] === true, blightCleared: r['blightCleared'] === true };

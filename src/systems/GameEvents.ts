@@ -119,6 +119,9 @@ export interface GameEventMap {
   'ui:story': boolean;
   /** M19: controller LB/RB — previous / next hotbar slot. */
   'hotbar:cycle': number;
+  /** M20: a conversation (traveler talk, the River Road offer): must be answered. */
+  'talk:open': { id: string; title: string; prompt: string; options: Array<{ id: string; label: string; description: string; enabled: boolean; note?: string }> };
+  'talk:pick': { id: string; option: string };
   'story:choose': { id: string; option: string };
   'sidequests:changed': { quests: SideQuestView[]; memories: Array<{ title: string; text: string }> };
   /** Outpost flags for the minimap and journal. */

@@ -2438,6 +2438,128 @@ try {
     await ctx.close();
   }
 
+  // ---- M20: travelers, barter, news and The River Road ----
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    const tv = await ctx.newPage();
+    const tvErr = [];
+    tv.on('pageerror', (e) => tvErr.push(String(e)));
+    tv.on('console', (m) => m.type() === 'error' && tvErr.push(m.text()));
+    await tv.goto(url);
+    await tv.waitForFunction(() => window.__preyChrov?.scene.isActive('Menu'), null, { timeout: 20000 });
+    await tv.waitForTimeout(400);
+    await tv.evaluate(() => {
+      const m = window.__preyChrov.scene.getScene('Menu');
+      m.openNewJourney();
+      m.journeyPanel.buttonFor('begin').activate();
+    });
+    await tv.waitForFunction(() => window.__preyChrov.scene.isActive('World') && window.__preyChrov.scene.isActive('UI'), null, { timeout: 20000 });
+    await tv.waitForTimeout(800);
+    const ev = (code, arg) => tv.evaluate(([c, a]) => new Function('w', 'ui', 'arg', c)(window.__preyChrov.scene.getScene('World'), window.__preyChrov.scene.getScene('UI'), a), [code, arg]);
+    // Nobody visits on day 1; find the first visit (morning) by walking the calendar.
+    const day1 = await ev('w.clock.totalSeconds = 9 * 20; w.updateTravelers(); return w.travelerDef ? w.travelerDef.id : null;');
+    const found = await ev(
+      'for (let d = 2; d <= 12; d++) { w.clock.totalSeconds = (d - 1) * 480 + 9 * 20; w.updateTravelers(); if (w.travelerDef) return { day: d, id: w.travelerDef.id, spot: w.travelerSpot, sprite: !!w.travelerSprite }; } return null;',
+    );
+    check('travelers: none on day 1; a traveler arrives on a later morning and stands on dry ground', day1 === null && found !== null && found.sprite && found.day >= 2, JSON.stringify(found));
+    if (found) {
+      await ev('w.player.body.reset(w.travelerSpot.x, w.travelerSpot.y + 30); w.player.facingVec.x = 0; w.player.facingVec.y = -1;');
+      await tv.waitForTimeout(2600);
+      await tv.screenshot({ path: `${OUT}/m20-traveler.png` });
+      const target = await ev('return { kind: w.interaction.current.kind, prompt: w.lastPrompt };');
+      check('travelers: walking up shows "Talk to <name>"', target.kind === 'traveler' && /Talk to/.test(target.prompt), JSON.stringify(target));
+      // Give exactly what the first trade asks for, talk, and trade.
+      const trade = await ev(
+        'const t = w.travelerDef; const tr = t.trades[0]; for (const g of tr.give) w.inventory.add(g.item, g.qty); w.inventory.broadcast(); return { label: tr.label, give: tr.give, get: tr.get, before: tr.get.map((g) => w.inventory.inventory.count(g.item)) };',
+      );
+      await ev('w.openTalk();');
+      await tv.waitForTimeout(300);
+      await tv.screenshot({ path: `${OUT}/m20-talk.png` });
+      const opts = await ev('return ui.story ? ui.story.root.list.filter((o) => typeof o.activate === "function").map((b) => ({ label: b.text.text, enabled: b.enabled })) : null;');
+      const pick = (label) => ev('const b = ui.story && ui.story.root.list.find((o) => typeof o.activate === "function" && o.text.text === arg); if (!b) return false; b.activate(); return true;', label);
+      const picked = await pick(trade.label);
+      await tv.waitForTimeout(300);
+      const after = await ev(
+        'const v = w.travelers.visit; return { got: arg.get.map((g) => w.inventory.inventory.count(g.item)), gave: arg.give.map((g) => w.inventory.inventory.count(g.item)), trust: w.travelers.trust[w.travelerDef.id], traded: v.traded.length, open: !!ui.story, storyOpen: w.storyOpen };',
+        trade,
+      );
+      const gotOk = trade.get.every((g, i) => after.got[i] >= trade.before[i] + g.qty) && after.gave.every((n) => n === 0);
+      check('travelers: a trade swaps the goods, adds trust and the conversation continues', opts && opts.some((o) => o.label === trade.label && o.enabled) && picked && gotOk && after.trust === 1 && after.traded === 1 && after.open && after.storyOpen, JSON.stringify({ opts, after }));
+      const again = await ev('return ui.story.root.list.filter((o) => typeof o.activate === "function").map((b) => ({ label: b.text.text, enabled: b.enabled }));');
+      check('travelers: each trade once per visit (shown, but unavailable)', again.some((o) => o.label === trade.label && !o.enabled));
+      const hasNews = again.some((o) => o.label === 'Ask for news');
+      if (hasNews) {
+        const markersBefore = await ev('return w.markers.length;');
+        await pick('Ask for news');
+        await tv.waitForTimeout(300);
+        const news = await ev('return { markers: w.markers.length, told: w.travelers.visit.rumorTold, prompt: ui.story ? ui.story.root.list.filter((o) => o.type === "Text").map((t) => t.text).join(" ") : "" };');
+        check('travelers: news marks a place on the map', news.told && (news.markers === markersBefore + 1 || /nothing new/.test(news.prompt)), JSON.stringify(news));
+      } else check('travelers: news marks a place on the map (this traveler has no news — river trader)', true, found.id);
+      await pick('Farewell');
+      await tv.waitForTimeout(300);
+      const closed = await ev('return { open: !!ui.story, storyOpen: w.storyOpen };');
+      check('travelers: Farewell ends the conversation and play resumes', !closed.open && !closed.storyOpen, JSON.stringify(closed));
+      // Save and reload mid-visit: the same traveler stands in the same place with the same trades used.
+      const savedVisit = await ev('w.save(); return { ...w.travelers.visit };');
+      await tv.reload();
+      await tv.waitForFunction(() => window.__preyChrov?.scene.isActive('Menu'), null, { timeout: 20000 });
+      await tv.waitForTimeout(300);
+      await tv.evaluate(() => window.__preyChrov.scene.getScene('Menu').startGame(true));
+      await tv.waitForFunction(() => window.__preyChrov.scene.isActive('World'), null, { timeout: 20000 });
+      await tv.waitForTimeout(1500);
+      const reloaded = await ev('return { visit: w.travelers.visit, sprite: !!w.travelerSprite, trust: { ...w.travelers.trust } };');
+      check(
+        'travelers: a visit survives save and reload (same place, same trades used, trust kept)',
+        reloaded.sprite && reloaded.visit && reloaded.visit.x === savedVisit.x && reloaded.visit.traded.length === savedVisit.traded.length && Object.values(reloaded.trust).includes(1),
+        JSON.stringify(reloaded),
+      );
+      // At dusk the traveler moves on.
+      await ev('w.clock.totalSeconds = (arg - 1) * 480 + 18 * 20; w.updateTravelers();', found.day);
+      await tv.waitForTimeout(200);
+      const gone = await ev('return { visit: w.travelers.visit, def: w.travelerDef };');
+      check('travelers: they move on at dusk', gone.visit === null && gone.def === null);
+    }
+    // The River Road: find the river trader, earn trust, bring provisions, leave.
+    const trader = await ev(
+      'const id = w.gameData.travelers.passage.traveler; for (let d = 2; d <= 40; d++) { w.clock.totalSeconds = (d - 1) * 480 + 9 * 20; w.updateTravelers(); if (w.travelerDef && w.travelerDef.id === id) return d; } return null;',
+    );
+    if (trader) {
+      const notReady = await ev(
+        'const id = w.travelerDef.id; w.travelers.trust[id] = 0; w.player.body.reset(w.travelerSpot.x, w.travelerSpot.y + 30); w.openTalk(); const b = ui.story.root.list.find((o) => typeof o.activate === "function" && o.text.text === w.gameData.travelers.passage.offerLabel); return b ? b.enabled : null;',
+      );
+      await ev('const b = ui.story.root.list.find((o) => typeof o.activate === "function" && o.text.text === "Farewell"); b.activate();');
+      await tv.waitForTimeout(300);
+      await ev('const ps = w.gameData.travelers.passage; w.travelers.trust[w.travelerDef.id] = ps.trust; for (const r of ps.requires) w.inventory.add(r.item, r.qty); w.inventory.broadcast(); w.openTalk();');
+      await tv.waitForTimeout(300);
+      await ev('const b = ui.story.root.list.find((o) => typeof o.activate === "function" && o.text.text === w.gameData.travelers.passage.offerLabel); b.activate();');
+      await tv.waitForTimeout(300);
+      const offer = await ev('return ui.story ? ui.story.root.list.filter((o) => typeof o.activate === "function").map((b) => ({ label: b.text.text, enabled: b.enabled })) : null;');
+      await ev('const b = ui.story.root.list.find((o) => typeof o.activate === "function" && o.text.text === w.gameData.travelers.passage.acceptLabel); b.activate();');
+      const ended = await tv.waitForFunction(() => window.__preyChrov.scene.isActive('Ending'), null, { timeout: 15000 }).then(
+        () => true,
+        () => false,
+      );
+      await tv.waitForTimeout(600);
+      for (let i = 0; i < 8; i++) {
+        await tv.keyboard.press('Space');
+        await tv.waitForTimeout(150);
+      }
+      await tv.waitForTimeout(1800);
+      const endText = await tv.evaluate(() => window.__preyChrov.scene.getScene('Ending').children.list.filter((o) => o.type === 'Text').map((o) => o.text).join(' | '));
+      const endButtons = await tv.evaluate(() => window.__preyChrov.scene.getScene('Ending').children.list.filter((o) => typeof o.activate === 'function').map((b) => b.text.text));
+      const rec = await tv.evaluate(() => JSON.parse(localStorage.getItem('preychrov.records') ?? '{}'));
+      await tv.screenshot({ path: `${OUT}/m20-river-road.png` });
+      check('River Road: passage waits for trust, then the trader offers it', notReady === false && offer && offer.some((o) => o.enabled), JSON.stringify({ notReady, offer }));
+      check(
+        'River Road: leaving ends the journey with its own epilogue and records it',
+        ended && /The River Road/.test(endText) && endButtons.length === 1 && /Main menu/.test(endButtons[0] ?? '') && (rec.counters?.ending_river ?? 0) >= 1 && rec.earned?.ending_river !== undefined,
+        JSON.stringify({ ended, endButtons, river: rec.counters?.ending_river }),
+      );
+    } else check('River Road: the river trader visits within 40 days', false);
+    check('travelers session: no errors', tvErr.length === 0, tvErr.slice(0, 3).join(' | '));
+    await ctx.close();
+  }
+
   await page.evaluate(() => localStorage.clear());
 
   check('no console errors', errors.length === 0, errors.slice(0, 5).join(' | '));

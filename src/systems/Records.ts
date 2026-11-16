@@ -25,6 +25,10 @@ export const RECORD_EVENTS = [
   'skill_level',
   'shrine_restored',
   'creature_defeated',
+  // M20
+  'traveler_met',
+  'traveler_trade',
+  'ending_river',
 ] as const;
 export type RecordEvent = (typeof RECORD_EVENTS)[number];
 

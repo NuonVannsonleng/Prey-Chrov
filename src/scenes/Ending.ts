@@ -17,6 +17,10 @@ export interface EndingData {
   saved: boolean;
   /** M14: epilogue lines added by side-story choices. */
   storyLines?: string[];
+  /** M20: which ending — the Heart Tree (default) or The River Road. */
+  kind?: 'heart' | 'river';
+  /** M20 (River Road): whether the Heart Tree had been restored before leaving. */
+  restored?: boolean;
 }
 
 const LINE_MS = 3600;
@@ -44,7 +48,9 @@ export class Ending extends Phaser.Scene {
   create(data: EndingData): void {
     this.stats = data;
     // Side-story choices add their own lines before the final one.
-    const base = [...getGameData().ending.epilogue];
+    const ending = getGameData().ending;
+    const river = data.kind === 'river';
+    const base = river ? [...(data.restored ? ending.river.epilogueRestored : ending.river.epilogueUnrestored)] : [...ending.epilogue];
     const last = base.pop();
     this.lines = [...base, ...(data.storyLines ?? []), ...(last ? [last] : [])];
     this.index = -1;
@@ -107,7 +113,8 @@ export class Ending extends Phaser.Scene {
     const s = this.stats;
     const ending = getGameData().ending;
     this.add.text(cx, 70, 'ព្រៃជ្រៅ', { fontFamily: FONTS.title, fontSize: '54px', color: CSS.gold, padding: { top: 26, bottom: 14 } }).setOrigin(0.5);
-    this.add.text(cx, 132, 'The promise is renewed', { fontFamily: FONTS.ui, fontSize: '24px', fontStyle: '700', color: CSS.text }).setOrigin(0.5);
+    const river = s.kind === 'river';
+    this.add.text(cx, 132, river ? ending.river.title : 'The promise is renewed', { fontFamily: FONTS.ui, fontSize: '24px', fontStyle: '700', color: CSS.text }).setOrigin(0.5);
     this.add
       .text(
         cx,
@@ -134,14 +141,22 @@ export class Ending extends Phaser.Scene {
     // Buttons arrive after a beat so Space presses used to skip the epilogue can't pick one by accident.
     this.time.delayedCall(1400, () => {
       const buttons: Button[] = [];
-      if (s.saved) {
+      if (river) {
+        // The journey ended downriver; the last save (before leaving) is kept as it was.
+        if (s.saved) {
+          this.add
+            .text(cx, GAME_HEIGHT - 150, 'Your last save is kept: Continue on the menu returns you to the forest, before you left.', { fontFamily: FONTS.ui, fontSize: '14px', color: CSS.textDim })
+            .setOrigin(0.5);
+        }
+        buttons.push(new Button(this, cx, GAME_HEIGHT - 90, { label: 'Main menu', width: 300, onActivate: () => this.go(SCENES.menu) }));
+      } else if (s.saved) {
         buttons.push(new Button(this, cx - 170, GAME_HEIGHT - 90, { label: 'Continue surviving', width: 300, onActivate: () => this.go(SCENES.world, { load: true }) }));
       } else {
         this.add
           .text(cx, GAME_HEIGHT - 150, 'Your journey could not be saved (browser storage is unavailable or full), so it cannot be continued.', { fontFamily: FONTS.ui, fontSize: '14px', color: '#d9644a' })
           .setOrigin(0.5);
       }
-      buttons.push(new Button(this, s.saved ? cx + 170 : cx, GAME_HEIGHT - 90, { label: 'Main menu', width: 300, onActivate: () => this.go(SCENES.menu) }));
+      if (!river) buttons.push(new Button(this, s.saved ? cx + 170 : cx, GAME_HEIGHT - 90, { label: 'Main menu', width: 300, onActivate: () => this.go(SCENES.menu) }));
       for (const b of buttons) {
         b.setAlpha(0);
         this.tweens.add({ targets: b, alpha: 1, duration: 400 });

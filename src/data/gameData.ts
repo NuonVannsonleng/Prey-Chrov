@@ -21,6 +21,7 @@ import structures from './structures.json';
 import survival from './survival.json';
 import difficulty from './difficulty.json';
 import achievements from './achievements.json';
+import travelers from './travelers.json';
 import { validateGameData, type GameData, type ItemDef } from './schema';
 
 /** Raw JSON bundle (also used by tests). */
@@ -48,6 +49,7 @@ export const RAW_GAME_DATA = {
   setpieces,
   difficulty,
   achievements,
+  travelers,
 };
 
 let cached: GameData | null = null;

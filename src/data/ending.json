@@ -16,6 +16,23 @@
     "The roots loosen their grip, and the forest opens a little, as if to let you breathe.",
     "The jungle is still deep, still alive, and still wild. You may stay, and keep walking its paths with care."
   ],
+  "river": {
+    "title": "The River Road",
+    "epilogueUnrestored": [
+      "The boat slides out from under the trees, and the green walls fall away behind you. The river is wide here, and the sky is larger than you remember.",
+      "The forest's wound is still open. The Ap and Arak still wander restless in the dark, and the shrines wait for better days.",
+      "You look back once. The canopy hums like something drawing breath, and you feel no shame in leaving.",
+      "Someone else may yet walk in, read the stones, and listen. The forest is patient.",
+      "The current carries you toward lamplit markets and ordinary mornings. You carry the forest's quiet with you, unfinished."
+    ],
+    "epilogueRestored": [
+      "The boat slides out from under the trees, and the river opens wide around you. Behind you the canopy stands calm and unbroken.",
+      "The Heart Tree is at peace. The Neak Ta rest at their shrines, and the Ap and Arak have faded into the dark.",
+      "You look back once. A warm wind follows the boat to the bend, as if to see you safely off.",
+      "The trader poles in easy silence. You have no need to speak.",
+      "Downriver, the lamps of the market wait. You carry the forest with you, the way you carry a good memory, and it is light."
+    ]
+  },
   "credits": [
     "Prey Chrov (ព្រៃជ្រៅ) — a work of fiction",
     "Code, art and sound generated for this prototype", "Fonts: Moul and Kantumruy Pro (SIL Open Font License 1.1), bundled with the game",

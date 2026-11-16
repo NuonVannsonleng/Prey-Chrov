@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
-import { CAMERA, DEBUG_HOOKS, DEPTH, GATHER, PICKUP, SCENES, WATER, WORLD_GEN } from '../config';
+import { CAMERA, DEBUG_HOOKS, DEPTH, GATHER, PICKUP, SCENES, WATER, WORLD_GEN, ySort } from '../config';
 import { getGameData, itemDef } from '../data/gameData';
-import type { GameData, ItemDef, SeasonConfig, Station, ToolKind } from '../data/schema';
+import type { GameData, ItemDef, SeasonConfig, Station, ToolKind, TravelerDef } from '../data/schema';
 import type { ItemStack } from '../systems/Inventory';
 import { Player, type PlayerKeys } from '../entities/Player';
 import type { ResourceNode } from '../entities/ResourceNode';
@@ -22,7 +22,7 @@ import { FishingSession } from '../systems/Fishing';
 import { Progression } from '../systems/Progression';
 import { SideQuestBook, type SideUpdate } from '../systems/SideQuests';
 import { playerNoise } from '../systems/Perception';
-import { LANDMARK_NAMES, PLATE_WINDOW_SECONDS, STEPPING_CELL, ruinKey, ruinPlan, trapPhase, type LandmarkId } from '../world/RuinPlan';
+import { LANDMARK_CELL, LANDMARK_NAMES, PLATE_WINDOW_SECONDS, STEPPING_CELL, ruinKey, ruinPlan, trapPhase, type LandmarkId } from '../world/RuinPlan';
 import type { LandmarkObj, RuinFeatureObj } from '../world/ChunkManager';
 import { Interaction } from '../systems/Interaction';
 import { Lighting } from '../systems/Lighting';
@@ -35,11 +35,12 @@ import { loadRecords, recordEvent, saveRecords, type RecordEvent, type RecordsSt
 import { buildSave, clampSelected, sanitizeInventory } from '../systems/SaveGame';
 import { Structures, footprintOf, type Structure } from '../systems/Structures';
 import { Survival } from '../systems/Survival';
-import { TEX, TILE } from '../textures';
+import { SHALLOW_TILES, TEX, TILE, WATER_TILES, travelerFrameName } from '../textures';
 import { FloatingText } from '../ui/FloatingText';
 import { PropLayer } from '../world/PropLayer';
 import { HeldKeys, oncePerKeyEvent, type HeldKey } from '../utils/keys';
 import { aimMode, setInputStateProvider } from '../systems/VirtualInput';
+import { emptyTravelers, missingFor, parseTravelers, placePhrase, visitorOn, type TravelerState } from '../systems/Travelers';
 import { ChunkManager, type RootWall } from '../world/ChunkManager';
 import type { EndingData } from './Ending';
 import { WorldGen } from '../world/WorldGen';
@@ -326,6 +327,11 @@ export class World extends Phaser.Scene {
     }
     this.gen = new WorldGen(this.seed, this.gameData.biomes, this.gameData.shrines.chancePerClearingChunk, this.rules.content);
     this.spawn = this.gen.spawnPoint();
+    // M20: whom you met, trust, and the visit in progress (the schedule itself comes from the seed).
+    this.travelers = parseTravelers(save?.travelers, this.gameData.travelers);
+    this.travelerSprite = null;
+    this.travelerDef = null;
+    this.travelerSpot = null;
 
     this.props = new PropLayer(this);
     this.player = new Player(this, this.spawn.x, this.spawn.y);
@@ -380,7 +386,7 @@ export class World extends Phaser.Scene {
     this.hidden = false;
 
     this.floating = new FloatingText(this);
-    this.interaction = new Interaction(this, this.chunks.nodes, (x, y) => this.chunks.tileAtWorld(x, y), this.structures.list, this.chunks.shrines, this.chunks.ruins, this.chunks.roots, () => this.chunks.heart, this.chunks.features, this.chunks.landmarks);
+    this.interaction = new Interaction(this, this.chunks.nodes, (x, y) => this.chunks.tileAtWorld(x, y), this.structures.list, this.chunks.shrines, this.chunks.ruins, this.chunks.roots, () => this.chunks.heart, this.chunks.features, this.chunks.landmarks, () => this.travelerSpot);
     this.quest = new QuestLog(this.gameData, [], false, this.gen.tabletSites().length);
     this.openedChests.clear();
     this.nextWeatherAt = 0;
@@ -507,6 +513,7 @@ export class World extends Phaser.Scene {
       this.emitSideQuests();
     });
     onSceneEvent(this, 'story:choose', ({ id, option }) => this.chooseStory(id, option));
+    onSceneEvent(this, 'talk:pick', ({ id, option }) => this.onTalkPick(id, option));
     onSceneEvent(this, 'ui:story', (open) => {
       this.storyOpen = open;
       if (open) {
@@ -901,6 +908,7 @@ export class World extends Phaser.Scene {
     const biome = this.gen.biomeAt(Math.floor(this.player.x / 32), Math.floor(this.player.y / 32));
     if (biome !== this.gen.biomeAt(Math.floor(this.spawn.x / 32), Math.floor(this.spawn.y / 32))) this.grant('biome', biome);
     this.updateDiscovery();
+    this.updateTravelers();
     this.checkStoryState();
     if (this.now >= this.nextKnowledgeAt) {
       this.nextKnowledgeAt = this.now + 1000;
@@ -1320,6 +1328,8 @@ export class World extends Phaser.Scene {
         return target.kind === 'feature' ? this.featurePrompt(target.feature) : '';
       case 'landmark':
         return target.kind === 'landmark' ? (target.landmark.id === 'great_fig' && !this.openedChests.has(`fig@${target.landmark.key}`) ? 'E — Search the hollow roots' : target.landmark.id === 'old_oxcart' && !this.openedChests.has(`cart@${target.landmark.key}`) ? 'E — Look under the cart bed' : LANDMARK_NAMES[target.landmark.id as LandmarkId] ?? '') : '';
+      case 'traveler':
+        return this.travelerDef ? `E — Talk to ${this.travelerDef.name}` : '';
       case 'ruin':
         if (target.kind !== 'ruin') return '';
         if (target.ruin.kind === 'chest') return this.openedChests.has(target.ruin.key) ? 'An empty stone chest' : 'E — Open the stone chest';
@@ -1379,6 +1389,11 @@ export class World extends Phaser.Scene {
     }
     if (target.kind === 'landmark' && pressed) {
       this.useLandmark(target.landmark);
+      return;
+    }
+    if (target.kind === 'traveler' && pressed) {
+      this.nextActAt = this.now + 400;
+      this.openTalk();
       return;
     }
     if (target.kind === 'roots' && pressed) {
@@ -1873,6 +1888,7 @@ export class World extends Phaser.Scene {
         story: { quests: this.sideQuests.serialize(), flags: [...this.storyFlags], endingLines: [...this.endingLines] },
         setpieces: { ...this.setFlags },
         rules: { ...this.rules, modifiers: [...this.rules.modifiers] },
+        travelers: { ...this.travelers, met: [...this.travelers.met], trust: { ...this.travelers.trust }, visit: this.travelers.visit ? { ...this.travelers.visit, traded: [...this.travelers.visit.traded] } : null },
         exploration: {
           explored: [...this.explored],
           ruins: [...this.found.ruins],
@@ -2292,6 +2308,276 @@ export class World extends Phaser.Scene {
 
   private emitSideQuests(): void {
     gameEvents.emit('sidequests:changed', { quests: this.sideQuests.view(), memories: this.sideQuests.memories() });
+  }
+
+  // ---------- Travelers and the River Road (M20) ----------
+
+  private travelers: TravelerState = emptyTravelers();
+  private travelerSprite: Phaser.GameObjects.Sprite | null = null;
+  private travelerDef: TravelerDef | null = null;
+  /** The traveler as an interaction target (null while none is here). */
+  private travelerSpot: { x: number; y: number } | null = null;
+
+  /** Arrivals and departures, checked with the discovery tick (twice a second). */
+  private updateTravelers(): void {
+    const cfg = this.gameData.travelers;
+    if (this.travelers.departed) return;
+    const day = this.clock.dayNumber;
+    const hour = this.clock.hour;
+    const visitor = hour >= cfg.arriveHour && hour < cfg.leaveHour ? visitorOn(this.seed, day, cfg) : null;
+    const v = this.travelers.visit;
+    if (!visitor) {
+      if (v || this.travelerSprite) this.travelerLeaves(v !== null && v.day === day);
+      return;
+    }
+    if (v && (v.day !== day || v.traveler !== visitor.id)) this.travelerLeaves(false);
+    if (!this.travelers.visit) {
+      const spot = this.travelerSpotNear(visitor);
+      if (!spot) return; // nowhere sensible to stand yet: try again shortly
+      this.travelers.visit = { day, traveler: visitor.id, x: spot.x, y: spot.y, traded: [], rumorTold: false };
+      const first = !this.travelers.met.includes(visitor.id);
+      if (first) {
+        this.travelers.met.push(visitor.id);
+        this.record('traveler_met');
+      }
+      const where = placePhrase(spot.x - this.player.x, spot.y - this.player.y);
+      gameEvents.emit('toast', { text: `${first ? 'A traveler' : visitor.name} has stopped nearby (${where}): ${visitor.name}, ${visitor.role}.`, tone: 'info' });
+      gameEvents.emit('sfx', 'ui');
+      this.spawnTraveler(visitor, true);
+    } else if (!this.travelerSprite) this.spawnTraveler(visitor, false);
+  }
+
+  /** A dry, open spot a short walk from the player; river traders prefer a riverbank. */
+  private travelerSpotNear(t: TravelerDef): { x: number; y: number } | null {
+    const p = this.player;
+    const open = (x: number, y: number) => {
+      const tile = this.chunks.tileAtWorld(x, y);
+      if (WATER_TILES.includes(tile) || SHALLOW_TILES.includes(tile)) return false;
+      if (this.chunks.nodes.some((n) => !n.depleted && Math.hypot(n.targetX - x, n.prop.y - y) < 44)) return false;
+      return !this.structures.list.some((s) => Math.hypot(s.x - x, s.y - y) < 48);
+    };
+    const nearWater = (x: number, y: number) => {
+      for (let oy = -3; oy <= 3; oy++) for (let ox = -3; ox <= 3; ox++) if (WATER_TILES.includes(this.chunks.tileAtWorld(x + ox * 32, y + oy * 32))) return true;
+      return false;
+    };
+    let fallback: { x: number; y: number } | null = null;
+    const turn = (hash2(this.clock.dayNumber, 77, this.seed) % 16) / 16;
+    for (const r of [200, 260, 160, 320]) {
+      for (let i = 0; i < 16; i++) {
+        const a = (turn + i / 16) * Math.PI * 2;
+        const x = Math.round(p.x + Math.cos(a) * r);
+        const y = Math.round(p.y + Math.sin(a) * r);
+        if (!open(x, y) || !open(x, y - 16)) continue;
+        if (t.where !== 'river' || nearWater(x, y)) return { x, y };
+        fallback ??= { x, y };
+      }
+    }
+    return fallback;
+  }
+
+  private spawnTraveler(t: TravelerDef, walkIn: boolean): void {
+    const v = this.travelers.visit;
+    if (!v) return;
+    this.travelerDef = t;
+    const anim = `traveler-${t.look}`;
+    if (!this.anims.exists(anim)) {
+      this.anims.create({ key: anim, frames: [0, 1].map((f) => ({ key: TEX.travelers, frame: travelerFrameName(t.look, f as 0 | 1) })), frameRate: 2, repeat: -1 });
+    }
+    const s = this.add.sprite(v.x, v.y, TEX.travelers, travelerFrameName(t.look, 0)).setOrigin(0.5, 1).setDepth(ySort(v.y));
+    s.play(anim);
+    this.travelerSprite = s;
+    this.travelerSpot = { x: v.x, y: v.y };
+    if (walkIn) {
+      // Walks in from further along the path.
+      const dx = v.x - this.player.x;
+      const dy = v.y - this.player.y;
+      const d = Math.hypot(dx, dy) || 1;
+      s.setPosition(v.x + (dx / d) * 120, v.y + (dy / d) * 120).setAlpha(0);
+      this.tweens.add({ targets: s, x: v.x, y: v.y, alpha: 1, duration: 2200, ease: 'Sine.easeOut' });
+    }
+  }
+
+  /** The traveler moves on (at dusk, or when the visit is over). */
+  private travelerLeaves(sayGoodbye: boolean): void {
+    const s = this.travelerSprite;
+    const t = this.travelerDef;
+    if (s) {
+      const near = Math.hypot(s.x - this.player.x, s.y - this.player.y) < 700;
+      if (sayGoodbye && near && t) gameEvents.emit('toast', { text: `${t.name} has moved on.`, tone: 'info' });
+      this.tweens.add({ targets: s, alpha: 0, y: s.y - 6, duration: 1200, onComplete: () => s.destroy() });
+    }
+    this.travelerSprite = null;
+    this.travelerDef = null;
+    this.travelerSpot = null;
+    this.travelers.visit = null;
+  }
+
+  /** Talking: trades, news, the River Road and farewell, in one must-answer dialog. */
+  private openTalk(prompt?: string): void {
+    const t = this.travelerDef;
+    const v = this.travelers.visit;
+    if (!t || !v) return;
+    if (this.inDanger()) {
+      gameEvents.emit('toast', { text: `${t.name} waves you off — not with danger this close.`, tone: 'warn' });
+      return;
+    }
+    const inv = this.inventory.inventory;
+    const need = (list: ReadonlyArray<{ item: string; qty: number }>) => missingFor(list, (i) => inv.count(i));
+    const needsText = (m: ReadonlyArray<{ item: string; qty: number }>) => `Needs ${m.map((c) => `${c.qty} more ${itemDef(c.item).name}`).join(', ')}`;
+    const options: Array<{ id: string; label: string; description: string; enabled: boolean; note?: string }> = t.trades.map((tr) => {
+      const done = v.traded.includes(tr.id);
+      const missing = need(tr.give);
+      return { id: `trade:${tr.id}`, label: tr.label, description: tr.description, enabled: !done && missing.length === 0, note: done ? 'Already traded this visit' : missing.length ? needsText(missing) : undefined };
+    });
+    if (t.rumor && !v.rumorTold) options.push({ id: 'news', label: 'Ask for news', description: 'Hear what they have seen along the way.', enabled: true });
+    const ps = this.gameData.travelers.passage;
+    if (ps.traveler === t.id) {
+      const trust = this.travelers.trust[t.id] ?? 0;
+      const ready = trust >= ps.trust;
+      options.push({ id: 'passage', label: ps.offerLabel, description: ready ? 'She has room in her boat for one more.' : ps.notReadyText, enabled: ready, note: ready ? undefined : `Trades with ${t.name} so far: ${trust} of ${ps.trust}` });
+    }
+    options.push({ id: 'farewell', label: 'Farewell', description: 'Go on your way.', enabled: true });
+    const greeting = t.greetings[hash2(v.day, this.travelers.trust[t.id] ?? 0, this.seed) % t.greetings.length] ?? '';
+    this.player.halt();
+    gameEvents.emit('talk:open', { id: 'traveler', title: `${t.name} · ${t.role}`, prompt: prompt ?? greeting, options });
+  }
+
+  private onTalkPick(id: string, option: string): void {
+    const t = this.travelerDef;
+    const v = this.travelers.visit;
+    if (!t || !v) return;
+    const ps = this.gameData.travelers.passage;
+    const inv = this.inventory.inventory;
+    if (id === 'passage') {
+      if (option !== 'accept') {
+        gameEvents.emit('toast', { text: `${t.name} nods. "The river will still be here."`, tone: 'info' });
+        return;
+      }
+      if (missingFor(ps.requires, (i) => inv.count(i)).length) return;
+      for (const r of ps.requires) inv.remove(r.item, r.qty);
+      this.inventory.broadcast();
+      this.leaveByRiver();
+      return;
+    }
+    if (option === 'farewell') {
+      gameEvents.emit('toast', { text: `${t.name}: "${t.farewell}"`, tone: 'info' });
+      return;
+    }
+    if (option === 'news' && t.rumor && !v.rumorTold) {
+      v.rumorTold = true;
+      const spot = this.rumorTarget(t);
+      if (!spot) {
+        this.openTalk('"I have nothing new to tell you — you seem to know these paths better than I do."');
+        return;
+      }
+      if (this.markers.length < 30) this.markers.push({ x: Math.round(spot.x), y: Math.round(spot.y), kind: 'note', text: `${t.name}'s news` });
+      gameEvents.emit('map:data', this.mapData());
+      this.openTalk(`${t.rumor.replace('{place}', placePhrase(spot.x - this.player.x, spot.y - this.player.y))} (Marked on your map.)`);
+      return;
+    }
+    if (option === 'passage') {
+      const missing = missingFor(ps.requires, (i) => inv.count(i));
+      gameEvents.emit('talk:open', {
+        id: 'passage',
+        title: this.gameData.ending.river.title,
+        prompt: ps.offerText,
+        options: [
+          { id: 'accept', label: ps.acceptLabel, description: ps.acceptDescription, enabled: missing.length === 0, note: missing.length ? `Needs ${missing.map((c) => `${c.qty} more ${itemDef(c.item).name}`).join(', ')}` : undefined },
+          { id: 'decline', label: ps.declineLabel, description: ps.declineDescription, enabled: true },
+        ],
+      });
+      return;
+    }
+    const trade = option.startsWith('trade:') ? t.trades.find((tr) => tr.id === option.slice(6)) : undefined;
+    if (!trade || v.traded.includes(trade.id) || missingFor(trade.give, (i) => inv.count(i)).length) return;
+    for (const g of trade.give) inv.remove(g.item, g.qty);
+    for (const g of trade.get) {
+      const left = this.inventory.add(g.item, g.qty);
+      if (left > 0 && !this.dropInFront(g.item, left)) this.pickups.spawn(g.item, left, this.player.x, this.player.y + 8, this.now, 0, 4, false);
+    }
+    this.inventory.broadcast();
+    v.traded.push(trade.id);
+    const trust = (this.travelers.trust[t.id] ?? 0) + 1;
+    this.travelers.trust[t.id] = trust;
+    this.record('traveler_trade');
+    gameEvents.emit('sfx', 'pickup');
+    const got = trade.get.map((g) => `${g.qty} ${itemDef(g.item).name}`).join(', ');
+    const story = t.stories[trust - 1];
+    this.openTalk(story ? `You receive ${got}.\n\n"${story}"` : `You receive ${got}. "A fair trade."`);
+  }
+
+  /** News: the honey gatherer knows landmarks, the mapmaker knows ruins with unread tablets. */
+  private rumorTarget(t: TravelerDef): { x: number; y: number } | null {
+    const p = this.player;
+    if (t.look === 'mapmaker') {
+      let best: { x: number; y: number; d: number } | null = null;
+      this.gen.tabletSites().forEach((site, i) => {
+        if (this.quest.hasRead(`tablet_${i + 1}`)) return;
+        const x = site.tx * 32 + 16;
+        const y = (site.ty + 3) * 32 + 16;
+        const d = Math.hypot(x - p.x, y - p.y);
+        if (!best || d < best.d) best = { x, y, d };
+      });
+      if (best) return best;
+    }
+    const cell = LANDMARK_CELL * 32;
+    const cx = Math.floor(p.x / cell);
+    const cy = Math.floor(p.y / cell);
+    let near: { x: number; y: number; d: number } | null = null;
+    for (let oy = -3; oy <= 3; oy++)
+      for (let ox = -3; ox <= 3; ox++) {
+        const l = this.gen.landmarkInCell(cx + ox, cy + oy);
+        if (!l) continue;
+        const x = l.tx * 32 + 16;
+        const y = l.ty * 32 + 16;
+        if (this.landmarkKnownNear(l.id, x, y)) continue;
+        const d = Math.hypot(x - p.x, y - p.y);
+        if (!near || d < near.d) near = { x, y, d };
+      }
+    return near;
+  }
+
+  /** A landmark of this kind already discovered within a few tiles of (x, y). */
+  private landmarkKnownNear(id: string, x: number, y: number): boolean {
+    for (const k of this.found.landmarks) {
+      const at = k.indexOf('@');
+      if (k.slice(0, at) !== id) continue;
+      const [kx = 0, ky = 0] = k.slice(at + 1).split(',').map(Number);
+      if (Math.hypot(kx - x, ky - y) < 256) return true;
+    }
+    return false;
+  }
+
+  /** The River Road: the journey ends downriver. The last save stays as it was (Continue returns to the forest). */
+  private leaveByRiver(): void {
+    if (this.busy) return;
+    this.busy = true;
+    this.travelers.departed = true;
+    this.record('ending_river');
+    this.flushRecords();
+    this.building.cancel();
+    this.player.halt();
+    this.encounters.clear();
+    this.projectiles.clear();
+    const summary: EndingData = {
+      day: this.clock.dayNumber,
+      tablets: this.quest.tabletsRead.length,
+      ...this.stats,
+      saved: this.savedThisJourney,
+      storyLines: [...this.endingLines],
+      kind: 'river',
+      restored: this.quest.stage === 'done',
+    };
+    gameEvents.emit('music', 'victory');
+    const cam = this.cameras.main;
+    this.time.delayedCall(900, () => {
+      cam.fadeEffect.reset();
+      cam.fadeOut(1800, 20, 40, 48);
+      cam.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+        this.scene.stop(SCENES.ui);
+        this.scene.start(SCENES.ending, summary);
+      });
+    });
   }
 
   // ---------- Exploration, map and ruins (M13) ----------

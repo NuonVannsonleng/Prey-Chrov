@@ -15,6 +15,7 @@ export type InteractTarget =
   | { kind: 'roots'; root: RootWall; x: number; y: number }
   | { kind: 'feature'; feature: RuinFeatureObj; x: number; y: number }
   | { kind: 'landmark'; landmark: LandmarkObj; x: number; y: number }
+  | { kind: 'traveler'; x: number; y: number }
   | { kind: 'none'; x: number; y: number };
 
 /** How strongly facing direction is preferred when choosing between nearby targets (px of distance). */
@@ -34,6 +35,7 @@ export class Interaction {
   private rootTarget: { kind: 'roots'; root: RootWall; x: number; y: number } | null = null;
   private featureTarget: { kind: 'feature'; feature: RuinFeatureObj; x: number; y: number } | null = null;
   private landmarkTarget: { kind: 'landmark'; landmark: LandmarkObj; x: number; y: number } | null = null;
+  private readonly travelerTarget = { kind: 'traveler' as const, x: 0, y: 0 };
   private readonly noTarget = { kind: 'none' as const, x: 0, y: 0 };
   private readonly ring: Phaser.GameObjects.Image;
   current: InteractTarget = this.noTarget;
@@ -50,6 +52,8 @@ export class Interaction {
     private readonly heart: () => HeartInstance | null = () => null,
     private readonly features: readonly RuinFeatureObj[] = [],
     private readonly landmarks: readonly LandmarkObj[] = [],
+    /** M20: where the visiting traveler stands, if one is here. */
+    private readonly traveler: () => { x: number; y: number } | null = () => null,
   ) {
     this.nodeTarget = { kind: 'node', node: null as unknown as ResourceNode, x: 0, y: 0 };
     this.ring = scene.add.image(0, 0, TEX.targetRing).setDepth(DEPTH.targetRing).setVisible(false);
@@ -209,6 +213,24 @@ export class Interaction {
         this.landmarkTarget.x = l.x;
         this.landmarkTarget.y = l.y;
         best = this.landmarkTarget;
+      }
+    }
+
+    const tv = this.traveler();
+    if (tv) {
+      const dx = tv.x - cx;
+      const dy = tv.y - 10 - cy;
+      const d = Math.hypot(dx, dy);
+      if (d <= GATHER.reach + 10) {
+        const facing = d > 0 ? (dx * fx + dy * fy) / d : 1;
+        // People come first: talking beats gathering the bush behind them.
+        const score = d - facing * FACING_BIAS - 20;
+        if (score < bestScore) {
+          bestScore = score;
+          this.travelerTarget.x = tv.x;
+          this.travelerTarget.y = tv.y;
+          best = this.travelerTarget;
+        }
       }
     }
 

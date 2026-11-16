@@ -35,7 +35,16 @@ export const TEX = {
   vignette: 'tex-vignette',
   menuBg: 'tex-menu-bg',
   glow: 'tex-glow',
+  travelers: 'tex-travelers',
 } as const;
+
+/** M20: travelers (two idle frames per look). */
+export const TRAVELER_LOOKS = ['trader', 'gatherer', 'mapmaker'] as const;
+export type TravelerLook = (typeof TRAVELER_LOOKS)[number];
+export const TRAVELER_FRAME = { w: 32, h: 40 } as const;
+export function travelerFrameName(look: TravelerLook, frame: 0 | 1): string {
+  return `${look}_${frame}`;
+}
 
 /** Tile indices inside TEX.tiles (used directly as tilemap data). */
 export const TILE = {
