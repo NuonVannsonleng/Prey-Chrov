@@ -21,8 +21,62 @@ Status legend: **Done** · **In progress** · **Not started**
 | M15 | Major challenges and final encounters | Done |
 | M16 | Atmosphere, audio, menus and accessibility | Done |
 | M17 | Replayability and content expansion | Done |
+| M18 | Release hardening and web publishing | Done |
 
 ---
+
+## M18 — Release hardening and web publishing
+
+### Implemented
+
+- **Ready for any static host.**
+  - Relative asset paths and a tested sub-path build (served from `/Prey-Chrov/` like GitHub Pages).
+  - A GitHub Pages workflow (`.github/workflows/deploy-pages.yml`, started by hand from the Actions tab).
+  - Step-by-step guides for GitHub Pages, Netlify and Cloudflare Pages in [DEPLOYMENT.md](DEPLOYMENT.md).
+- **No third-party requests.** The Moul and Kantumruy Pro fonts are bundled (Fontsource, SIL OFL 1.1) instead of loaded from Google Fonts. The game works offline once loaded and sends nothing anywhere. There is no telemetry.
+- **Version string:** `v0.18.0`, taken from `package.json`, is shown in the menu footer and the ending credits. Font credits were added.
+- **Clear error messaging.**
+  - An unexpected runtime error shows a calm, dismissible message: saves are kept, and Reload continues.
+  - It appears once per page load. Browser noise (ResizeObserver, cross-origin "Script error.", extension errors) is ignored.
+  - Broken game data already shows a readable error screen.
+- **Storage restrictions:** if the browser blocks storage completely, the menu explains it and a journey still starts and plays; it just can't save. Every storage access is guarded.
+- **Documentation:**
+  - [Player Guide](PLAYER_GUIDE.md)
+  - [Privacy note](PRIVACY.md): local saves, storage keys, how to delete
+  - [Technical overview](TECHNICAL.md)
+  - a release README
+  - `engines` in `package.json` (Node 20.19+ or 22.12+)
+- **Soak test** (`npm run soak`): an automated player for `SOAK_MINUTES`. Each run it:
+  - walks, sprints and gathers, attacks, opens panels, pauses, and answers story moments
+  - travels far, cycles days, nights and the monsoon, and dies and restarts
+  - reloads mid-session and continues from the save
+  - samples heap, display list, physics bodies and update time every minute
+
+### Verification
+
+- **Clean install:** a fresh `git clone`, then `npm ci`, `npm test` (208) and `npm run build` all pass.
+- **Import casing:** every relative import matches the exact file-name case, so Linux CI builds the same as Windows.
+- **Type and data audit:** `tsc --strict` is clean, and the data validator checks references, reachability and fairness.
+- `npm run smoke`: 253 checks. The M18 ones:
+  - keyboard-only start (menu → setup → Begin)
+  - the version in the menu
+  - phone (390×844), tablet, desktop and wide windows show the whole game
+  - the error message appears once and can be dismissed, and browser noise is ignored
+  - **blocked storage:** the menu explains it, the journey plays, and there are no errors
+  - **sub-path hosting:** every asset loads, the fonts are ready, and there are zero third-party requests
+- **20-minute soak:** passed with 0 errors over 20 minutes of real time. It covered 10 in-game days and the monsoon, one mid-session reload and continue, and story moments answered. The JS heap stayed between 35 and 73 MB with no growth trend. The display list stayed between 1,400 and 2,000 objects (it follows the loaded chunks), with at most 7 dynamic physics bodies. World update averaged 0.24 ms at most, at 145 fps headless.
+- **Startup payload (gzipped):** about 132 kB for the game, 318 kB for Phaser and 9 kB for CSS. Fonts are lazy (about 20–50 kB per subset, only the characters used). There are no image or audio files.
+- **Reviews (real agents):** the `phaser-qa` release audit found no Criticals and 3 Warnings, all fixed:
+  - The error banner could fire on browser noise and come back after Dismiss.
+  - Banner buttons could keep keyboard focus.
+  - There was no junk-value test for saved rules.
+  - It also confirmed that every storage access survives blocked storage, that no listeners leak across scene restarts, that `parseSave` never throws, and that the docs match the code.
+
+### Not verified here
+
+- **No live deployment.** Publishing to GitHub Pages needs the repository owner to enable Pages (Settings → Pages → Source: GitHub Actions) and run the workflow. The built game was checked the way GitHub Pages serves it: under a sub-path, from a local static server.
+- **No human playtest.** The 20-minute automated soak and 253 scripted browser checks stand in for one. A real non-developer playtest is still recommended.
+- **Browsers:** tested in headless Microsoft Edge (Chromium) only. Firefox and Safari were not run.
 
 ## M17 — Replayability and content expansion
 

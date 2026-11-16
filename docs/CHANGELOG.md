@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.18.0 — M18: Release hardening and web publishing (2026-11-16)
+
+### Added
+- Ready to publish on GitHub Pages, Netlify or Cloudflare Pages (guide and a GitHub Pages workflow).
+- Player Guide, Privacy note and Technical overview.
+- Version shown on the menu and in the credits.
+- A clear, dismissible message if something unexpected goes wrong. Your saves are kept.
+
+### Changed
+- Fonts now ship with the game, so it makes no third-party requests and works offline once loaded.
+- The game still starts and plays when browser storage is blocked, and explains why it can't save.
 ## 0.17.0 — M17: Replayability (2026-11-13)
 
 ### Added
