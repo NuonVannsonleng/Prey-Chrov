@@ -60,6 +60,10 @@ This milestone covers the remaining M19+ items that can be done honestly without
   - A wrong-size PNG and an unknown texture are skipped with "must be 24×24" and "unknown texture" warnings, and no errors.
   - The default build still makes no third-party requests and no 404s.
 - **Scripts:** `npm run art:templates` exported 33 generated textures from the built game, and `npm run l10n:export -- --check` passes (it checks both the Markdown and the CSV).
+- **Final checks on the finished build (M19–M22):**
+  - Full smoke: 285/285.
+  - 20-minute soak: passed with 0 errors over 9 in-game days (cool into hot season) and a reload partway through. The heap stayed at 39–58 MB, the display list at 1,047–1,912 objects, and updates took at most 0.23 ms.
+  - A fresh clone with `npm ci`, the 236 tests and the build all pass. The game bundle is 148 kB gzipped.
 - **QA review** (real `phaser-qa`) of M21 and M22 found 0 Critical and 4 Warnings, all fixed:
   - Season and difficulty forage now apply to every food or herb stack. Before, rainy-season bamboo shoots never increased.
   - The season stinger plays only at calm daylight moments.
