@@ -54,6 +54,8 @@ describe('journey rules in saves', () => {
   it('stored rules round-trip; unknown modifiers and bad values are dropped, never invented', () => {
     const r = parseRules({ difficulty: 'hard', modifiers: [mods[0], 'made_up', mods[0]], permadeath: true, content: CONTENT_VERSION }, mods);
     expect(r).toEqual({ difficulty: 'hard', modifiers: [mods[0]], permadeath: true, content: CONTENT_VERSION });
+    expect(parseRules({ difficulty: 7, modifiers: 'all', permadeath: 1, content: '2' }, mods)).toEqual({ difficulty: 'survival', modifiers: [], permadeath: false, content: 1 });
+    expect(parseRules([1, 2], mods)).toEqual(LEGACY_RULES);
     expect(parseRules({ difficulty: 'nightmare', permadeath: 'yes', content: 99 }, mods)).toEqual({ difficulty: 'survival', modifiers: [], permadeath: false, content: CONTENT_VERSION });
   });
 

@@ -6,7 +6,7 @@ The build uses relative paths (`base: './'` in `vite.config.ts`), so it runs at 
 
 ## 1. Build and check locally
 
-Requirements: Node.js 20 or newer (22 LTS recommended) and npm.
+Requirements: Node.js 20.19+ or 22.12+ (22 LTS recommended) and npm.
 
 ```bash
 npm ci              # clean install from package-lock.json
@@ -49,7 +49,7 @@ Drag-and-drop also works: run `npm run build` locally and drop the `dist` folder
 
 1. **Workers & Pages → Create → Pages → Connect to Git**, then pick the repository.
 2. Set the framework preset to **None**, the build command to `npm run build` and the build output directory to `dist`.
-3. Set the environment variable `NODE_VERSION` to `22` if the default Node is older than 20.
+3. Set the environment variable `NODE_VERSION` to `22` (the build needs Node 20.19+ or 22.12+).
 4. Save and deploy.
 
 ## 5. After deploying: a 5-minute check

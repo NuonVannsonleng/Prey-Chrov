@@ -21,8 +21,10 @@ import { gameEvents } from './systems/GameEvents';
  * A clear message instead of a silent freeze if something unexpected breaks at runtime.
  * Saves live in this browser and are untouched; reloading resumes from the last save.
  */
+let fatalDismissed = false;
 function showFatal(message: string): void {
-  if (typeof document === 'undefined' || document.getElementById('fatal')) return;
+  // Once per page load: a repeating error must not bring the banner back after Dismiss.
+  if (typeof document === 'undefined' || fatalDismissed || document.getElementById('fatal')) return;
   const box = document.createElement('div');
   box.id = 'fatal';
   box.setAttribute('role', 'alert');
@@ -33,12 +35,33 @@ function showFatal(message: string): void {
   reload.onclick = () => window.location.reload();
   const close = document.createElement('button');
   close.textContent = 'Dismiss';
-  close.onclick = () => box.remove();
+  close.onclick = () => {
+    fatalDismissed = true;
+    box.remove();
+    // Give the keyboard back to the game (Space/Enter must not press a banner button later).
+    document.querySelector('canvas')?.focus();
+  };
+  // Keys pressed on the banner never reach its buttons by accident while playing.
+  box.addEventListener('keydown', (e) => e.key !== 'Tab' && e.key !== 'Enter' && e.preventDefault());
   box.append(text, reload, close);
   document.body.append(box);
 }
-window.addEventListener('error', (e) => showFatal(e.message || 'an error occurred'));
-window.addEventListener('unhandledrejection', (e) => showFatal(String((e.reason as Error | undefined)?.message ?? e.reason ?? 'an error occurred')));
+
+/** Browser noise that is not the game's fault: never alarm players with it. */
+const BENIGN_ERROR = /ResizeObserver loop|^Script error\.?$/i;
+window.addEventListener('error', (e) => {
+  if (BENIGN_ERROR.test(e.message || '')) return;
+  // Cross-origin / extension errors carry no error object or come from another origin.
+  if (!e.error && !e.filename) return;
+  if (e.filename && !e.filename.startsWith(window.location.origin)) return;
+  showFatal(e.message || 'an error occurred');
+});
+window.addEventListener('unhandledrejection', (e) => {
+  const r = e.reason as { name?: string; message?: string; stack?: string } | undefined;
+  if (r?.name === 'AbortError' || r?.name === 'NotAllowedError') return;
+  if (r?.stack && /(chrome|moz|safari)-extension:\/\//.test(r.stack)) return;
+  showFatal(String(r?.message ?? e.reason ?? 'an error occurred'));
+});
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,

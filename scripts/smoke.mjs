@@ -2174,13 +2174,18 @@ try {
   check('phone, tablet, desktop and wide windows all fit the whole game', sizes.every((s) => s.ok), JSON.stringify(sizes));
   // An unexpected error shows a clear message (saves are kept) instead of a silent freeze.
   const fatal = await page.evaluate(() => {
-    window.dispatchEvent(new ErrorEvent('error', { message: 'test failure' }));
+    // Browser noise is ignored; a real error from the game's own code shows the message.
+    window.dispatchEvent(new ErrorEvent('error', { message: 'ResizeObserver loop completed with undelivered notifications.' }));
+    window.dispatchEvent(new ErrorEvent('error', { message: 'Script error.' }));
+    const noisy = document.getElementById('fatal') !== null;
+    window.dispatchEvent(new ErrorEvent('error', { message: 'test failure', error: new Error('test failure'), filename: location.href }));
     const box = document.getElementById('fatal');
     const text = box?.textContent ?? '';
     box?.querySelectorAll('button')[1]?.click();
-    return { text, gone: document.getElementById('fatal') === null };
+    window.dispatchEvent(new ErrorEvent('error', { message: 'again', error: new Error('again'), filename: location.href }));
+    return { noisy, text, gone: document.getElementById('fatal') === null };
   });
-  check('unexpected errors show a clear, dismissible message', /Something went wrong: test failure/.test(fatal.text) && /saved journeys are kept/.test(fatal.text) && fatal.gone, JSON.stringify(fatal));
+  check('unexpected errors show a clear message once (dismissible); browser noise is ignored', !fatal.noisy && /Something went wrong: test failure/.test(fatal.text) && /saved journeys are kept/.test(fatal.text) && fatal.gone, JSON.stringify(fatal));
   // Storage blocked (private windows, strict settings): the game still starts and plays, and says why it can't save.
   {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
