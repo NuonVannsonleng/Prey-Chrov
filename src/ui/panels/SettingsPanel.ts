@@ -1,20 +1,28 @@
 import Phaser from 'phaser';
 import { CSS, FONTS, GAME_HEIGHT, GAME_WIDTH } from '../../config';
-import { ACTIONS, ACTION_LABELS, DEFAULT_KEYS, bindKey, getSettings, isBindable, keyLabel, updateSettings, type Action, type Settings } from '../../systems/Settings';
+import { ACTIONS, ACTION_LABELS, DEFAULT_KEYS, TOUCH_MODES, bindKey, getSettings, isBindable, keyLabel, updateSettings, type Action, type Settings } from '../../systems/Settings';
+import { PAD_HELP } from '../../systems/Gamepad';
 import { oncePerKeyEvent } from '../../utils/keys';
 import { Button } from '../components/Button';
 import { ButtonList } from '../components/ButtonList';
 
 type VolumeKey = 'masterVolume' | 'sfxVolume' | 'ambienceVolume' | 'musicVolume';
 type ToggleKey = 'reducedMotion' | 'reducedFlash' | 'highContrast' | 'largeText' | 'showHints';
-type Row = { kind: 'volume'; key: VolumeKey; label: string } | { kind: 'toggle'; key: ToggleKey; label: string } | { kind: 'key'; action: Action };
-type Tab = 'audio' | 'display' | 'controls';
+type Row =
+  | { kind: 'volume'; key: VolumeKey; label: string }
+  | { kind: 'toggle'; key: ToggleKey; label: string }
+  | { kind: 'key'; action: Action }
+  | { kind: 'touch'; key: 'touchControls'; label: string };
+type Tab = 'audio' | 'display' | 'controls' | 'devices';
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'audio', label: 'Audio' },
   { id: 'display', label: 'Display & access' },
-  { id: 'controls', label: 'Controls' },
+  { id: 'controls', label: 'Keyboard' },
+  { id: 'devices', label: 'Controller & touch' },
 ];
+const TOUCH_LABEL: Record<(typeof TOUCH_MODES)[number], string> = { auto: 'Auto', on: 'Always on', off: 'Off' };
+const DEVICES: Row[] = [{ kind: 'touch', key: 'touchControls', label: 'Touch controls' }];
 const AUDIO: Row[] = [
   { kind: 'volume', key: 'masterVolume', label: 'Master volume' },
   { kind: 'volume', key: 'sfxVolume', label: 'Effects volume' },
@@ -42,6 +50,7 @@ export class SettingsPanel {
   private readonly back: Button;
   private readonly reset: Button;
   private readonly note: Phaser.GameObjects.Text;
+  private readonly padHelp: Phaser.GameObjects.Text;
   private tab: Tab = 'audio';
   private list: ButtonList | null = null;
   private capturing: Action | null = null;
@@ -58,7 +67,7 @@ export class SettingsPanel {
     this.note = scene.add.text(cx, top + 36, '', { fontFamily: FONTS.ui, fontSize: '14px', color: CSS.textDim }).setOrigin(0.5);
     const children: Phaser.GameObjects.GameObject[] = [backdrop, title, this.note];
     TABS.forEach((t, i) => {
-      const b = new Button(scene, cx - 230 + i * 230, top + 84, { label: t.label, width: 210, height: 40, fontSize: 17, onActivate: () => this.setTab(t.id) });
+      const b = new Button(scene, cx - 345 + i * 230, top + 84, { label: t.label, width: 220, height: 40, fontSize: 17, onActivate: () => this.setTab(t.id) });
       this.tabButtons.push(b);
       children.push(b);
     });
@@ -78,6 +87,20 @@ export class SettingsPanel {
     mk('audio', AUDIO, false);
     mk('display', DISPLAY, false);
     mk('controls', CONTROLS, true);
+    mk('devices', DEVICES, false);
+    // The controller layout (fixed: it presses whatever keys are bound above).
+    const lines = PAD_HELP.map(([b, what]) => `${b}  —  ${what}`).join('\n');
+    this.padHelp = scene.add
+      .text(cx, top + 192, `Controller (plug in and press any button)\n\n${lines}`, {
+        fontFamily: FONTS.ui,
+        fontSize: '15px',
+        color: CSS.text,
+        align: 'center',
+        lineSpacing: 4,
+        wordWrap: { width: 760 },
+      })
+      .setOrigin(0.5, 0);
+    children.push(this.padHelp);
     this.reset = new Button(scene, cx - 120, GAME_HEIGHT - 70, { label: 'Reset controls', width: 220, height: 42, fontSize: 17, onActivate: () => this.resetKeys() });
     this.back = new Button(scene, cx + 120, GAME_HEIGHT - 70, { label: 'Back', width: 220, height: 42, fontSize: 17, onActivate: () => this.close() });
     children.push(this.reset, this.back);
@@ -113,7 +136,7 @@ export class SettingsPanel {
   }
 
   /** The button for a setting (tests and hints). */
-  buttonFor(key: VolumeKey | ToggleKey | Action): Button | undefined {
+  buttonFor(key: VolumeKey | ToggleKey | Action | 'touchControls'): Button | undefined {
     for (const list of this.rows.values()) {
       const hit = list.find(({ row }) => (row.kind === 'key' ? row.action === key : row.key === key));
       if (hit) return hit.button;
@@ -126,11 +149,14 @@ export class SettingsPanel {
     this.tab = tab;
     for (const [t, list] of this.rows) for (const { button } of list) button.setVisible(t === tab);
     this.reset.setVisible(tab === 'controls');
+    this.padHelp.setVisible(tab === 'devices');
     TABS.forEach((t, i) => this.tabButtons[i]?.setLabel(t.id === tab ? `▸ ${t.label} ◂` : t.label));
     this.note.setText(
       tab === 'controls'
         ? 'Choose an action, then press its new key. Esc cancels. Escape, Tab, 1–6, F3 and Ctrl/Alt are reserved.'
-        : 'Enter / click to change · Esc to go back',
+        : tab === 'devices'
+          ? 'Touch “Auto” shows on-screen controls once the screen is touched. Both follow your keyboard bindings.'
+          : 'Enter / click to change · Esc to go back',
     );
     this.refresh();
     if (this.root.visible) this.rebuildList();
@@ -146,6 +172,7 @@ export class SettingsPanel {
     const s = getSettings();
     if (row.kind === 'volume') updateSettings({ [row.key]: (Math.round(s[row.key] * 10 + 1) % 11) / 10 } as Partial<Settings>);
     else if (row.kind === 'toggle') updateSettings({ [row.key]: !s[row.key] } as Partial<Settings>);
+    else if (row.kind === 'touch') updateSettings({ touchControls: TOUCH_MODES[(TOUCH_MODES.indexOf(s.touchControls) + 1) % TOUCH_MODES.length] });
     else this.beginCapture(row.action);
     this.refresh();
   }
@@ -204,6 +231,7 @@ export class SettingsPanel {
       for (const { row, button } of list) {
         if (row.kind === 'volume') button.setLabel(`${row.label}:  ${Math.round(s[row.key] * 100)}%`);
         else if (row.kind === 'toggle') button.setLabel(`${row.label}:  ${s[row.key] ? 'On' : 'Off'}`);
+        else if (row.kind === 'touch') button.setLabel(`${row.label}:  ${TOUCH_LABEL[s.touchControls]}`);
         else if (this.capturing !== row.action) button.setLabel(`${ACTION_LABELS[row.action]}:  ${keyLabel(s.keys[row.action])}`);
       }
     }

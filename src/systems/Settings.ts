@@ -1,3 +1,4 @@
+import { touchActive } from './VirtualInput';
 /** M16: rebindable actions (stored as KeyboardEvent.code values). */
 export const ACTIONS = ['up', 'down', 'left', 'right', 'sprint', 'interact', 'use', 'attack', 'crouch', 'rotate', 'dismantle', 'inventory', 'crafting', 'journal', 'character', 'map', 'drop', 'help'] as const;
 export type Action = (typeof ACTIONS)[number];
@@ -65,26 +66,44 @@ export function keyFor(action: Action): string {
   return current.keys[action];
 }
 
+/** M19: names of the on-screen touch buttons, used in hints while touch controls are on. */
+const TOUCH_NAMES: Partial<Record<Action, string>> = {
+  interact: 'Act',
+  use: 'Use',
+  crouch: 'Crouch',
+  inventory: 'Bag',
+  crafting: 'Craft',
+  journal: 'Journal',
+  character: 'Self',
+  map: 'Map',
+};
+
 /**
  * Player-facing text is written with the default keys ("press E", "(M)", "Hold E", "F to eat").
  * For every action the player has rebound, this swaps that default letter for the new key, so
- * hints always match the controls. Text is unchanged while the defaults are in use.
+ * hints always match the controls (with touch controls on: the on-screen button's name). All
+ * swaps land in one pass, so exchanging two keys (E ↔ F) can't swap a hint straight back.
+ * Text is unchanged while the defaults are in use.
  */
-export function keyText(text: string): string {
+export function keyText(text: string, touch = touchActive()): string {
   let out = text;
+  const labels: string[] = [];
   for (const a of ACTIONS) {
     const def = DEFAULT_KEYS[a];
     const now = current.keys[a];
-    if (def === now || !/^Key[A-Z]$/.test(def)) continue;
+    const touchName = touch ? TOUCH_NAMES[a] : undefined;
+    if ((def === now && !touchName) || !/^Key[A-Z]$/.test(def)) continue;
     const d = def.slice(3);
-    const label = keyLabel(now);
+    // A placeholder no later pattern can match (no letters, digits are fenced by control chars).
+    const token = `\u0001${labels.length}\u0002`;
+    labels.push(touchName ?? keyLabel(now));
     out = out
-      .replace(new RegExp(String.raw`\(${d}\)`, 'g'), `(${label})`)
-      .replace(new RegExp(String.raw`\b([Pp]ress|[Hh]old|[Uu]se) ${d}\b`, 'g'), `$1 ${label}`)
-      .replace(new RegExp(String.raw`\b${d} (to|rotates|\(hold\)|/ Esc)`, 'g'), `${label} $1`)
-      .replace(new RegExp(String.raw`(^|[^A-Za-z])${d} / `, 'g'), `$1${label} / `);
+      .replace(new RegExp(String.raw`\(${d}\)`, 'g'), `(${token})`)
+      .replace(new RegExp(String.raw`\b([Pp]ress|[Hh]old|[Uu]se) ${d}\b`, 'g'), `$1 ${token}`)
+      .replace(new RegExp(String.raw`\b${d} (to|rotates|\(hold\)|/ Esc)`, 'g'), `${token} $1`)
+      .replace(new RegExp(String.raw`(^|[^A-Za-z])${d} / `, 'g'), `$1${token} / `);
   }
-  return out;
+  return labels.length ? out.replace(/\u0001(\d+)\u0002/g, (_m, i: string) => labels[Number(i)] ?? '') : out;
 }
 
 /** Font size scaled for the "Large text" setting. */
@@ -111,7 +130,12 @@ export interface Settings {
   reducedFlash: boolean;
   /** Show the controls panel and first-day checklist on start. */
   showHints: boolean;
+  /** M19: on-screen touch controls — Auto shows them once the screen is touched. */
+  touchControls: TouchMode;
 }
+
+export const TOUCH_MODES = ['auto', 'on', 'off'] as const;
+export type TouchMode = (typeof TOUCH_MODES)[number];
 
 export const SETTINGS_KEY = 'preychrov.settings';
 
@@ -126,6 +150,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = {
   reducedMotion: false,
   reducedFlash: false,
   showHints: true,
+  touchControls: 'auto',
 };
 
 type Listener = (s: Readonly<Settings>) => void;
@@ -190,6 +215,7 @@ export function parseSettings(raw: string | null): Settings {
     reducedMotion: bool(rec['reducedMotion'], d.reducedMotion),
     reducedFlash: bool(rec['reducedFlash'], d.reducedFlash),
     showHints: bool(rec['showHints'], d.showHints),
+    touchControls: (TOUCH_MODES as readonly unknown[]).includes(rec['touchControls']) ? (rec['touchControls'] as TouchMode) : d.touchControls,
   };
 }
 

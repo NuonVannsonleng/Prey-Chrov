@@ -39,6 +39,7 @@ import { TEX, TILE } from '../textures';
 import { FloatingText } from '../ui/FloatingText';
 import { PropLayer } from '../world/PropLayer';
 import { HeldKeys, oncePerKeyEvent, type HeldKey } from '../utils/keys';
+import { aimMode, setInputStateProvider } from '../systems/VirtualInput';
 import { ChunkManager, type RootWall } from '../world/ChunkManager';
 import type { EndingData } from './Ending';
 import { WorldGen } from '../world/WorldGen';
@@ -1740,9 +1741,15 @@ export class World extends Phaser.Scene {
       b.cancel();
       return;
     }
+    this.playerRect.setTo(this.player.body.x, this.player.body.y, this.player.body.width, this.player.body.height);
+    if (aimMode() === 'virtual') {
+      // Controller / touch: the ghost sits a step in front of the player.
+      const f = this.player.facingVec;
+      b.update(this.player.x + f.x * 56, this.player.y + f.y * 56, this.player.x, this.player.y, this.playerRect);
+      return;
+    }
     const ptr = this.input.activePointer;
     ptr.updateWorldPoint(this.cameras.main);
-    this.playerRect.setTo(this.player.body.x, this.player.body.y, this.player.body.width, this.player.body.height);
     b.update(ptr.worldX, ptr.worldY, this.player.x, this.player.y, this.playerRect);
   }
 
@@ -3195,6 +3202,8 @@ export class World extends Phaser.Scene {
     kb.on('keydown-F3', this.debugHandler);
     kb.on('keydown', this.pressHandler);
     this.input.on(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown, this);
+    // M19: controllers and touch ask whether the player is in control right now.
+    setInputStateProvider(() => (!this.scene.isActive() ? 'screen' : this.busy ? 'screen' : this.storyOpen ? 'story' : this.modalOpen ? 'panel' : 'play'));
   }
 
   private unsubscribeSettings: (() => void) | null = null;
@@ -3288,6 +3297,7 @@ export class World extends Phaser.Scene {
     gameEvents.emit('ambience', { day: 0, night: 0, rain: 0, fire: 0, river: 0 });
     this.unsubscribeSettings?.();
     this.unsubscribeSettings = null;
+    setInputStateProvider(null);
     this.boundSig = '';
     this.held?.destroy();
     this.held = null;

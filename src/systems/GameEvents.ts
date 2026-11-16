@@ -117,6 +117,8 @@ export interface GameEventMap {
   'story:answer': { id: string; accept: boolean };
   /** UI → World: a story moment is on screen (the world holds still while it is). */
   'ui:story': boolean;
+  /** M19: controller LB/RB — previous / next hotbar slot. */
+  'hotbar:cycle': number;
   'story:choose': { id: string; option: string };
   'sidequests:changed': { quests: SideQuestView[]; memories: Array<{ title: string; text: string }> };
   /** Outpost flags for the minimap and journal. */

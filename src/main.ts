@@ -16,6 +16,7 @@ import { World } from './scenes/World';
 import { audio } from './systems/Audio';
 import { getSettings, onSettings } from './systems/Settings';
 import { gameEvents } from './systems/GameEvents';
+import { InputDevices } from './systems/InputDevices';
 
 /**
  * A clear message instead of a silent freeze if something unexpected breaks at runtime.
@@ -83,6 +84,9 @@ const game = new Phaser.Game({
   disableContextMenu: true,
   scene: [Boot, Preload, Menu, World, UI, Pause, GameOver, Ending],
 });
+
+// M19: controllers and on-screen touch controls (they press the bound keys; scenes are unaware).
+new InputDevices(game);
 
 // Procedural audio: unlocked by the first click/key (autoplay policy), fed by typed events.
 audio.install();

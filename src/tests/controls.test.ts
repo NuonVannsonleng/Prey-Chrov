@@ -127,4 +127,20 @@ describe('keyText', () => {
     expect(keyText('East River')).toBe('East River');
     upd({ keys: { ...D } });
   });
+
+  it('a swapped pair (E ↔ F) stays swapped in hints', async () => {
+    const { keyText, updateSettings: upd, DEFAULT_KEYS: D } = await import('../systems/Settings');
+    upd({ keys: { ...D, interact: 'KeyF', use: 'KeyE' } });
+    expect(keyText('Gather (hold E) · eat (F)')).toBe('Gather (hold F) · eat (E)');
+    expect(keyText('Hold E to gather; press F to eat')).toBe('Hold F to gather; press E to eat');
+    upd({ keys: { ...D } });
+  });
+
+  it('with touch controls on, hints name the on-screen buttons', async () => {
+    const { keyText, updateSettings: upd, DEFAULT_KEYS: D } = await import('../systems/Settings');
+    upd({ keys: { ...D } });
+    expect(keyText('Gather wood and stone (hold E)', true)).toBe('Gather wood and stone (hold Act)');
+    expect(keyText('Hold E to gather · Craft a stone axe (C) · map (M)', true)).toBe('Hold Act to gather · Craft a stone axe (Craft) · map (Map)');
+    expect(keyText('Hold E to gather', false)).toBe('Hold E to gather');
+  });
 });

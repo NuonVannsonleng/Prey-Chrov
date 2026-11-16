@@ -2256,6 +2256,188 @@ try {
     await new Promise((r) => sub.close(r));
   }
 
+  // ---- M19: controllers and touch ----
+  {
+    // A scripted standard-layout gamepad (navigator.getGamepads stubbed before the game loads).
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    await ctx.addInitScript(() => {
+      const pad = { id: 'Smoke pad', index: 0, connected: true, mapping: 'standard', timestamp: 0, buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })), axes: [0, 0, 0, 0] };
+      window.__pad = {
+        press(i, on = true) {
+          pad.buttons[i] = { pressed: on, touched: on, value: on ? 1 : 0 };
+        },
+        axes(a) {
+          pad.axes = a;
+        },
+      };
+      Object.defineProperty(navigator, 'getGamepads', { value: () => [pad, null, null, null], configurable: true });
+    });
+    const gp = await ctx.newPage();
+    const gpErr = [];
+    gp.on('pageerror', (e) => gpErr.push(String(e)));
+    gp.on('console', (m) => m.type() === 'error' && gpErr.push(m.text()));
+    await gp.goto(url);
+    await gp.waitForFunction(() => window.__preyChrov?.scene.isActive('Menu'), null, { timeout: 20000 });
+    await gp.waitForTimeout(600);
+    const tapBtn = async (i, ms = 120) => {
+      await gp.evaluate((b) => window.__pad.press(b, true), i);
+      await gp.waitForTimeout(ms);
+      await gp.evaluate((b) => window.__pad.press(b, false), i);
+      await gp.waitForTimeout(150);
+    };
+    await tapBtn(0);
+    const setupOpen = await gp.evaluate(() => window.__preyChrov.scene.getScene('Menu').journeyPanel?.isOpen === true);
+    check('controller: A on the menu chooses the focused button (Play → journey setup)', setupOpen);
+    // Steer the cursor onto Begin with the stick, then press A.
+    const target = await gp.evaluate(() => {
+      const b = window.__preyChrov.scene.getScene('Menu').journeyPanel.buttonFor('begin');
+      const m = b.getWorldTransformMatrix();
+      const r = document.querySelector('#game canvas').getBoundingClientRect();
+      return { x: r.left + (m.tx / 1280) * r.width, y: r.top + (m.ty / 720) * r.height };
+    });
+    let near = false;
+    for (let i = 0; i < 80 && !near; i++) {
+      const pos = await gp.evaluate(() => {
+        const t = document.getElementById('pad-cursor')?.style.transform ?? '';
+        const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(t);
+        return m ? { x: Number(m[1]), y: Number(m[2]) } : null;
+      });
+      const dx = pos ? target.x - pos.x : 0;
+      const dy = pos ? target.y - pos.y : -1;
+      const d = Math.hypot(dx, dy);
+      near = pos !== null && d < 12;
+      const k = Math.min(1, Math.max(0.45, d / 200));
+      await gp.evaluate((a) => window.__pad.axes(a), near ? [0, 0, 0, 0] : [(dx / (d || 1)) * k, (dy / (d || 1)) * k, 0, 0]);
+      await gp.waitForTimeout(40);
+    }
+    await gp.evaluate(() => window.__pad.axes([0, 0, 0, 0]));
+    await tapBtn(0);
+    const startedPad = await gp.waitForFunction(() => window.__preyChrov.scene.isActive('World') && window.__preyChrov.scene.isActive('UI'), null, { timeout: 10000 }).then(
+      () => true,
+      () => false,
+    );
+    check('controller: the stick moves a cursor that clicks Begin', near && startedPad);
+    await gp.waitForTimeout(800);
+    const cursorHidden = await gp.evaluate(() => document.getElementById('pad-cursor')?.style.display === 'none');
+    const pos0 = await gp.evaluate(() => window.__preyChrov.scene.getScene('World').player.x);
+    await gp.evaluate(() => window.__pad.axes([1, 0, 0, 0]));
+    await gp.waitForTimeout(700);
+    await gp.evaluate(() => window.__pad.axes([0, 0, 0, 0]));
+    await gp.waitForTimeout(300);
+    const pos1 = await gp.evaluate(() => window.__preyChrov.scene.getScene('World').player.x);
+    const stopped = await gp.evaluate(() => Math.abs(window.__preyChrov.scene.getScene('World').player.body.velocity.x) < 5);
+    check('controller: left stick walks the player and stops on release; no cursor in play', pos1 > pos0 + 40 && stopped && cursorHidden, `dx=${(pos1 - pos0).toFixed(0)}`);
+    await gp.evaluate(() => window.__pad.press(0, true));
+    await gp.waitForTimeout(120);
+    const aHeld = await gp.evaluate(() => window.__preyChrov.scene.getScene('World').keys.interact.isDown);
+    await gp.evaluate(() => window.__pad.press(0, false));
+    await gp.waitForTimeout(120);
+    const aFree = await gp.evaluate(() => !window.__preyChrov.scene.getScene('World').keys.interact.isDown);
+    const slot0 = await gp.evaluate(() => window.__preyChrov.scene.getScene('UI').hotbar.selectedSlot);
+    await tapBtn(5);
+    const slot1 = await gp.evaluate(() => window.__preyChrov.scene.getScene('UI').hotbar.selectedSlot);
+    check('controller: A holds gather / interact, RB steps the hotbar', aHeld && aFree && slot1 === (slot0 + 1) % 6, JSON.stringify({ aHeld, aFree, slot0, slot1 }));
+    await gp.evaluate(() => window.__pad.press(12, true));
+    await gp.waitForTimeout(200);
+    const invOpen = await gp.evaluate(() => window.__preyChrov.scene.getScene('UI').panel.isOpen);
+    await gp.waitForTimeout(150);
+    const stillOpenPad = await gp.evaluate(() => window.__preyChrov.scene.getScene('UI').panel.isOpen);
+    await gp.evaluate(() => window.__pad.press(12, false));
+    await gp.waitForTimeout(150);
+    await tapBtn(1);
+    const invClosed = await gp.evaluate(() => !window.__preyChrov.scene.getScene('UI').panel.isOpen);
+    check('controller: D-pad up opens the inventory (the held press does not leak into it) and B closes it', invOpen && stillOpenPad && invClosed);
+    await tapBtn(9);
+    const pausedPad = await gp.waitForFunction(() => window.__preyChrov.scene.isActive('Pause'), null, { timeout: 3000 }).then(
+      () => true,
+      () => false,
+    );
+    await gp.waitForTimeout(200);
+    await tapBtn(1);
+    const resumedPad = await gp.waitForFunction(() => !window.__preyChrov.scene.isActive('Pause') && window.__preyChrov.scene.isActive('World'), null, { timeout: 3000 }).then(
+      () => true,
+      () => false,
+    );
+    check('controller: Start pauses and B resumes', pausedPad && resumedPad);
+    check('controller session: no errors', gpErr.length === 0, gpErr.slice(0, 3).join(' | '));
+    await ctx.close();
+  }
+  {
+    // A phone in landscape with real touch input (Chromium touch emulation over CDP).
+    const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+    const tp = await ctx.newPage();
+    const tpErr = [];
+    tp.on('pageerror', (e) => tpErr.push(String(e)));
+    tp.on('console', (m) => m.type() === 'error' && tpErr.push(m.text()));
+    const cdp = await ctx.newCDPSession(tp);
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map((p, i) => ({ x: p.x, y: p.y, id: p.id ?? i })) });
+    const centre = (sel) =>
+      tp.evaluate((s) => {
+        const r = document.querySelector(s).getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      }, sel);
+    await tp.goto(url);
+    await tp.waitForFunction(() => window.__preyChrov?.scene.isActive('Menu'), null, { timeout: 20000 });
+    await tp.waitForTimeout(600);
+    const play = await tp.evaluate(() => {
+      const r = document.querySelector('#game canvas').getBoundingClientRect();
+      return { x: r.left + 0.5 * r.width, y: r.top + (430 / 720) * r.height };
+    });
+    await touch('touchStart', [play]);
+    await touch('touchEnd', []);
+    await tp.waitForTimeout(300);
+    const tappedPlay = await tp.evaluate(() => window.__preyChrov.scene.getScene('Menu').journeyPanel?.isOpen === true);
+    await tp.evaluate(() => {
+      const m = window.__preyChrov.scene.getScene('Menu');
+      if (m.journeyPanel?.isOpen) m.journeyPanel.buttonFor('begin').activate();
+    });
+    const startedTouch = await tp.waitForFunction(() => window.__preyChrov.scene.isActive('World'), null, { timeout: 10000 }).then(
+      () => true,
+      () => false,
+    );
+    await tp.waitForTimeout(800);
+    const overlay = await tp.evaluate(() => document.getElementById('touch')?.style.display === 'block');
+    check('touch: tapping Play works and the on-screen controls appear in play', tappedPlay && startedTouch && overlay, JSON.stringify({ tappedPlay, startedTouch, overlay }));
+    await tp.screenshot({ path: `${OUT}/m19-touch.png` });
+    const stick = await centre('.touch-stick');
+    const act = await centre('.touch-big');
+    const x0 = await tp.evaluate(() => window.__preyChrov.scene.getScene('World').player.x);
+    // Two fingers: push the stick right and hold Act at the same time.
+    await touch('touchStart', [{ ...stick, id: 1 }]);
+    await touch('touchMove', [{ x: stick.x + 40, y: stick.y, id: 1 }]);
+    await touch('touchStart', [{ x: stick.x + 40, y: stick.y, id: 1 }, { ...act, id: 2 }]);
+    await tp.waitForTimeout(600);
+    const both = await tp.evaluate(() => {
+      const w = window.__preyChrov.scene.getScene('World');
+      return { interact: w.keys.interact.isDown, right: w.keys.right.isDown };
+    });
+    await touch('touchEnd', []);
+    await tp.waitForTimeout(300);
+    const x1 = await tp.evaluate(() => window.__preyChrov.scene.getScene('World').player.x);
+    const releasedTouch = await tp.evaluate(() => {
+      const w = window.__preyChrov.scene.getScene('World');
+      return !w.keys.interact.isDown && !w.keys.right.isDown;
+    });
+    check('touch: the stick walks while Act is held (two fingers), and both let go', both.interact && both.right && x1 > x0 + 20 && releasedTouch, JSON.stringify({ both, dx: x1 - x0, releasedTouch }));
+    const bag = await centre('[data-cmd="inventory"]');
+    await touch('touchStart', [bag]);
+    await touch('touchEnd', []);
+    await tp.waitForTimeout(250);
+    const bagOpen = await tp.evaluate(() => window.__preyChrov.scene.getScene('UI').panel.isOpen && document.querySelector('.touch-close').style.display === 'block' && document.getElementById('touch').style.display === 'none');
+    const closeBtn = await centre('.touch-close');
+    await touch('touchStart', [closeBtn]);
+    await touch('touchEnd', []);
+    await tp.waitForTimeout(250);
+    const bagClosed = await tp.evaluate(() => !window.__preyChrov.scene.getScene('UI').panel.isOpen && document.getElementById('touch').style.display === 'block');
+    check('touch: Bag opens the inventory, Close shuts it and the controls return', bagOpen && bagClosed, JSON.stringify({ bagOpen, bagClosed }));
+    await tp.setViewportSize({ width: 390, height: 844 });
+    await tp.waitForTimeout(300);
+    const hint = await tp.evaluate(() => document.querySelector('.touch-rotate').style.display === 'block');
+    check('touch: a tall screen asks to turn the device sideways', hint);
+    check('touch session: no errors', tpErr.length === 0, tpErr.slice(0, 3).join(' | '));
+    await ctx.close();
+  }
+
   await page.evaluate(() => localStorage.clear());
 
   check('no console errors', errors.length === 0, errors.slice(0, 5).join(' | '));

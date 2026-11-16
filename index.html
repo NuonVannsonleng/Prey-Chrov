@@ -36,6 +36,137 @@
         font: 15px/1.4 'Kantumruy Pro', system-ui, sans-serif;
         z-index: 10;
       }
+      /* M19: controller cursor and touch controls (HTML above the game canvas). */
+      #game {
+        touch-action: none;
+      }
+      #pad-cursor {
+        position: fixed;
+        left: -11px;
+        top: -11px;
+        width: 18px;
+        height: 18px;
+        border: 2px solid #e6b866;
+        border-radius: 50%;
+        background: rgba(230, 184, 102, 0.25);
+        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6);
+        pointer-events: none;
+        z-index: 9;
+        display: none;
+      }
+      #pad-cursor.down {
+        background: rgba(230, 184, 102, 0.7);
+      }
+      .touch-ui,
+      .touch-close,
+      .touch-rotate {
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+        touch-action: none;
+        font: 600 15px/1 'Kantumruy Pro', system-ui, sans-serif;
+      }
+      .touch-ui {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 8;
+      }
+      .touch-ui {
+        --b: clamp(42px, 12vh, 64px);
+      }
+      .touch-stick {
+        position: absolute;
+        left: max(20px, env(safe-area-inset-left));
+        bottom: max(20px, env(safe-area-inset-bottom));
+        width: calc(var(--b) * 2.1);
+        height: calc(var(--b) * 2.1);
+        border-radius: 50%;
+        background: rgba(16, 34, 30, 0.45);
+        border: 2px solid rgba(232, 228, 216, 0.35);
+        pointer-events: auto;
+      }
+      .touch-knob {
+        position: absolute;
+        left: 30%;
+        top: 30%;
+        width: 40%;
+        height: 40%;
+        border-radius: 50%;
+        background: rgba(232, 228, 216, 0.55);
+        pointer-events: none;
+      }
+      .touch-actions {
+        position: absolute;
+        right: max(20px, env(safe-area-inset-right));
+        bottom: max(20px, env(safe-area-inset-bottom));
+        display: grid;
+        grid-template-columns: calc(var(--b) * 1.15) calc(var(--b) * 1.15);
+        gap: 10px;
+        pointer-events: none;
+      }
+      /* Panels and pause: one row above the hotbar, clear of the HUD corners. */
+      .touch-top {
+        position: absolute;
+        left: 50%;
+        bottom: calc(max(20px, env(safe-area-inset-bottom)) + 7.5vh + 16px);
+        transform: translateX(-50%);
+        display: flex;
+        gap: 6px;
+        pointer-events: none;
+      }
+      .touch-btn,
+      .touch-close {
+        min-width: 64px;
+        min-height: 48px;
+        padding: 6px 10px;
+        color: #e8e4d8;
+        background: rgba(16, 34, 30, 0.72);
+        border: 2px solid rgba(75, 106, 92, 0.95);
+        border-radius: 12px;
+        pointer-events: auto;
+        font: inherit;
+      }
+      .touch-top .touch-btn {
+        min-width: 0;
+        min-height: 34px;
+        padding: 4px 10px;
+        font-size: 13px;
+        opacity: 0.85;
+      }
+      .touch-actions .touch-btn {
+        min-width: 0;
+        height: var(--b);
+      }
+      .touch-btn.touch-big {
+        grid-column: span 2;
+        height: calc(var(--b) * 1.1);
+        font-size: 18px;
+      }
+      .touch-btn.on {
+        background: rgba(230, 184, 102, 0.45);
+        border-color: #e6b866;
+      }
+      .touch-close {
+        position: fixed;
+        right: max(16px, env(safe-area-inset-right));
+        top: max(16px, env(safe-area-inset-top));
+        z-index: 8;
+      }
+      .touch-rotate {
+        position: fixed;
+        left: 50%;
+        top: 12px;
+        transform: translateX(-50%);
+        padding: 8px 14px;
+        color: #f2e6d8;
+        background: rgba(16, 34, 30, 0.9);
+        border: 1px solid #e6b866;
+        border-radius: 8px;
+        z-index: 8;
+        pointer-events: none;
+        white-space: nowrap;
+      }
       #fatal button {
         margin: 8px 8px 0 0;
         padding: 6px 12px;

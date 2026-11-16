@@ -4,6 +4,7 @@ import { itemDef } from '../data/gameData';
 import { gameEvents, onSceneEvent, type InventoryView, type PlayerTick } from '../systems/GameEvents';
 import { HOTBAR_SLOTS } from '../systems/Inventory';
 import { TEX } from '../textures';
+import { onTouchActive, touchActive } from '../systems/VirtualInput';
 import { getSettings, onSettings, keyFor, keyLabel, keyText, fontPx, type Action } from '../systems/Settings';
 import { oncePerKeyEvent } from '../utils/keys';
 import { ConfirmDialog } from '../ui/components/ConfirmDialog';
@@ -218,6 +219,10 @@ export class UI extends Phaser.Scene {
       this.hints.setVisible(false);
       this.status.setObjectivesVisible(false);
     }
+    // M19: the keyboard help means nothing on a touch screen (the on-screen buttons are labelled).
+    if (touchActive()) this.hints.setVisible(false);
+    const offTouch = onTouchActive((on) => on && this.hints.setVisible(false));
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, offTouch);
 
     onSceneEvent(this, 'achievement', (a) => {
       this.achQueue.push(`★ Achievement: ${a.name}\n${a.description}`);
@@ -340,6 +345,7 @@ export class UI extends Phaser.Scene {
     const kb = this.input.keyboard;
     kb?.on('keydown', this.keyHandler);
     this.input.on(Phaser.Input.Events.POINTER_WHEEL, this.onWheel, this);
+    onSceneEvent(this, 'hotbar:cycle', (dir) => this.cycleHotbar(dir));
     const unsubscribe = onSettings((s) => {
       const sig = `${s.highContrast}|${s.largeText}|${JSON.stringify(s.keys)}`;
       if (sig !== this.settingsSig) this.settingsDirty = true;
@@ -481,8 +487,13 @@ export class UI extends Phaser.Scene {
   }
 
   private onWheel(_p: Phaser.Input.Pointer, _over: unknown, _dx: number, dy: number): void {
-    if (this.modal || dy === 0) return;
-    const next = (this.hotbar.selectedSlot + Math.sign(dy) + HOTBAR_SLOTS) % HOTBAR_SLOTS;
+    this.cycleHotbar(dy);
+  }
+
+  /** Mouse wheel and controller LB/RB step through the hotbar. */
+  private cycleHotbar(dir: number): void {
+    if (this.modal || dir === 0) return;
+    const next = (this.hotbar.selectedSlot + Math.sign(dir) + HOTBAR_SLOTS) % HOTBAR_SLOTS;
     gameEvents.emit('inventory:request', { type: 'select', slot: next });
   }
 
