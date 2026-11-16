@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.22.0 — M22: Review pack, art pipeline, co-op note (2026-11-17)
+
+### Added
+- A Khmer & cultural review pack (`npm run l10n:export`): every Khmer string and culturally sensitive line, ready for native-speaker review.
+- A hand-drawn art pipeline: `npm run art:templates` exports the sprite sheets. PNGs listed in `public/art/manifest.json` replace them at start-up, with safe fallbacks.
+- A co-op design note. No networking was added.
+
 ## 0.21.0 — M21: Ecological seasons and the Rocky Ridge (2026-11-17)
 
 ### Added

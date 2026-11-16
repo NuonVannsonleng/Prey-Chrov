@@ -2622,6 +2622,54 @@ try {
     await ctx.close();
   }
 
+  // ---- M22: hand-drawn art pipeline ----
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    const helper = await ctx.newPage();
+    // Solid magenta PNGs: one the exact size of the target ring (36×14), one the wrong size for the arrow (24×24).
+    const [okPng, badPng] = await helper.evaluate(() => {
+      const mk = (w, h) => {
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        const x = c.getContext('2d');
+        x.fillStyle = '#ff00ff';
+        x.fillRect(0, 0, w, h);
+        return c.toDataURL('image/png').split(',')[1];
+      };
+      return [mk(36, 14), mk(10, 10)];
+    });
+    await helper.close();
+    const ap = await ctx.newPage();
+    const apErr = [];
+    const apWarn = [];
+    ap.on('pageerror', (e) => apErr.push(String(e)));
+    ap.on('console', (m) => {
+      if (m.type() === 'error') apErr.push(m.text());
+      if (m.type() === 'warning') apWarn.push(m.text());
+    });
+    await ap.route('**/art/manifest.json', (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ textures: { 'tex-target-ring': 'ring.png', 'tex-arrow': 'arrow.png', 'tex-dragon': 'dragon.png' } }) }));
+    await ap.route('**/art/ring.png', (r) => r.fulfill({ contentType: 'image/png', body: Buffer.from(okPng, 'base64') }));
+    await ap.route('**/art/arrow.png', (r) => r.fulfill({ contentType: 'image/png', body: Buffer.from(badPng, 'base64') }));
+    await ap.goto(url);
+    await ap.waitForFunction(() => window.__preyChrov?.scene.isActive('Menu'), null, { timeout: 20000 });
+    await ap.waitForTimeout(300);
+    const art = await ap.evaluate(() => {
+      const g = window.__preyChrov;
+      const r = g.registry.get('artOverrides') ?? null;
+      const ring = g.textures.getPixel(18, 7, 'tex-target-ring');
+      const arrow = g.textures.getPixel(12, 12, 'tex-arrow');
+      return { r, ring: ring ? [ring.r, ring.g, ring.b] : null, arrowReplaced: arrow ? arrow.r === 255 && arrow.g === 0 && arrow.b === 255 : false };
+    });
+    check('art pipeline: a same-size hand-drawn PNG replaces a generated texture', art.r?.applied?.includes('tex-target-ring') && JSON.stringify(art.ring) === '[255,0,255]', JSON.stringify(art));
+    check(
+      'art pipeline: a wrong-size PNG and an unknown texture are skipped with a clear warning; the generated art stays',
+      art.r?.skipped?.includes('tex-arrow') && !art.arrowReplaced && apWarn.some((w) => /must be 24×24/.test(w)) && apWarn.some((w) => /unknown texture "tex-dragon"/.test(w)) && apErr.length === 0,
+      JSON.stringify({ skipped: art.r?.skipped, apWarn: apWarn.slice(0, 3), apErr: apErr.slice(0, 2) }),
+    );
+    await ctx.close();
+  }
+
   await page.evaluate(() => localStorage.clear());
 
   check('no console errors', errors.length === 0, errors.slice(0, 5).join(' | '));

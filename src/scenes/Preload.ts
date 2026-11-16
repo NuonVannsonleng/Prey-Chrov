@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
-import { CSS, SCENES } from '../config';
+import { CSS, DEBUG_HOOKS, SCENES } from '../config';
 import { generateAllTextures } from '../art/generate';
+import { applyArtOverrides } from '../art/overrides';
 import { getGameData } from '../data/gameData';
 import { DataValidationError } from '../data/schema';
 import { ensurePlayerAnimations } from '../entities/Player';
@@ -20,7 +21,23 @@ export class Preload extends Phaser.Scene {
     }
     generateAllTextures(this);
     ensurePlayerAnimations(this.anims);
-    this.scene.start(SCENES.menu);
+    // M22: hand-drawn replacements (public/art/manifest.json), never holding the menu up for long.
+    let started = false;
+    const abort = typeof AbortController === 'function' ? new AbortController() : null;
+    const go = () => {
+      if (started) return;
+      started = true;
+      abort?.abort();
+      this.scene.start(SCENES.menu);
+    };
+    this.time.delayedCall(3000, go);
+    void applyArtOverrides(this, 'art/', abort?.signal)
+      .then((r) => {
+        if (r.applied.length) console.info(`[art] using hand-drawn art for ${r.applied.join(', ')}`);
+        if (DEBUG_HOOKS) this.registry.set('artOverrides', r);
+      })
+      .catch(() => undefined)
+      .finally(go);
   }
 
   /** Bad JSON must never produce a blank screen: list the problems instead. */

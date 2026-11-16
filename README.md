@@ -67,6 +67,9 @@ These are the default keys. Every action except Esc, Tab, 1–6 and F3 can be re
 - [Privacy](docs/PRIVACY.md): what is stored (only in your browser) and how to delete it
 - [Technical overview](docs/TECHNICAL.md): architecture, data, saves, tests
 - [Milestones](docs/MILESTONES.md) and [Changelog](docs/CHANGELOG.md)
+- [Art pipeline](docs/ART_PIPELINE.md): replacing the generated art with hand-drawn PNGs
+- [Khmer & cultural review pack](docs/l10n/REVIEW_PACK.md): every line awaiting native-speaker review
+- [Co-op design note](docs/COOP.md): what co-op would take (not implemented)
 
 ## Project layout
 

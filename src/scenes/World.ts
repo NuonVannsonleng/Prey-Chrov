@@ -921,7 +921,8 @@ export class World extends Phaser.Scene {
         // A new season (not on load or on day 1): announce it.
         if (this.ecoId !== '') {
           gameEvents.emit('toast', { text: `${eco.season.name}: ${eco.season.arrival}`, tone: 'info' });
-          gameEvents.emit('music', 'dawn');
+          const h = this.clock.hour;
+          if (h >= 6 && h < 18 && !this.inDanger()) gameEvents.emit('music', 'dawn');
         }
         this.ecoId = eco.season.id;
         this.eco = eco.season;
@@ -1509,12 +1510,16 @@ export class World extends Phaser.Scene {
         first.qty++;
         this.floating.show(node.targetX, node.targetY - 30, 'Skilled harvest +1', '#8ec26a');
       }
-      // Difficulty: forage (food and herbs) is richer or leaner; never below one.
+      // Difficulty and season: every forage stack (food and herbs) is richer or leaner; never below one.
       const fy = this.rfx.forageYield * this.ecoForage(node.def.id);
-      const forage = first && (itemDef(first.item).category === 'food' || itemDef(first.item).tags?.includes('herb'));
-      if (first && forage && fy !== 1) {
-        if (fy > 1 && Math.random() < fy - 1) first.qty++;
-        else if (fy < 1 && first.qty > 1 && Math.random() < 1 - fy) first.qty--;
+      if (fy !== 1) {
+        for (const s of loot) {
+          const d = itemDef(s.item);
+          if (d.category !== 'food' && !d.tags?.includes('herb')) continue;
+          if (fy > 1) {
+            for (let extra = fy - 1; extra > 0; extra -= 1) if (Math.random() < Math.min(1, extra)) s.qty++;
+          } else if (s.qty > 1 && Math.random() < 1 - fy) s.qty--;
+        }
       }
     }
     if (result === 'depleted' && node.def.unknownName && !this.knownPlants.has(node.def.id)) {

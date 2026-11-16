@@ -25,8 +25,53 @@ Status legend: **Done** · **In progress** · **Not started**
 | M19 | Controllers and touch | Done |
 | M20 | Travelers, barter and The River Road | Done |
 | M21 | Ecological seasons and the Rocky Ridge | Done |
+| M22 | Localization review pack, hand-drawn art pipeline, co-op design note | Done |
 
 ---
+
+## M22 — Localization review pack, hand-drawn art pipeline, co-op note
+
+This milestone covers the remaining M19+ items that can be done honestly without outside people or a new architecture.
+
+### Implemented
+
+- **Khmer & cultural review pack** (`npm run l10n:export`):
+  - The pack is in `docs/l10n/REVIEW_PACK.md`, with `review_pack.csv` for spreadsheets (UTF-8 with BOM, so Khmer opens correctly).
+  - It lists every Khmer string in the data and the code, and every English line that touches Khmer culture or belief (Neak Ta, Ap, Arak, shrines, offerings and similar).
+  - Each line shows the file, path and what it labels, with empty status, suggestion and reviewer columns for a native speaker and a cultural advisor.
+  - `--check` reports whether the pack is up to date.
+  - It currently has 95 lines: 42 in Khmer and 53 English cultural lines, including prompts written in the code.
+  - It runs from any folder.
+- **Hand-drawn art pipeline:**
+  - **Templates:** `npm run art:templates` exports every generated sprite sheet as a PNG with its frame list.
+  - **Install:** an artist paints over a sheet at the same size and lists it in `public/art/manifest.json`. At start-up the PNG is drawn over the generated canvas, so all frame names, animations and hitboxes keep working.
+  - **Safety:** wrong sizes, unknown textures, unsafe or remote paths and missing files are skipped with a clear console warning, and the generated art stays. The menu never waits more than 3 seconds.
+  - **Default:** the shipped manifest is empty.
+  - **Guide:** [ART_PIPELINE.md](ART_PIPELINE.md).
+- **Co-op design note** ([COOP.md](COOP.md)):
+  - It covers what co-op would take (one authority, many players, story pauses, shared saves, privacy) and recommends local couch co-op first.
+  - **No networking was added.** The master prompt warns against introducing multiplayer into the single-player foundation prematurely.
+
+### Verification
+
+- **Unit tests:** the manifest parser accepts known textures and relative PNGs. It refuses unknown keys, `..`, absolute and remote paths, non-PNG files and junk, without throwing. An empty manifest changes nothing.
+- **`npm run smoke`:**
+  - With a routed manifest, a same-size magenta PNG replaces the target-ring texture (the pixel is checked).
+  - A wrong-size PNG and an unknown texture are skipped with "must be 24×24" and "unknown texture" warnings, and no errors.
+  - The default build still makes no third-party requests and no 404s.
+- **Scripts:** `npm run art:templates` exported 33 generated textures from the built game, and `npm run l10n:export -- --check` passes (it checks both the Markdown and the CSV).
+- **QA review** (real `phaser-qa`) of M21 and M22 found 0 Critical and 4 Warnings, all fixed:
+  - Season and difficulty forage now apply to every food or herb stack. Before, rainy-season bamboo shoots never increased.
+  - The season stinger plays only at calm daylight moments.
+  - Late art results after the 3-second start-up limit are ignored, so art doesn't pop in mid-play.
+  - The menu always starts, even if bookkeeping throws.
+  - Notes fixed: template export ignores existing overrides and checks for a build, and the co-op privacy wording is exact.
+
+### Not done (needs people)
+
+- **The review itself:** the pack is ready for a native Khmer speaker and a cultural advisor, but no review has happened.
+- **Hand-drawn art:** the pipeline is ready, but no hand-drawn art was made.
+- **Co-op:** design only.
 
 ## M21 — Ecological seasons and the Rocky Ridge
 

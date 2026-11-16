@@ -121,3 +121,9 @@ Budgets checked by the tests:
 2. Run `npm test`. The validator explains any problem.
 3. For new art, add a draw function in `src/art/` and register its frames in `textures.ts`.
 4. Note any Khmer or cultural text for native-speaker review in `docs/MILESTONES.md`.
+
+## Art overrides and the review pack (M22)
+
+- `src/art/manifest.ts` (pure) validates `public/art/manifest.json`. `src/art/overrides.ts` loads the PNGs after `generateAllTextures` and draws each over its `CanvasTexture` if the size matches exactly, then calls `refresh()`. Frames and animations are untouched.
+- `scripts/art-templates.mjs` exports every `tex-*` canvas with its frame rectangles from the built game in headless Edge or Chrome.
+- `scripts/l10n-export.mjs` walks `src/data/*.json` and `src/**/*.ts` (tests excluded) for Khmer script and culturally sensitive English, and writes `docs/l10n/`. `--check` exits 1 when the pack is stale, so run it after content changes.
