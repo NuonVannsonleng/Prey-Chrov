@@ -50,7 +50,10 @@ describe('shipped game data', () => {
   it('guaranteed starter resources exist and cover every basic material', () => {
     const ids = new Set<string>(WORLD_GEN.starterProps.map((p) => p.id));
     for (const id of ids) expect(data.resources.has(id), `${id} missing from resources.json`).toBe(true);
-    for (const r of data.resources.values()) expect(ids.has(r.id), `starter area lacks ${r.id}`).toBe(true);
+    // Regional resources (found only in the M21 Rocky Ridge) are a reason to travel, not a starter need.
+    const regional = new Set([...data.resources.keys()].filter((id) => [...data.biomes.values()].every((b) => b.id === 'rocky_ridge' || !b.props.some((p) => p.kind === 'resource' && p.id === id))));
+    expect([...regional]).toEqual(['flint_outcrop']);
+    for (const r of data.resources.values()) if (!regional.has(r.id)) expect(ids.has(r.id), `starter area lacks ${r.id}`).toBe(true);
   });
 
   it('every biome has props and every resource appears in some biome', () => {

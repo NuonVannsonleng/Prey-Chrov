@@ -1,4 +1,4 @@
-import type { SeasonConfig } from '../data/schema';
+import type { EcoSeason, SeasonConfig } from '../data/schema';
 
 export interface Forecast {
   /** True while a monsoon is in progress. */
@@ -50,4 +50,27 @@ export function forecast(day: number, hour: number, cfg: SeasonConfig): Forecast
 /** Survival modifiers while it rains. */
 export function weatherModifiers(fc: Forecast, cfg: SeasonConfig): { thirst: number; hunger: number } {
   return fc.monsoon ? { thirst: cfg.thirstMultiplier, hunger: cfg.hungerMultiplier } : { thirst: 1, hunger: 1 };
+}
+
+export interface EcoNow {
+  season: EcoSeason;
+  /** 1-based day within this season. */
+  dayInSeason: number;
+  daysLeft: number;
+  /** 1-based year of the journey (a year is three seasons). */
+  year: number;
+}
+
+/**
+ * M21: the slow ecological year — cool → hot → rainy — `lengthDays` each, from day 1. Pure.
+ * (The short monsoon storms keep their own schedule on top of it.)
+ */
+export function ecoSeasonOn(day: number, cfg: SeasonConfig): EcoNow {
+  const eco = cfg.ecology;
+  const n = eco.seasons.length;
+  const d = Math.max(0, Math.floor(day) - 1);
+  const idx = Math.floor(d / eco.lengthDays);
+  const season = eco.seasons[idx % n] as EcoSeason;
+  const dayInSeason = (d % eco.lengthDays) + 1;
+  return { season, dayInSeason, daysLeft: eco.lengthDays - dayInSeason, year: Math.floor(idx / n) + 1 };
 }

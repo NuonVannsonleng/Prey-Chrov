@@ -131,7 +131,8 @@ export interface GameEventMap {
   'placement:cancel': void;
   'objectives:changed': ObjectiveView[];
   /** World seed, sent when the UI is ready (minimap uses its own generator with this seed). */
-  'world:info': { seed: number };
+  /** Seed and content generation (M21: maps must draw the same biomes and landmarks as the world). */
+  'world:info': { seed: number; content: number };
   /** Placed structure positions (minimap markers). */
   'structures:changed': Array<{ x: number; y: number; kind: string }>;
   /** Active status effects (sent about once a second). */

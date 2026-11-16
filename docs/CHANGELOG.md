@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.21.0 — M21: Ecological seasons and the Rocky Ridge (2026-11-17)
+
+### Added
+- A slow year for new journeys: cool, hot dry and rainy seasons (8 days each), each changing hunger, thirst, foraging, fishing, wildlife and, in the cool season, night cold. The HUD names the season.
+- The Rocky Ridge region: red earth and sandstone, with flint outcrops that are the best flint source in the forest.
+
+### Fixed
+- The minimap and map now draw the newer world content.
+- Conversations, trades and the River Road handle danger, busy moments and queued stories correctly.
+- Touch buttons work with keyboard and screen readers, with larger targets.
+
+### Compatibility
+- Journeys started before 0.21 keep their world and pacing (no seasons, no ridges).
+
+## 0.20.0 — M20: Travelers, barter and The River Road (2026-11-17)
+
+### Added
+- Three travelers visit every few days to barter, share news that marks your map, and tell their stories.
+- The River Road: a second ending, leaving the forest downriver with the river trader.
+- Four achievements.
+
+## 0.19.0 — M19: Controllers and touch (2026-11-17)
+
+### Added
+- Controller support, with a cursor for menus and panels.
+- On-screen touch controls with multi-touch, an Auto/On/Off setting and a landscape hint.
+- Settings › Controller & touch.
+
+### Fixed
+- Swapping two keys keeps the hints swapped.
+
 ## 0.18.0 — M18: Release hardening and web publishing (2026-11-16)
 
 ### Added

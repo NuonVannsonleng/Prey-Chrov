@@ -6,6 +6,50 @@
   "hungerMultiplier": 1.4,
   "rainDarkness": 0.2,
   "floodRiverWidth": 2.3,
+  "ecology": {
+    "lengthDays": 8,
+    "seasons": [
+      {
+        "id": "cool",
+        "name": "Cool season",
+        "nameKm": "រដូវត្រជាក់",
+        "arrival": "A dry chill settles at dusk. Nights bite now, so keep a fire close. The fish are slow to rise.",
+        "description": "Cold nights outside shelter or fire. Fish bite slowly. Hunger slightly higher.",
+        "hunger": 1.05,
+        "thirst": 1.0,
+        "nightCold": 0.35,
+        "forage": { "berry_bush": 1.0, "healing_herb": 1.0, "bitter_root_plant": 1.0, "bamboo_clump": 1.0 },
+        "fishBite": 1.25,
+        "spawn": 1.0
+      },
+      {
+        "id": "hot",
+        "name": "Hot season",
+        "nameKm": "រដូវក្តៅ",
+        "arrival": "The air shimmers and the pools shrink. Your throat is dry by noon. Berries are thin, but fish crowd the water.",
+        "description": "Thirst up. Berries and herbs scarcer. Fish bite sooner. More wildlife about.",
+        "hunger": 1.0,
+        "thirst": 1.25,
+        "nightCold": 0.0,
+        "forage": { "berry_bush": 0.6, "healing_herb": 0.7, "bitter_root_plant": 0.9, "bamboo_clump": 0.8 },
+        "fishBite": 0.75,
+        "spawn": 1.15
+      },
+      {
+        "id": "rainy",
+        "name": "Rainy season",
+        "nameKm": "រដូវវស្សា",
+        "arrival": "Green smell of wet earth. Water is easy to find, herbs and shoots push up, and fewer creatures stir.",
+        "description": "Thirst down. Herbs and bamboo shoots plentiful. Fish bite slowly. Fewer creatures.",
+        "hunger": 0.95,
+        "thirst": 0.85,
+        "nightCold": 0.0,
+        "forage": { "berry_bush": 1.0, "healing_herb": 1.4, "bitter_root_plant": 1.2, "bamboo_clump": 1.5 },
+        "fishBite": 1.2,
+        "spawn": 0.9
+      }
+    ]
+  },
   "cold": {
     "lossPerHour": 17,
     "recoverPerHour": 30,

@@ -63,6 +63,28 @@ export function drawExtraTiles(ctx: Ctx): void {
       y += randInt(rng, -1, 1);
     }
   }
+
+  // M21 laterite: the red earth of the ridges, with iron-dark pebbles.
+  ox = TILE.laterite * TILE_SIZE;
+  px(ctx, ox, 0, TILE_SIZE, TILE_SIZE, hex(0x6e4632));
+  speckle(ctx, ox, rng, 0x6e4632, 90, 0.16);
+  for (let i = 0; i < 7; i++) ellipse(ctx, ox + randInt(rng, 3, 29), randInt(rng, 3, 29), randRange(rng, 1, 2.2), randRange(rng, 1, 1.6), hex(shade(0x4a2a1c, randRange(rng, -0.2, 0.2))));
+
+  // M21 rock slab: weathered sandstone with cracks and lichen.
+  ox = TILE.rockSlab * TILE_SIZE;
+  px(ctx, ox, 0, TILE_SIZE, TILE_SIZE, hex(0x7a705f));
+  speckle(ctx, ox, rng, 0x7a705f, 80, 0.12);
+  {
+    // One short, wandering crack (a long straight one tiles into stripes).
+    let x = ox + randInt(rng, 8, 22);
+    let y = randInt(rng, 6, 12);
+    for (let s = 0; s < 6; s++) {
+      px(ctx, x, y, 2, 1, hex(0x5a5244));
+      x = Math.max(ox, Math.min(ox + 30, x + randInt(rng, -2, 2)));
+      y += 2;
+    }
+  }
+  for (let i = 0; i < 4; i++) px(ctx, ox + randInt(rng, 1, 28), randInt(rng, 1, 28), 3, 2, hex(0x9fae6a, 0.7));
 }
 
 // ---------- Scenery sprites ----------

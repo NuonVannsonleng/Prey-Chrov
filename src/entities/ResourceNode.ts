@@ -59,6 +59,7 @@ export class ResourceNode {
       }
     }
     this.image.setOrigin(0.5, 1).setDepth(ySort(y));
+    if (def.tint) this.image.setTint(Number.parseInt(def.tint.slice(1), 16));
 
     // Bushes swap frames instead of showing a separate stump.
     this.stump =

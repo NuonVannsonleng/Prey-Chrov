@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { CAMERA, DEBUG_HOOKS, DEPTH, GATHER, PICKUP, SCENES, WATER, WORLD_GEN, ySort } from '../config';
 import { getGameData, itemDef } from '../data/gameData';
-import type { GameData, ItemDef, SeasonConfig, Station, ToolKind, TravelerDef } from '../data/schema';
+import type { EcoSeason, GameData, ItemDef, SeasonConfig, Station, ToolKind, TravelerDef } from '../data/schema';
 import type { ItemStack } from '../systems/Inventory';
 import { Player, type PlayerKeys } from '../entities/Player';
 import type { ResourceNode } from '../entities/ResourceNode';
@@ -11,7 +11,7 @@ import { Projectiles } from '../systems/Projectiles';
 import { StatusEffects, type EffectId } from '../systems/StatusEffects';
 import type { Enemy } from '../entities/Enemy';
 import { hash2, hashString, mulberry32 } from '../utils/random';
-import { forecast, weatherModifiers, type Forecast } from '../systems/Season';
+import { ecoSeasonOn, forecast, weatherModifiers, type Forecast } from '../systems/Season';
 import { QuestLog } from '../systems/Quest';
 import { getSettings, onSettings } from '../systems/Settings';
 import { rollLoot } from '../systems/Loot';
@@ -245,6 +245,26 @@ export class World extends Phaser.Scene {
   private nextWeatherAt = 0;
   private nextQuestTargetAt = 0;
   private weatherKey = '';
+  private ecoId = '';
+  /** M21: the ecological season (null on journeys made before content 3: they play as before). */
+  private eco: EcoSeason | null = null;
+  /** Night-cold configs scaled for the current season, by base config (stable for ruleCold's cache). */
+  private ecoColdCache = new WeakMap<SeasonConfig['cold'], SeasonConfig['cold']>();
+
+  private ecoNightCold(cfg: SeasonConfig['cold']): SeasonConfig['cold'] {
+    let out = this.ecoColdCache.get(cfg);
+    if (!out) {
+      const k = this.eco?.nightCold ?? 0;
+      out = { ...cfg, lossPerHour: cfg.lossPerHour * k, damagePerHour: cfg.damagePerHour * k };
+      this.ecoColdCache.set(cfg, out);
+    }
+    return out;
+  }
+
+  /** Forage yield for a resource this season (1 off-season or on older journeys). */
+  private ecoForage(resourceId: string): number {
+    return this.eco?.forage[resourceId] ?? 1;
+  }
   private nextAutosaveAt = 0;
   /** Journey statistics shown on the ending screen (saved). */
   private stats = { kills: 0, crafted: 0, built: 0, gathered: 0 };
@@ -315,6 +335,9 @@ export class World extends Phaser.Scene {
     this.rfx = ruleEffects(this.rules, this.gameData.difficulty);
     // Scaled cold configs belong to this journey's rules (the scene instance is reused).
     this.ruleColdCache = new WeakMap();
+    this.eco = this.rules.content >= 3 ? ecoSeasonOn(1, this.gameData.season).season : null;
+    this.ecoId = '';
+    this.ecoColdCache = new WeakMap();
     this.stormCold = null;
     this.registry.set('journeyRules', describeRules(this.rules, this.gameData.difficulty));
     this.registry.remove('pendingAchievements');
@@ -492,7 +515,7 @@ export class World extends Phaser.Scene {
       this.blightBarLeft = -1;
       gameEvents.emit('objectives:changed', this.objectives.view());
       gameEvents.emit('craft:stations', [...this.stations]);
-      gameEvents.emit('world:info', { seed: this.seed });
+      gameEvents.emit('world:info', { seed: this.seed, content: this.rules.content });
       gameEvents.emit('quest:changed', this.quest.view());
       this.weatherKey = '';
       this.nextWeatherAt = 0;
@@ -597,10 +620,15 @@ export class World extends Phaser.Scene {
     this.updateWeather();
     const wm = weatherModifiers(this.weather, this.gameData.season);
     const drain = this.fx.drain;
-    this.survivalMods.hunger = wm.hunger * drain * this.rfx.hungerDrain;
-    this.survivalMods.thirst = wm.thirst * drain * this.rfx.thirstDrain;
+    this.survivalMods.hunger = wm.hunger * drain * this.rfx.hungerDrain * (this.eco?.hunger ?? 1);
+    this.survivalMods.thirst = wm.thirst * drain * this.rfx.thirstDrain * (this.eco?.thirst ?? 1);
     this.survival.update(dt / 1000, this.clock.secondsPerHour, p.sprinting, this.survivalMods);
-    this.survival.updateWarmth(dt / 1000, this.clock.secondsPerHour, this.weather.monsoon && !this.isSheltered(p.x, p.y), this.ruleCold(this.storm.phase === 'active' ? this.stormColdConfig() : (this.coldWorn ?? this.gameData.season.cold)));
+    // Rain chills you outside shelter; in the cool season (M21) so do the nights, more gently.
+    const hr = this.clock.hour;
+    const nightChill = !this.weather.monsoon && (this.eco?.nightCold ?? 0) > 0 && (hr >= 20 || hr < 5);
+    const exposed = (this.weather.monsoon || nightChill) && !this.isSheltered(p.x, p.y);
+    const baseCold = this.storm.phase === 'active' ? this.stormColdConfig() : (this.coldWorn ?? this.gameData.season.cold);
+    this.survival.updateWarmth(dt / 1000, this.clock.secondsPerHour, exposed, this.ruleCold(nightChill ? this.ecoNightCold(baseCold) : baseCold));
     const fx = this.effects.update(dt / 1000, this.clock.secondsPerHour);
     if (fx.damage > 0) this.survival.damage(fx.damage, 'poison');
     if (fx.heal > 0) this.survival.heal(fx.heal);
@@ -629,7 +657,7 @@ export class World extends Phaser.Scene {
     ef.crouching = p.crouching;
     ef.monsoon = this.weather.monsoon;
     ef.distTiles = Math.hypot(p.x - this.spawn.x, p.y - this.spawn.y) / 32;
-    ef.spawnScale = this.rfx.spawnCap;
+    ef.spawnScale = this.rfx.spawnCap * (this.eco?.spawn ?? 1);
     ef.detection = this.rfx.detection;
     ef.eliteScale = this.rfx.eliteChance;
     this.encounters.update(dt, this.now, ef);
@@ -887,6 +915,20 @@ export class World extends Phaser.Scene {
     if (this.now < this.nextWeatherAt) return;
     this.nextWeatherAt = this.now + 500;
     this.weather = forecast(this.clock.dayNumber, this.clock.hour, this.gameData.season);
+    if (this.rules.content >= 3) {
+      const eco = ecoSeasonOn(this.clock.dayNumber, this.gameData.season);
+      if (eco.season.id !== this.ecoId) {
+        // A new season (not on load or on day 1): announce it.
+        if (this.ecoId !== '') {
+          gameEvents.emit('toast', { text: `${eco.season.name}: ${eco.season.arrival}`, tone: 'info' });
+          gameEvents.emit('music', 'dawn');
+        }
+        this.ecoId = eco.season.id;
+        this.eco = eco.season;
+        this.ecoColdCache = new WeakMap();
+      }
+      this.weather.label = `${this.weather.label}  ·  ${eco.season.name}, ${eco.daysLeft === 0 ? 'last day' : `${eco.daysLeft + 1} days left`}`;
+    }
     const dark = darknessAt(this.clock.hour, this.gameData.survival.darkness);
     let fire = 0;
     for (const s of this.structures.list) if (s.def.lightRadius > 0) fire = Math.max(fire, 1 - Math.hypot(s.x - this.player.x, s.y - this.player.y) / 220);
@@ -1468,7 +1510,7 @@ export class World extends Phaser.Scene {
         this.floating.show(node.targetX, node.targetY - 30, 'Skilled harvest +1', '#8ec26a');
       }
       // Difficulty: forage (food and herbs) is richer or leaner; never below one.
-      const fy = this.rfx.forageYield;
+      const fy = this.rfx.forageYield * this.ecoForage(node.def.id);
       const forage = first && (itemDef(first.item).category === 'food' || itemDef(first.item).tags?.includes('herb'));
       if (first && forage && fy !== 1) {
         if (fy > 1 && Math.random() < fy - 1) first.qty++;
@@ -1651,6 +1693,8 @@ export class World extends Phaser.Scene {
     }
     const p = this.player;
     this.fishing.cast(this.now, Math.random);
+    // M21: fish bite sooner in the shrinking pools of the hot season, later in cold or flooded water.
+    if (this.eco) this.fishing.biteAt = this.now + (this.fishing.biteAt - this.now) * this.eco.fishBite;
     this.fishAt.x = p.x;
     this.fishAt.y = p.y;
     this.fishAt.spotX = spot.x;
@@ -2386,14 +2430,25 @@ export class World extends Phaser.Scene {
     const s = this.add.sprite(v.x, v.y, TEX.travelers, travelerFrameName(t.look, 0)).setOrigin(0.5, 1).setDepth(ySort(v.y));
     s.play(anim);
     this.travelerSprite = s;
-    this.travelerSpot = { x: v.x, y: v.y };
+    // Talkable once they have arrived (not while still walking in, unseen).
+    this.travelerSpot = walkIn ? null : { x: v.x, y: v.y };
     if (walkIn) {
       // Walks in from further along the path.
       const dx = v.x - this.player.x;
       const dy = v.y - this.player.y;
       const d = Math.hypot(dx, dy) || 1;
       s.setPosition(v.x + (dx / d) * 120, v.y + (dy / d) * 120).setAlpha(0);
-      this.tweens.add({ targets: s, x: v.x, y: v.y, alpha: 1, duration: 2200, ease: 'Sine.easeOut' });
+      this.tweens.add({
+        targets: s,
+        x: v.x,
+        y: v.y,
+        alpha: 1,
+        duration: 2200,
+        ease: 'Sine.easeOut',
+        onComplete: () => {
+          if (this.travelerSprite === s) this.travelerSpot = { x: v.x, y: v.y };
+        },
+      });
     }
   }
 
@@ -2413,12 +2468,13 @@ export class World extends Phaser.Scene {
   }
 
   /** Talking: trades, news, the River Road and farewell, in one must-answer dialog. */
-  private openTalk(prompt?: string): void {
+  private openTalk(prompt?: string, continuing = false): void {
     const t = this.travelerDef;
     const v = this.travelers.visit;
     if (!t || !v) return;
-    if (this.inDanger()) {
-      gameEvents.emit('toast', { text: `${t.name} waves you off — not with danger this close.`, tone: 'warn' });
+    // Starting a conversation needs a quiet moment; a reply mid-conversation always shows.
+    if (!continuing && this.inDanger()) {
+      gameEvents.emit('toast', { text: `${t.name} shakes their head — find safety and tend to yourself first.`, tone: 'warn' });
       return;
     }
     const inv = this.inventory.inventory;
@@ -2453,7 +2509,7 @@ export class World extends Phaser.Scene {
         gameEvents.emit('toast', { text: `${t.name} nods. "The river will still be here."`, tone: 'info' });
         return;
       }
-      if (missingFor(ps.requires, (i) => inv.count(i)).length) return;
+      if (this.busy || missingFor(ps.requires, (i) => inv.count(i)).length) return;
       for (const r of ps.requires) inv.remove(r.item, r.qty);
       this.inventory.broadcast();
       this.leaveByRiver();
@@ -2467,12 +2523,13 @@ export class World extends Phaser.Scene {
       v.rumorTold = true;
       const spot = this.rumorTarget(t);
       if (!spot) {
-        this.openTalk('"I have nothing new to tell you — you seem to know these paths better than I do."');
+        this.openTalk('"I have nothing new to tell you — you seem to know these paths better than I do."', true);
         return;
       }
-      if (this.markers.length < 30) this.markers.push({ x: Math.round(spot.x), y: Math.round(spot.y), kind: 'note', text: `${t.name}'s news` });
+      const marked = this.markers.length < 30;
+      if (marked) this.markers.push({ x: Math.round(spot.x), y: Math.round(spot.y), kind: 'note', text: `${t.name}'s news` });
       gameEvents.emit('map:data', this.mapData());
-      this.openTalk(`${t.rumor.replace('{place}', placePhrase(spot.x - this.player.x, spot.y - this.player.y))} (Marked on your map.)`);
+      this.openTalk(`${t.rumor.replace('{place}', placePhrase(spot.x - this.player.x, spot.y - this.player.y))} ${marked ? '(Marked on your map.)' : '(Your map is full of markers — remove one to keep notes.)'}`, true);
       return;
     }
     if (option === 'passage') {
@@ -2503,7 +2560,7 @@ export class World extends Phaser.Scene {
     gameEvents.emit('sfx', 'pickup');
     const got = trade.get.map((g) => `${g.qty} ${itemDef(g.item).name}`).join(', ');
     const story = t.stories[trust - 1];
-    this.openTalk(story ? `You receive ${got}.\n\n"${story}"` : `You receive ${got}. "A fair trade."`);
+    this.openTalk(story ? `You receive ${got}.\n\n"${story}"` : `You receive ${got}. "A fair trade."`, true);
   }
 
   /** News: the honey gatherer knows landmarks, the mapmaker knows ruins with unread tablets. */

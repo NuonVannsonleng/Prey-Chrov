@@ -186,6 +186,8 @@ export interface ResourceDef {
   lootTable: string;
   /** Damage multiplier per tool. Missing or 0 = this tool can't gather it. `hand` must be > 0. */
   toolMultipliers: Partial<Record<ToolKind, number>>;
+  /** M21: optional tint (#rrggbb) so a variant reads apart from its base sprite (flint outcrops). */
+  tint?: string;
   /** Plant identification: shown instead of the name until the player has gathered one. */
   unknownName?: string;
   /** Harvest seasons: per-item loot multipliers during the monsoon or the dry season. */
@@ -502,6 +504,7 @@ function validateResources(p: string[], resources: Rec[], lootIds: Set<string>):
     if (!isStr(r['name'])) p.push(`${w}: name required`);
     if (!isStr(r['verb'])) p.push(`${w}: verb required`);
     if (!RESOURCE_SPRITES.includes(r['sprite'] as ResourceSprite)) p.push(`${w}: unknown sprite ${String(r['sprite'])}`);
+    if (r['tint'] !== undefined && !(isStr(r['tint']) && /^#[0-9a-fA-F]{6}$/.test(r['tint'] as string))) p.push(`${w}: tint must be #rrggbb`);
     if (!isInt(r['hp']) || num(r['hp']) < 1) p.push(`${w}: hp must be an integer >= 1`);
     if (!isNum(r['respawnSeconds']) || num(r['respawnSeconds']) <= 0) p.push(`${w}: respawnSeconds must be > 0`);
     if (!lootIds.has(r['lootTable'] as string)) p.push(`${w}: unknown lootTable ${String(r['lootTable'])}`);
@@ -1071,6 +1074,39 @@ function validateM5Configs(p: string[], raw: RawGameData): void {
   }
 }
 
+/** season.json › ecology (M21): three seasons, modest and fair pressures. */
+function validateEcology(p: string[], e: unknown, resourceIds: Set<string>): void {
+  if (!isRec(e)) {
+    p.push('season.ecology required');
+    return;
+  }
+  if (!isInt(e['lengthDays']) || num(e['lengthDays']) < 2 || num(e['lengthDays']) > 30) p.push('season.ecology.lengthDays must be 2..30');
+  const list = Array.isArray(e['seasons']) ? e['seasons'] : [];
+  if (list.length !== ECO_SEASON_IDS.length || list.some((x, i) => !isRec(x) || x['id'] !== ECO_SEASON_IDS[i])) p.push(`season.ecology.seasons must be ${ECO_SEASON_IDS.join(', ')} in order`);
+  const range = (w: string, v: unknown, lo: number, hi: number) => {
+    if (!isNum(v) || num(v) < lo || num(v) > hi) p.push(`${w} must be ${lo}–${hi}`);
+  };
+  for (const x of list) {
+    if (!isRec(x)) continue;
+    const w = `season.ecology.${String(x['id'])}`;
+    for (const k of ['name', 'arrival', 'description']) if (!isStr(x[k])) p.push(`${w}.${k} required`);
+    range(`${w}.hunger`, x['hunger'], 0.8, 1.3);
+    range(`${w}.thirst`, x['thirst'], 0.7, 1.4);
+    range(`${w}.nightCold`, x['nightCold'], 0, 0.6);
+    range(`${w}.fishBite`, x['fishBite'], 0.6, 1.5);
+    range(`${w}.spawn`, x['spawn'], 0.7, 1.3);
+    if (!isRec(x['forage'])) p.push(`${w}.forage must be an object`);
+    else
+      for (const [k, v] of Object.entries(x['forage'])) {
+        if (!resourceIds.has(k)) p.push(`${w}.forage: unknown resource ${k}`);
+        range(`${w}.forage.${k}`, v, 0.5, 1.6);
+      }
+  }
+  // The opening days must stay gentle.
+  const cool = list.find((x) => isRec(x) && x['id'] === 'cool');
+  if (isRec(cool) && isNum(cool['hunger']) && num(cool['hunger']) > 1.1) p.push('season.ecology.cool.hunger must be ≤ 1.1 (the opening days)');
+}
+
 function validateM6(p: string[], raw: RawGameData, tablets: Rec[], quests: Rec[], lootIds: Set<string>): void {
   const s = raw.season;
   if (!isRec(s)) p.push('season.json: must be an object');
@@ -1081,6 +1117,7 @@ function validateM6(p: string[], raw: RawGameData, tablets: Rec[], quests: Rec[]
     requireNumbers(p, 'season.cold', s['cold'], ['lossPerHour', 'recoverPerHour', 'damagePerHour', 'shelterRadius'], 0);
     if (isNum(s['lengthDays']) && isNum(s['cycleDays']) && num(s['lengthDays']) >= num(s['cycleDays']))
       p.push('season.lengthDays must be shorter than cycleDays (the rain has to stop)');
+    validateEcology(p, s['ecology'], new Set((Array.isArray(raw.resources) ? raw.resources : []).filter(isRec).map((r) => r['id'] as string)));
   }
   const orders = new Set<number>();
   for (const t of tablets) {
@@ -1272,7 +1309,7 @@ export function reachableItems(
 // ---------- Biomes (biomes.json) ----------
 
 /** Biome ids are fixed: world generation logic decides where each one appears. */
-export const BIOME_IDS = ['clearing', 'deep_jungle', 'bamboo_grove', 'river_swamp', 'ancient_ruins'] as const;
+export const BIOME_IDS = ['clearing', 'deep_jungle', 'bamboo_grove', 'river_swamp', 'ancient_ruins', 'rocky_ridge'] as const;
 export type BiomeId = (typeof BIOME_IDS)[number];
 
 export interface BiomeProp {
@@ -1421,6 +1458,30 @@ export interface SeasonConfig {
     /** Within this many px of a shelter you count as sheltered. */
     shelterRadius: number;
   };
+  /** M21: the slow ecological year (new journeys only — see Rules content). */
+  ecology: { lengthDays: number; seasons: EcoSeason[] };
+}
+
+export const ECO_SEASON_IDS = ['cool', 'hot', 'rainy'] as const;
+export type EcoSeasonId = (typeof ECO_SEASON_IDS)[number];
+export interface EcoSeason {
+  id: EcoSeasonId;
+  name: string;
+  nameKm?: string;
+  /** Toast when the season begins. */
+  arrival: string;
+  /** One plain line of its effects. */
+  description: string;
+  hunger: number;
+  thirst: number;
+  /** Fraction of the monsoon cold that bites at night outside shelter and away from fire (0 = none). */
+  nightCold: number;
+  /** Forage yield multipliers by resource id. */
+  forage: Record<string, number>;
+  /** Multiplier on fish bite wait (< 1 = sooner). */
+  fishBite: number;
+  /** Multiplier on the wildlife spawn cap. */
+  spawn: number;
 }
 
 /** tablets.json: the five key stone tablets (array). */

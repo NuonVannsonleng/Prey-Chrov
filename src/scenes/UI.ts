@@ -228,9 +228,9 @@ export class UI extends Phaser.Scene {
       this.achQueue.push(`★ Achievement: ${a.name}\n${a.description}`);
       this.showNextAchievement();
     });
-    onSceneEvent(this, 'world:info', ({ seed }) => {
-      this.minimap.setSeed(seed);
-      this.map.setSeed(seed);
+    onSceneEvent(this, 'world:info', ({ seed, content }) => {
+      this.minimap.setSeed(seed, content);
+      this.map.setSeed(seed, content);
     });
     onSceneEvent(this, 'map:data', (d) => this.map.render(d));
     onSceneEvent(this, 'boss:bar', (b) => {
@@ -254,9 +254,14 @@ export class UI extends Phaser.Scene {
           ], (id) => this.endStory(() => gameEvents.emit('story:answer', { id: o.id, accept: id === 'accept' }))),
       ),
     );
-    onSceneEvent(this, 'talk:open', (c) =>
-      this.queueStory(() => new StoryDialog(this, c.title, c.prompt, c.options, (id) => this.endStory(() => gameEvents.emit('talk:pick', { id: c.id, option: id })))),
-    );
+    onSceneEvent(this, 'talk:open', (c) => {
+      const make = () => new StoryDialog(this, c.title, c.prompt, c.options, (id) => this.endStory(() => gameEvents.emit('talk:pick', { id: c.id, option: id })));
+      // A reply to the answer just given continues the conversation before anything else queued.
+      if (this.answering && !this.story) {
+        this.storyQueue.unshift(make);
+        this.nextStory();
+      } else this.queueStory(make);
+    });
     onSceneEvent(this, 'story:choice', (c) =>
       this.queueStory(() => new StoryDialog(this, c.title, c.prompt, c.options, (id) => this.endStory(() => gameEvents.emit('story:choose', { id: c.id, option: id })))),
     );
@@ -530,6 +535,9 @@ export class UI extends Phaser.Scene {
     this.syncModal();
   }
 
+  /** True while a story answer is being delivered (its reply may continue the conversation). */
+  private answering = false;
+
   private queueStory(make: () => StoryDialog): void {
     this.storyQueue.push(make);
     if (!this.story) this.nextStory();
@@ -548,7 +556,12 @@ export class UI extends Phaser.Scene {
   private endStory(send: () => void): void {
     this.story = null;
     this.syncModal();
-    send();
+    this.answering = true;
+    try {
+      send();
+    } finally {
+      this.answering = false;
+    }
     // The answer may open the next part of a conversation at once (M20 talk): it is showing now.
     if (this.story) return;
     if (this.storyQueue.length) this.time.delayedCall(200, () => this.nextStory());

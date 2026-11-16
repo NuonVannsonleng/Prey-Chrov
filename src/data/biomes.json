@@ -318,5 +318,73 @@
     ],
     "ambience": "Moss-choked stone and a heavy hush; incense long burnt out still seems to linger, and the wind carries whispers.",
     "nightDanger": 1.3
+  },
+  {
+    "id": "rocky_ridge",
+    "name": "Rocky Ridge",
+    "nameKm": "ជួរថ្មក្រហម",
+    "minimapColor": "#a8643c",
+    "ground": [
+      {
+        "tile": "laterite",
+        "weight": 5
+      },
+      {
+        "tile": "rock",
+        "weight": 1.5
+      },
+      {
+        "tile": "grass_alt",
+        "weight": 1.5
+      },
+      {
+        "tile": "moss",
+        "weight": 0.5
+      }
+    ],
+    "props": [
+      {
+        "kind": "resource",
+        "id": "jungle_tree",
+        "density": 9
+      },
+      {
+        "kind": "resource",
+        "id": "boulder",
+        "density": 7
+      },
+      {
+        "kind": "resource",
+        "id": "flint_outcrop",
+        "density": 2
+      },
+      {
+        "kind": "resource",
+        "id": "berry_bush",
+        "density": 0.6
+      },
+      {
+        "kind": "resource",
+        "id": "healing_herb",
+        "density": 1
+      },
+      {
+        "kind": "resource",
+        "id": "bitter_root_plant",
+        "density": 1.5
+      },
+      {
+        "kind": "scenery",
+        "id": "fern",
+        "density": 10
+      },
+      {
+        "kind": "scenery",
+        "id": "big_tree",
+        "density": 1
+      }
+    ],
+    "ambience": "Red stone climbs above the canopy. The wind is steady up here, and the forest below looks very far away.",
+    "nightDanger": 1.1
   }
 ]

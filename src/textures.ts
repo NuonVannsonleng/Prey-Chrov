@@ -63,8 +63,11 @@ export const TILE = {
   shallowsA: 12,
   shallowsB: 13,
   jungleFloor: 14,
+  /** M21: Rocky Ridge ground. */
+  laterite: 15,
+  rockSlab: 16,
 } as const;
-export const TILE_COUNT = 15;
+export const TILE_COUNT = 17;
 /** Solid (deep) water. */
 export const WATER_TILES: readonly number[] = [TILE.waterA, TILE.waterB];
 /** Walkable shallow water (slows the player; drinkable). */
@@ -81,6 +84,8 @@ export const GROUND_TILE = {
   stone_floor: TILE.stoneFloor,
   jungle_floor: TILE.jungleFloor,
   path: TILE.path,
+  laterite: TILE.laterite,
+  rock: TILE.rockSlab,
 } as const;
 export type GroundTileKey = keyof typeof GROUND_TILE;
 export const GROUND_TILE_KEYS = Object.keys(GROUND_TILE) as GroundTileKey[];

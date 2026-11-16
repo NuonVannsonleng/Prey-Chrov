@@ -38,7 +38,7 @@ URL options: `?seed=1234` picks a world. `?debug` exposes debug hooks; F3 toggle
 
 ## Controls
 
-These are the default keys. Every action except Esc, Tab, 1–6 and F3 can be rebound in **Settings › Controls**, and the in-game hints follow your bindings.
+These are the default keys. Every action except Esc, Tab, 1–6 and F3 can be rebound in **Settings › Keyboard**, and the in-game hints follow your bindings. **Controllers** and **touch screens** also work (see **Settings › Controller & touch** and the [Player Guide](docs/PLAYER_GUIDE.md)).
 
 | Key | Action |
 | --- | --- |

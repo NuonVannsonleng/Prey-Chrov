@@ -77,7 +77,8 @@ scripts/
 
 - The world is generated from the seed with `hash2`/`mulberry32` and simplex noise.
 - Chunk props have stable keys (`cx,cy:index`). Later features are appended after vegetation, so older saves' resource diffs still line up.
-- The content generation (`rules.content`) gates new landmark kinds.
+- The content generation (`rules.content`) gates new world content: 2 adds the newer landmark kinds, and 3 adds the Rocky Ridge (its own elevation noise, so no other noise changes) and the ecological seasons. Older journeys keep their generation forever. The minimap and map receive it through `world:info`.
+- Traveler visits are a pure function of seed and day (`visitorOn`), so only what happened is saved: whom you met, trust, and the visit in progress.
 
 ## Input and accessibility
 
@@ -88,6 +89,10 @@ scripts/
 - `keyText()` rewrites default key letters in hints for rebound actions.
 - High contrast swaps the `CSS` palette and lightens nights. Large text scales fonts through `fontPx()`. The HUD rebuilds after either changes.
 - Every menu works with the keyboard (`ButtonList`: arrows/WASD/Tab, Enter/Space).
+- **Controllers and touch (M19)** add no second input system. `VirtualInput` dispatches synthetic `KeyboardEvent`s for the player's bound keys (with legacy `keyCode`, which Phaser needs) and real `MouseEvent`s on the canvas for the gamepad cursor.
+  - `InputDevices` polls `navigator.getGamepads()` on Phaser's `PRE_STEP` and drives the HTML touch overlay (`TouchControls`).
+  - The World registers an input-state provider (`play` / `panel` / `story` / `screen`). On every change, everything held is released, and pad buttons still down are blocked until released.
+  - `Gamepad.readPad` is pure and unit-tested.
 
 ## Debugging
 

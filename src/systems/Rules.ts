@@ -31,7 +31,7 @@ export interface DifficultyData {
 }
 
 /** Content generation: 1 = worlds made before M17 (three landmark kinds), 2 = M17 worlds. */
-export const CONTENT_VERSION = 2;
+export const CONTENT_VERSION = 3;
 
 export interface JourneyRules {
   difficulty: DifficultyId;

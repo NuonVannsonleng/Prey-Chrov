@@ -44,8 +44,8 @@ export class Minimap {
     this.image.setVisible(false);
   }
 
-  setSeed(seed: number): void {
-    this.gen = new WorldGen(seed, getGameData().biomes);
+  setSeed(seed: number, content = 1): void {
+    this.gen = new WorldGen(seed, getGameData().biomes, 0, content);
     this.cache.clear();
     this.lastTx = Number.NaN;
     this.image.setVisible(true);

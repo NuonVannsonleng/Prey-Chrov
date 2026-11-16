@@ -33,7 +33,7 @@ export interface RuinSite {
   radius: number;
 }
 
-const BIOME_ORDER: readonly BiomeId[] = ['clearing', 'deep_jungle', 'bamboo_grove', 'river_swamp', 'ancient_ruins'];
+const BIOME_ORDER: readonly BiomeId[] = ['clearing', 'deep_jungle', 'bamboo_grove', 'river_swamp', 'ancient_ruins', 'rocky_ridge'];
 
 export function chunkOf(tile: number): number {
   return Math.floor(tile / CHUNK_TILES);
@@ -56,6 +56,8 @@ export class WorldGen {
   private readonly ford: NoiseFunction2D;
   private readonly pond: NoiseFunction2D;
   private readonly detail: NoiseFunction2D;
+  /** M21: ridge elevation (only consulted for content ≥ 3). */
+  private readonly elevation: NoiseFunction2D;
   private readonly ruinCache = new Map<number, RuinSite | null>();
   private readonly landmarkCache = new Map<number, { tx: number; ty: number; id: LandmarkId } | null>();
   private tabletSiteCache: RuinSite[] | null = null;
@@ -78,6 +80,7 @@ export class WorldGen {
     this.ford = n(4);
     this.pond = n(5);
     this.detail = n(6);
+    this.elevation = n(7);
   }
 
   biome(id: BiomeId): BiomeDef {
@@ -139,6 +142,10 @@ export class WorldGen {
     const m = this.moisture(tx / WORLD_GEN.moistureScale, ty / WORLD_GEN.moistureScale);
     const v = this.vegetation(tx / WORLD_GEN.vegetationScale, ty / WORLD_GEN.vegetationScale);
     if (m > WORLD_GEN.swampMoisture) return 'river_swamp';
+    // M21: rocky ridges rise on dry high ground, well away from the start (new journeys only).
+    if (this.content >= 3 && m < WORLD_GEN.swampMoisture - 0.25 && this.spawnDist(tx, ty) > WORLD_GEN.spawnSafeRadius + WORLD_GEN.ridgeMinDistance) {
+      if (this.elevation(tx / WORLD_GEN.ridgeScale, ty / WORLD_GEN.ridgeScale) > WORLD_GEN.ridgeElevation) return 'rocky_ridge';
+    }
     if (v > WORLD_GEN.bambooVegetation && m > -0.2) return 'bamboo_grove';
     if (v < WORLD_GEN.clearingVegetation) return 'clearing';
     return 'deep_jungle';

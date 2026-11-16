@@ -43,7 +43,8 @@ export class TouchControls {
     this.root = mk('div', 'touch-ui');
     this.root.id = 'touch';
     this.stick = mk('div', 'touch-stick');
-    this.stick.setAttribute('aria-label', 'Move');
+    this.stick.setAttribute('role', 'group');
+    this.stick.setAttribute('aria-label', 'Movement stick: drag to walk, push to the edge to sprint');
     this.knob = mk('div', 'touch-knob');
     this.stick.append(this.knob);
 
@@ -66,10 +67,12 @@ export class TouchControls {
 
     this.close = mk('button', 'touch-close', 'Close ✕');
     this.close.type = 'button';
+    this.close.setAttribute('aria-label', 'Close the panel');
     this.close.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       tapKey('Escape');
     });
+    this.close.addEventListener('click', (e) => e.detail === 0 && tapKey('Escape'));
     this.rotate = mk('div', 'touch-rotate', 'Turn your device sideways for a bigger view');
     this.rotate.setAttribute('role', 'status');
     for (const el of [this.root, this.close, this.rotate]) el.style.display = 'none';
@@ -117,7 +120,20 @@ export class TouchControls {
     releaseKey(k.interact);
     releaseKey(k.crouch);
     this.crouchBtn.classList.remove('on');
+    this.crouchBtn.setAttribute('aria-pressed', 'false');
   }
+
+  private static readonly NAMES: Partial<Record<Cmd, string>> = {
+    attack: 'Attack',
+    use: 'Eat or place the held item',
+    crouch: 'Crouch (toggle)',
+    inventory: 'Inventory',
+    crafting: 'Crafting',
+    map: 'Map',
+    journal: 'Journal',
+    character: 'Character',
+    pause: 'Pause',
+  };
 
   private button(label: string, cmd: Cmd, kind: 'tap' | 'hold' | 'toggle', extra = ''): HTMLButtonElement {
     const b = document.createElement('button');
@@ -125,6 +141,9 @@ export class TouchControls {
     b.className = `touch-btn ${extra}`.trim();
     b.textContent = label;
     b.dataset['cmd'] = cmd;
+    const name = TouchControls.NAMES[cmd];
+    if (name) b.setAttribute('aria-label', name);
+    if (kind === 'toggle') b.setAttribute('aria-pressed', 'false');
     const code = () => (cmd === 'pause' ? 'Escape' : getSettings().keys[cmd]);
     b.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -139,7 +158,19 @@ export class TouchControls {
         if (isHeld(c)) releaseKey(c);
         else pressKey(c);
         b.classList.toggle('on', isHeld(c));
+        b.setAttribute('aria-pressed', String(isHeld(c)));
       }
+    });
+    // Keyboard, switch and screen-reader activation arrive as a click with no pointer (detail 0).
+    b.addEventListener('click', (e) => {
+      if (e.detail !== 0) return;
+      const c = code();
+      if (kind === 'toggle') {
+        if (isHeld(c)) releaseKey(c);
+        else pressKey(c);
+        b.classList.toggle('on', isHeld(c));
+        b.setAttribute('aria-pressed', String(isHeld(c)));
+      } else tapKey(c);
     });
     if (kind === 'hold') {
       const up = () => {

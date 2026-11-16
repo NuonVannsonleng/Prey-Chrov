@@ -101,6 +101,39 @@
     ]
   },
   {
+    "id": "flint_outcrop_loot",
+    "guaranteed": [
+      {
+        "item": "stone",
+        "min": 2,
+        "max": 3
+      },
+      {
+        "item": "flint",
+        "min": 1,
+        "max": 1
+      }
+    ],
+    "rolls": {
+      "min": 1,
+      "max": 1
+    },
+    "entries": [
+      {
+        "item": "flint",
+        "weight": 5,
+        "min": 1,
+        "max": 2
+      },
+      {
+        "item": "stone",
+        "weight": 5,
+        "min": 1,
+        "max": 1
+      }
+    ]
+  },
+  {
     "id": "berry_bush_loot",
     "guaranteed": [
       {

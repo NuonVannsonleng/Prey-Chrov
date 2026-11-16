@@ -2459,11 +2459,11 @@ try {
     // Nobody visits on day 1; find the first visit (morning) by walking the calendar.
     const day1 = await ev('w.clock.totalSeconds = 9 * 20; w.updateTravelers(); return w.travelerDef ? w.travelerDef.id : null;');
     const found = await ev(
-      'for (let d = 2; d <= 12; d++) { w.clock.totalSeconds = (d - 1) * 480 + 9 * 20; w.updateTravelers(); if (w.travelerDef) return { day: d, id: w.travelerDef.id, spot: w.travelerSpot, sprite: !!w.travelerSprite }; } return null;',
+      'for (let d = 2; d <= 12; d++) { w.clock.totalSeconds = (d - 1) * 480 + 9 * 20; w.updateTravelers(); if (w.travelerDef) return { day: d, id: w.travelerDef.id, spot: { x: w.travelers.visit.x, y: w.travelers.visit.y }, talkableAtOnce: w.travelerSpot !== null, sprite: !!w.travelerSprite }; } return null;',
     );
-    check('travelers: none on day 1; a traveler arrives on a later morning and stands on dry ground', day1 === null && found !== null && found.sprite && found.day >= 2, JSON.stringify(found));
+    check('travelers: none on day 1; a traveler walks in on a later morning (talkable once arrived)', day1 === null && found !== null && found.sprite && !found.talkableAtOnce && found.day >= 2, JSON.stringify(found));
     if (found) {
-      await ev('w.player.body.reset(w.travelerSpot.x, w.travelerSpot.y + 30); w.player.facingVec.x = 0; w.player.facingVec.y = -1;');
+      await ev('w.player.body.reset(w.travelers.visit.x, w.travelers.visit.y + 30); w.player.facingVec.x = 0; w.player.facingVec.y = -1;');
       await tv.waitForTimeout(2600);
       await tv.screenshot({ path: `${OUT}/m20-traveler.png` });
       const target = await ev('return { kind: w.interaction.current.kind, prompt: w.lastPrompt };');
@@ -2525,7 +2525,7 @@ try {
     );
     if (trader) {
       const notReady = await ev(
-        'const id = w.travelerDef.id; w.travelers.trust[id] = 0; w.player.body.reset(w.travelerSpot.x, w.travelerSpot.y + 30); w.openTalk(); const b = ui.story.root.list.find((o) => typeof o.activate === "function" && o.text.text === w.gameData.travelers.passage.offerLabel); return b ? b.enabled : null;',
+        'const id = w.travelerDef.id; w.travelers.trust[id] = 0; w.player.body.reset(w.travelers.visit.x, w.travelers.visit.y + 30); w.openTalk(); const b = ui.story.root.list.find((o) => typeof o.activate === "function" && o.text.text === w.gameData.travelers.passage.offerLabel); return b ? b.enabled : null;',
       );
       await ev('const b = ui.story.root.list.find((o) => typeof o.activate === "function" && o.text.text === "Farewell"); b.activate();');
       await tv.waitForTimeout(300);
@@ -2557,6 +2557,68 @@ try {
       );
     } else check('River Road: the river trader visits within 40 days', false);
     check('travelers session: no errors', tvErr.length === 0, tvErr.slice(0, 3).join(' | '));
+    await ctx.close();
+  }
+
+  // ---- M21: ecological seasons and the Rocky Ridge ----
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    const sp = await ctx.newPage();
+    const spErr = [];
+    sp.on('pageerror', (e) => spErr.push(String(e)));
+    sp.on('console', (m) => m.type() === 'error' && spErr.push(m.text()));
+    await sp.goto(url);
+    await sp.waitForFunction(() => window.__preyChrov?.scene.isActive('Menu'), null, { timeout: 20000 });
+    await sp.waitForTimeout(400);
+    await sp.evaluate(() => {
+      const m = window.__preyChrov.scene.getScene('Menu');
+      m.openNewJourney();
+      m.journeyPanel.buttonFor('begin').activate();
+    });
+    await sp.waitForFunction(() => window.__preyChrov.scene.isActive('World') && window.__preyChrov.scene.isActive('UI'), null, { timeout: 20000 });
+    await sp.waitForTimeout(1200);
+    const ev = (code, arg) => sp.evaluate(([c, a]) => new Function('w', 'ui', 'arg', c)(window.__preyChrov.scene.getScene('World'), window.__preyChrov.scene.getScene('UI'), a), [code, arg]);
+    const start = await ev('return { eco: w.eco && w.eco.id, content: w.rules.content, label: ui.status.weatherText.text };');
+    check('seasons: a new journey opens in the cool season and the HUD names it', start.eco === 'cool' && start.content >= 3 && /Cool season/.test(start.label), JSON.stringify(start));
+    // Cool-season night outside shelter: warmth slowly falls; by a campfire it does not.
+    await ev('w.clock.totalSeconds = 22 * w.clock.secondsPerHour; w.nextWeatherAt = 0; w.survival.stats.warmth = 100;');
+    await sp.waitForTimeout(2500);
+    const chill = await ev('return w.survival.stats.warmth;');
+    check('seasons: cool-season nights chill you outside shelter (gently)', chill < 100 && chill > 80, `warmth ${chill.toFixed(1)}`);
+    // Jump to the hot season.
+    const L = await ev('return w.gameData.season.ecology.lengthDays;');
+    await ev('w.clock.totalSeconds = (arg * 24 + 9) * w.clock.secondsPerHour; w.nextWeatherAt = 0;', L);
+    await sp.waitForTimeout(800);
+    const hot = await ev('return { eco: w.eco && w.eco.id, label: ui.status.weatherText.text, thirst: w.survivalMods.thirst };');
+    check('seasons: the hot dry season arrives on schedule and makes you thirstier', hot.eco === 'hot' && /Hot season/.test(hot.label) && hot.thirst > 1, JSON.stringify(hot));
+    // The Rocky Ridge: find one, walk there, see the flint outcrops.
+    const ridge = await ev(
+      'for (let r = 2; r < 18; r++) for (let cy = -r; cy <= r; cy++) for (let cx = -r; cx <= r; cx++) { if (Math.max(Math.abs(cx), Math.abs(cy)) !== r) continue; const p = w.gen.generateChunk(cx, cy).props.find((q) => q.id === "flint_outcrop"); if (p) { const ox = Math.floor(p.x / 32); const oy = Math.floor(p.y / 32); for (const [dx, dy] of [[0, 2], [2, 0], [-2, 0], [0, -2], [2, 2], [-2, 2], [0, 3], [3, 0], [-3, 0]]) if (w.gen.biomeAt(ox + dx, oy + dy) === "rocky_ridge" && !w.gen.waterAt(ox + dx, oy + dy)) return { tx: ox + dx, ty: oy + dy }; } } return null;',
+    );
+    if (ridge) {
+      await ev('w.player.body.reset(arg.tx * 32 + 16, arg.ty * 32 + 16); w.chunks.loadAllAround(w.player.x, w.player.y, w.now);', ridge);
+      await sp.waitForTimeout(2500);
+      const there = await ev(
+        'const near = w.chunks.nodes.filter((n) => Math.hypot(n.prop.x - w.player.x, n.prop.y - w.player.y) < 600); const flint = near.filter((n) => n.def.id === "flint_outcrop"); return { flint: flint.length, tinted: flint.every((n) => n.image.isTinted), ground: [-64, 0, 64].some((d) => [15, 16].includes(w.chunks.tileAtWorld(w.player.x + d, w.player.y - 40))), biome: w.gen.biomeAt(Math.floor(w.player.x / 32), Math.floor(w.player.y / 32)), minimap: ui.minimap.label.text, ridgeNear: [-96, 0, 96].some((d) => w.gen.biomeAt(Math.floor((w.player.x + d) / 32), Math.floor((w.player.y - 64) / 32)) === "rocky_ridge"), mapAgrees: ui.minimap.label.text.startsWith(w.gameData.biomes.get(w.gen.biomeAt(Math.floor(w.player.x / 32), Math.floor(w.player.y / 32))).name) };',
+      );
+      await sp.screenshot({ path: `${OUT}/m21-ridge.png` });
+      check('Rocky Ridge: red earth and rock, with tinted flint outcrops to break', there.biome === 'rocky_ridge' && /Rocky Ridge/.test(there.minimap) && there.ground && there.flint > 0 && there.tinted, JSON.stringify(there));
+      const flintNode = await ev('const n = w.chunks.nodes.find((n) => n.def.id === "flint_outcrop" && !n.depleted); if (!n) return null; const before = w.inventory.inventory.count("flint"); w.inventory.add("stone_pickaxe", 1); const i = w.inventory.inventory.snapshot().findIndex((s) => s && s.item === "stone_pickaxe"); w.inventory.selected = i; w.inventory.broadcast(); for (let k = 0; k < 30 && !n.depleted; k++) { w.nextActAt = 0; w.player.body.reset(n.prop.x, n.prop.y + 26); w.gather(n); } return { before, depleted: n.depleted };');
+      await sp.waitForTimeout(1500);
+      const flintAfter = await ev('w.pickups.update(w.player.x, w.player.y, 16, w.now + 5000); return w.inventory.inventory.count("flint");');
+      check('Rocky Ridge: a flint outcrop breaks with a pickaxe and yields flint', flintNode && flintNode.depleted && flintAfter > flintNode.before, JSON.stringify({ flintNode, flintAfter }));
+    } else check('Rocky Ridge: flint outcrops exist within 17 chunks of the start', false);
+    // A journey begun before M21 (content 2) keeps playing exactly as before: no seasons, no ridges.
+    await ev('w.rules.content = 2; w.save(); const raw = JSON.parse(localStorage.getItem("preychrov.save")); raw.rules.content = 2; localStorage.setItem("preychrov.save", JSON.stringify(raw));');
+    await sp.reload();
+    await sp.waitForFunction(() => window.__preyChrov?.scene.isActive('Menu'), null, { timeout: 20000 });
+    await sp.waitForTimeout(300);
+    await sp.evaluate(() => window.__preyChrov.scene.getScene('Menu').startGame(true));
+    await sp.waitForFunction(() => window.__preyChrov.scene.isActive('World'), null, { timeout: 20000 });
+    await sp.waitForTimeout(1200);
+    const legacy = await ev('return { eco: w.eco, label: ui.status.weatherText.text, ridge: w.gen.biomeAt(Math.floor(w.player.x / 32), Math.floor(w.player.y / 32)) };');
+    check('seasons: an older journey (content 2) has no seasons and no ridges', legacy.eco === null && !/season/i.test(legacy.label) && legacy.ridge !== 'rocky_ridge', JSON.stringify(legacy));
+    check('seasons session: no errors', spErr.length === 0, spErr.slice(0, 3).join(' | '));
     await ctx.close();
   }
 

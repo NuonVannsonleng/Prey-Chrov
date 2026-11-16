@@ -71,7 +71,7 @@ describe('WorldGen safety guarantees', () => {
       }
     }
     for (let ty = -12; ty <= 12; ty++) for (let tx = -12; tx <= 12; tx++) if (gen.waterAt(tx, ty)) water = true;
-    for (const id of data.resources.keys()) expect(found.has(id), `${id} near spawn`).toBe(true);
+    for (const id of data.resources.keys()) if (id !== 'flint_outcrop') expect(found.has(id), `${id} near spawn`).toBe(true);
     expect(water).toBe(true);
   });
 
@@ -169,5 +169,31 @@ describe('depth sorting', () => {
     }
     expect(ySort(-6500)).toBeLessThan(ySort(-6499.5));
     expect(DEPTH.canopy + ySort(4_000_000) - DEPTH.actors).toBeLessThan(DEPTH.darkness);
+  });
+});
+
+describe('M21 Rocky Ridge', () => {
+  it('only new journeys (content 3) have ridges; old worlds are unchanged', () => {
+    for (const seed of SEEDS) {
+      const old = new WorldGen(seed, data.biomes, 0, 2);
+      const fresh = new WorldGen(seed, data.biomes, 0, 3);
+      let ridge = 0;
+      for (let ty = -400; ty <= 400; ty += 8)
+        for (let tx = -400; tx <= 400; tx += 8) {
+          const a = old.biomeAt(tx, ty);
+          const b = fresh.biomeAt(tx, ty);
+          expect(a).not.toBe('rocky_ridge');
+          if (b === 'rocky_ridge') {
+            ridge++;
+            // Never near the start.
+            expect(Math.hypot(tx, ty)).toBeGreaterThan(WORLD_GEN.spawnSafeRadius + WORLD_GEN.ridgeMinDistance);
+          } else expect(b).toBe(a);
+        }
+      expect(ridge, `seed ${seed} has ridges within 400 tiles`).toBeGreaterThan(0);
+    }
+  });
+
+  it('the start of a new journey is the same safe clearing', () => {
+    for (const seed of SEEDS) expect(new WorldGen(seed, data.biomes, 0, 3).biomeAt(0, 0)).toBe('clearing');
   });
 });

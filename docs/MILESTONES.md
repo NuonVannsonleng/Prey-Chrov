@@ -22,8 +22,174 @@ Status legend: **Done** · **In progress** · **Not started**
 | M16 | Atmosphere, audio, menus and accessibility | Done |
 | M17 | Replayability and content expansion | Done |
 | M18 | Release hardening and web publishing | Done |
+| M19 | Controllers and touch | Done |
+| M20 | Travelers, barter and The River Road | Done |
+| M21 | Ecological seasons and the Rocky Ridge | Done |
 
 ---
+
+## M21 — Ecological seasons and the Rocky Ridge
+
+### Implemented
+
+- **A slow ecological year** for new journeys: cool season → hot dry season → rainy season, 8 days each (`season.json › ecology`). The short monsoon storms keep their own schedule on top of it.
+  - **Cool season:** nights chill you outside shelter or away from fire (35% of the monsoon's cold), you get slightly hungrier, and fish bite slowly.
+  - **Hot dry season:** thirst ×1.25, berries and herbs are scarcer, fish bite sooner, and a few more creatures are about.
+  - **Rainy season:** water comes easily, herbs and bamboo shoots are plentiful, and fewer creatures are about.
+  - The HUD weather line names the season and the days left in it. A toast and a short stinger announce each new season.
+  - Effects apply through the existing paths: hunger and thirst drain, warmth, forage yield, fish bite timing and the spawn cap.
+- **The Rocky Ridge**, a new region from the design's expansion biomes:
+  - Red laterite and sandstone ground on dry high ground, with sparse trees and more boulders.
+  - **Flint outcrops** (tinted blue-grey) break with a pickaxe into stone and flint. They are the best flint source in the forest, and a reason to travel.
+  - Boar, viper, tiger, and Ap and Arak at night roam there.
+  - Ridges never form within 54 tiles of the start, so the safe opening is unchanged.
+- **Compatibility:** seasons and ridges are content generation 3. Journeys started earlier (content 1–2) keep exactly their old world and pacing, which unit and browser tests check.
+- **Fix:** the minimap and full map now build their world view with the journey's content generation. Before, they ignored the newer landmark and biome content.
+- **M19/M20 review fixes:**
+  - A conversation's reply always shows before other queued story moments.
+  - A trade's result always shows, even if danger starts mid-conversation.
+  - Leaving by river can no longer take your provisions without starting the ending.
+  - A traveler can only be talked to once they have arrived, not while still walking in.
+  - Touch buttons work with keyboard, switch and screen-reader activation, with labels and 44 px targets.
+  - The news text no longer claims a map mark when the map is full.
+
+### Verification
+
+- Unit tests:
+  - the season calendar
+  - modest, fair season values, enforced by the validator
+  - ridges appear only for content 3, far from the start, and leave older worlds identical
+  - flint outcrops are the only regional resource
+- `npm run smoke` (M21 checks):
+  - a new journey opens in the cool season and the HUD says so
+  - a cool-season night outside shelter gently lowers warmth
+  - the hot season arrives on day 9 and raises thirst
+  - on the ridge, the minimap names the Rocky Ridge, and a tinted flint outcrop breaks with a pickaxe and yields flint
+  - an older journey (content 2) has no seasons and no ridges
+  - no errors
+- QA review (real `phaser-qa`) of M19 and M20 together: 0 Critical, 5 Warnings, all fixed here.
+
+### Known limitations
+
+- Seasons change pressures, not visuals. There is no dry-season palette or falling leaves yet.
+- The Khmer season and region names need native-speaker review: រដូវត្រជាក់, រដូវក្តៅ, រដូវវស្សា, ជួរថ្មក្រហម.
+
+## M20 — Travelers, barter and The River Road
+
+### Implemented
+
+- **Travelers:** Sokha the river trader, Vibol the honey gatherer and Dara the lowland mapmaker.
+  - They are ordinary people passing through. They are not enemies, and there is no combat with them.
+  - A visit comes every 2–3 days from day 2, fixed by the world seed.
+  - Travelers walk in by morning, stand on dry open ground near you (the river trader prefers a riverbank) and move on at dusk.
+- **Talking** (E) opens a conversation you answer like a story moment:
+  - **Barter:** each traveler has three trades, and each trade can be used once per visit. Trades turn surplus into scarce supplies, such as flint, bandages, antidotes and navigation notes.
+  - **Trust:** each trade adds trust, and the traveler shares a small personal story after the first three.
+  - **News:** the honey gatherer and the mapmaker point you to an undiscovered landmark or a ruin with an unread tablet ("about 90 m to the north-east"), and mark it on your map.
+- **The River Road**, an alternative ending:
+  - After three trades, Sokha offers passage downriver if you bring provisions (3 cooked fish, 2 boiled water).
+  - Leaving ends the journey with its own epilogue. It is bittersweet if the Heart Tree is still wounded, and peaceful if you restored it first.
+  - Your last save is kept, so Continue returns you to the forest before you left.
+- **Data:** `travelers.json` is validated:
+  - only known items are used
+  - travelers never sell quest items, set-piece trophies, tools, gear, lights or kits
+  - an exchange-rate check proves no chain of trades multiplies an item
+  - the passage config must be complete
+- **Saves** keep whom you met, trust per traveler and the visit in progress (place, trades used, news told). Older saves simply have none.
+- **Also added:** 4 achievements and 3 record events, generated traveler sprites, and long button labels that shrink to fit.
+
+### Verification
+
+- 9 unit tests:
+  - the schedule is deterministic and respects the gaps
+  - no traveler visits twice in a row
+  - every traveler appears
+  - the saved state parses defensively
+  - the validator refuses selling spirit dust, a stone↔wood loop and a bad passage traveler
+- `npm run smoke` (11 M20 checks):
+  - a traveler arrives on day 2 on dry ground
+  - the "Talk to" prompt appears
+  - a trade swaps exact goods, adds trust and continues the conversation
+  - a used trade shows as unavailable
+  - news adds a map marker
+  - Farewell resumes play
+  - a visit survives save and reload
+  - travelers leave at dusk
+  - passage waits for trust, then the River Road ending plays with only Main menu and is recorded
+  - no errors
+
+### Known limitations
+
+- The Khmer names need native-speaker review: សុខា, វិបុល, ដារា.
+- Traveler placement avoids water, structures and resource nodes, but not decorative props such as ferns.
+
+## M19 — Controllers and touch
+
+### Implemented
+
+- **Controllers** (standard layout; Xbox, PlayStation and most others):
+
+| Control | Action |
+| --- | --- |
+| Left stick | Walk |
+| A | Gather / interact (hold) |
+| X or RT | Attack |
+| Y | Use or eat |
+| B | Crouch (hold) |
+| LT | Sprint |
+| LB / RB | Hotbar |
+| D-pad | Inventory · Crafting · Journal · Map |
+| View | Character |
+| Menu | Pause |
+| R3 / L3 | Rotate or repair / dismantle |
+
+  - In menus and panels, the stick moves a cursor that clicks and drags with real mouse events, so inventory drag-and-drop works.
+  - In menus, the D-pad and B also work like the arrow keys and Esc.
+- **Touch screens:**
+  - an on-screen stick (push to the edge to sprint)
+  - Act (hold), Attack, Use and Crouch
+  - a panel row: Bag, Craft, Map, Journal, Self, Pause
+  - a Close button while a panel is open
+  - a hint to turn the device sideways on tall screens
+  - multi-touch support, so you can walk and gather at once
+  - hints name the on-screen buttons ("hold Act")
+- **One input path:** both devices press the player's bound keys and drive the real mouse, so rebinding, hints, held-key tracking and every panel work unchanged.
+  - Everything held is released when you move between play and a panel, and on blur.
+  - A button held through such a change does nothing until released.
+- With a controller or touch, a building ghost sits in front of you instead of following the pointer.
+- **Settings › Controller & touch:** touch controls set to Auto (on first touch), On or Off, and the controller layout.
+- **Fix:** swapping two keys (E ↔ F) now keeps the hints swapped. They are replaced in one pass.
+
+### Verification
+
+- 11 unit tests:
+  - the pad mapping
+  - mode-change blocking
+  - the 8-way stick
+  - key codes
+  - the touch setting
+  - swapped-key and touch-name hints
+- `npm run smoke` (12 M19 checks):
+  - **Scripted gamepad:**
+    - A on the menu picks Play
+    - the stick steers a cursor onto Begin and clicks it
+    - the stick walks the player and stops
+    - A holds interact
+    - RB steps the hotbar
+    - D-pad ↑ opens the inventory without the press leaking, and B closes it
+    - Start pauses and B resumes
+  - **Real touch input on an 844×390 phone viewport:**
+    - tapping Play works
+    - the controls appear in play
+    - two fingers walk while holding Act
+    - Bag opens the inventory and Close shuts it
+    - a tall screen shows the landscape hint
+- The full suite passed 265/265 at M19.
+
+### Known limitations
+
+- Tested with a scripted gamepad and emulated touch in Chromium. No physical controller or phone was available here.
+- Typing a world seed on a touch screen needs a keyboard. A random seed works without one.
 
 ## M18 — Release hardening and web publishing
 

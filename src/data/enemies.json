@@ -27,7 +27,8 @@
       "biomes": {
         "clearing": 3,
         "bamboo_grove": 3,
-        "deep_jungle": 2
+        "deep_jungle": 2,
+        "rocky_ridge": 2
       }
     },
     "charge": {
@@ -65,7 +66,8 @@
         "river_swamp": 4,
         "bamboo_grove": 2,
         "ancient_ruins": 2,
-        "clearing": 1
+        "clearing": 1,
+        "rocky_ridge": 1.5
       }
     },
     "poison": {
@@ -103,7 +105,8 @@
       "biomes": {
         "deep_jungle": 2,
         "ancient_ruins": 1,
-        "bamboo_grove": 0.5
+        "bamboo_grove": 0.5,
+        "rocky_ridge": 1
       }
     },
     "charge": {
@@ -143,7 +146,8 @@
         "deep_jungle": 2,
         "bamboo_grove": 1,
         "river_swamp": 1,
-        "ancient_ruins": 2
+        "ancient_ruins": 2,
+        "rocky_ridge": 1
       }
     },
     "charge": {
@@ -183,7 +187,8 @@
         "river_swamp": 2,
         "ancient_ruins": 3,
         "bamboo_grove": 1,
-        "clearing": 1
+        "clearing": 1,
+        "rocky_ridge": 1
       }
     },
     "projectile": {

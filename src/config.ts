@@ -179,6 +179,10 @@ export const WORLD_GEN = {
   fordScale: 36,
   fordThreshold: 0.35,
   swampMoisture: 0.5,
+  /** M21: Rocky Ridge — elevation noise scale, threshold, and tiles kept clear around spawn. */
+  ridgeScale: 140,
+  ridgeElevation: 0.45,
+  ridgeMinDistance: 40,
   bambooVegetation: 0.38,
   clearingVegetation: -0.42,
   /** Tiles around (0,0) that are always a safe clearing with no rivers. */

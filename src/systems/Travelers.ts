@@ -51,7 +51,7 @@ export interface TravelerState {
   /** Trades completed with each traveler (trust). */
   trust: Record<string, number>;
   visit: TravelerVisit | null;
-  /** Set when passage was taken (the journey ended on the River Road). */
+  /** Set when passage is taken (runtime only — never restored from a save). */
   departed: boolean;
 }
 
@@ -83,7 +83,7 @@ export function parseTravelers(raw: unknown, cfg: TravelersConfig): TravelerStat
       rumorTold: v['rumorTold'] === true,
     };
   }
-  out.departed = raw['departed'] === true;
+  // `departed` is runtime-only: the River Road ends the scene and the save from before leaving is kept.
   return out;
 }
 
